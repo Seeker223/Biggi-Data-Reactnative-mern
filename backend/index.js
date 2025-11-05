@@ -10,6 +10,10 @@ const cors = require('cors');     // Cross-Origin Resource Sharing
 const cookieParser = require('cookie-parser'); // To read JWT from cookies
 const hpp = require('hpp'); // HTTP Parameter Pollution protection
 
+import job from "./utils/cron.js"
+
+job.start();
+
 // Route files
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
