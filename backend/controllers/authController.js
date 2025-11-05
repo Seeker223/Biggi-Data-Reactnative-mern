@@ -1,9 +1,8 @@
 // controllers/authController.js
 
-const User = require('../models/User');
-const sendEmail = require('../utils/sendEmail');
-const crypto = require('crypto'); // Required for hashing the incoming token
-
+import User from '../models/User.js'; // MUST include .js extension
+import sendEmail from '../utils/sendEmail.js'; // MUST include .js extension
+import crypto from 'crypto'; // Node built-in modules do not need .js extension
 
 // ---------------------- Helper Function ----------------------
 
@@ -34,114 +33,47 @@ const sendTokenResponse = (user, statusCode, res) => {
 
 // ---------------------- Public Authentication Routes ----------------------
 
-// @desc    Register a new user
-// @route   POST /api/v1/auth/register
-// @access  Public
+// @desc    Register a new user
+// @route   POST /api/v1/auth/register
+// @access  Public
+export const register = async (req, res, next) => {
+    const { username, email, password, role } = req.body;
 
-// controllers/authController.js
-const crypto = require("crypto");
-const User = require("../models/User");
-const sendEmail = require("../utils/sendEmail");
-
-// --- SEND SECURITY PIN ---
-exports.sendSecurityPin = async (req, res, next) => {
-  const { email } = req.body;
-  try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-    // generate a 6-digit code
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
-
-    user.securityPin = pin;
-    user.securityPinExpires = Date.now() + 10 * 60 * 1000; // valid for 10 min
-    await user.save();
-
-    await sendEmail({
-      email: user.email,
-      subject: "Your Biggi Data Security PIN",
-      html: `
-        <div style="font-family:Arial,sans-serif">
-          <h2>Security PIN</h2>
-          <p>Hello ${user.username || "User"},</p>
-          <p>Your 6-digit security PIN is:</p>
-          <h1 style="letter-spacing:6px">${pin}</h1>
-          <p>This code expires in 10 minutes.</p>
-          <p>— Biggi Data Team</p>
-        </div>`,
-    });
-
-    res.status(200).json({ success: true, message: "PIN sent to email" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Failed to send PIN" });
-  }
-};
-
-// --- VERIFY SECURITY PIN ---
-exports.verifySecurityPin = async (req, res, next) => {
-  const { email, pin } = req.body;
-  try {
-    const user = await User.findOne({ email });
-    if (
-      !user ||
-      user.securityPin !== pin ||
-      !user.securityPinExpires ||
-      user.securityPinExpires < Date.now()
-    ) {
-      return res.status(400).json({ success: false, message: "Invalid or expired PIN" });
-    }
-
-    // clear fields once used
-    user.securityPin = undefined;
-    user.securityPinExpires = undefined;
-    await user.save();
-
-    res.status(200).json({ success: true, message: "PIN verified successfully" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "PIN verification failed" });
-  }
-};
-
-
-exports.register = async (req, res, next) => {
-  const { username, email, password, role } = req.body;
-
-  try {
-    // Create user
-    const user = await User.create({ username, email, password, role });
-
-    // ✅ Send welcome email via SMTP
     try {
-      await sendEmail({
-        email: user.email,
-        subject: "Welcome to Biggi Data 🎉",
-        html: `
-          <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333">
-            <h2>Welcome, ${user.username || "User"}!</h2>
-            <p>Thank you for joining <strong>Biggi Data</strong>.</p>
-            <p>Start exploring and enjoy exclusive data rewards and promotions.</p>
-            <p>Best regards,<br/><strong>Biggi Data Team</strong></p>
-          </div>
-        `,
-      });
-      console.log(`✅ Registration email sent to ${user.email}`);
-    } catch (emailError) {
-      console.error("❌ Failed to send registration email:", emailError);
+        // Create user
+        const user = await User.create({ username, email, password, role });
+
+        // ✅ Send welcome email via SMTP
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: "Welcome to Biggi Data 🎉",
+                html: `
+                    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333">
+                        <h2>Welcome, ${user.username || "User"}!</h2>
+                        <p>Thank you for joining <strong>Biggi Data</strong>.</p>
+                        <p>Start exploring and enjoy exclusive data rewards and promotions.</p>
+                        <p>Best regards,<br/><strong>Biggi Data Team</strong></p>
+                    </div>
+                `,
+            });
+            console.log(`✅ Registration email sent to ${user.email}`);
+        } catch (emailError) {
+            console.error("❌ Failed to send registration email:", emailError);
+        }
+
+        // Continue login flow
+        sendTokenResponse(user, 201, res);
+
+    } catch (error) {
+        next(error);
     }
-
-    // Continue login flow
-    sendTokenResponse(user, 201, res);
-
-  } catch (error) {
-    next(error);
-  }
 };
-// @desc    Log user in
-// @route   POST /api/v1/auth/login
-// @access  Public
-exports.login = async (req, res, next) => {
+
+// @desc    Log user in
+// @route   POST /api/v1/auth/login
+// @access  Public
+export const login = async (req, res, next) => {
     const { email, password } = req.body;
 
     // 1. Basic validation
@@ -150,6 +82,7 @@ exports.login = async (req, res, next) => {
     }
 
     // 2. Find user and explicitly select password
+    // NOTE: If you are using Mongoose, matchPassword function must be defined on the User schema
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
@@ -167,13 +100,72 @@ exports.login = async (req, res, next) => {
     sendTokenResponse(user, 200, res);
 };
 
+// --- SEND SECURITY PIN ---
+export const sendSecurityPin = async (req, res, next) => {
+    const { email } = req.body;
+    try {
+        const user = await User.findOne({ email });
+        if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-// ---------------------- Email Verification ----------------------
+        // generate a 6-digit code
+        const pin = Math.floor(100000 + Math.random() * 900000).toString();
 
-// @desc    Send email verification link to user
-// @route   POST /api/v1/auth/verify-email
-// @access  Public
-exports.sendVerificationEmail = async (req, res, next) => {
+        user.securityPin = pin;
+        user.securityPinExpires = Date.now() + 10 * 60 * 1000; // valid for 10 min
+        await user.save();
+
+        await sendEmail({
+            email: user.email,
+            subject: "Your Biggi Data Security PIN",
+            html: `
+                <div style="font-family:Arial,sans-serif">
+                    <h2>Security PIN</h2>
+                    <p>Hello ${user.username || "User"},</p>
+                    <p>Your 6-digit security PIN is:</p>
+                    <h1 style="letter-spacing:6px">${pin}</h1>
+                    <p>This code expires in 10 minutes.</p>
+                    <p>— Biggi Data Team</p>
+                </div>`,
+        });
+
+        res.status(200).json({ success: true, message: "PIN sent to email" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: "Failed to send PIN" });
+    }
+};
+
+// --- VERIFY SECURITY PIN ---
+export const verifySecurityPin = async (req, res, next) => {
+    const { email, pin } = req.body;
+    try {
+        const user = await User.findOne({ email });
+        if (
+            !user ||
+            user.securityPin !== pin ||
+            !user.securityPinExpires ||
+            user.securityPinExpires < Date.now()
+        ) {
+            return res.status(400).json({ success: false, message: "Invalid or expired PIN" });
+        }
+
+        // clear fields once used
+        user.securityPin = undefined;
+        user.securityPinExpires = undefined;
+        await user.save();
+
+        res.status(200).json({ success: true, message: "PIN verified successfully" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: "PIN verification failed" });
+    }
+};
+
+
+// @desc    Send email verification link to user
+// @route   POST /api/v1/auth/verify-email
+// @access  Public
+export const sendVerificationEmail = async (req, res, next) => {
     const user = await User.findOne({ email: req.body.email });
 
     if (!user) {
@@ -209,10 +201,10 @@ exports.sendVerificationEmail = async (req, res, next) => {
 };
 
 
-// @desc    Confirm account verification using token from email link
-// @route   GET /api/v1/auth/confirm-verification/:token
-// @access  Public
-exports.confirmVerification = async (req, res, next) => {
+// @desc    Confirm account verification using token from email link
+// @route   GET /api/v1/auth/confirm-verification/:token
+// @access  Public
+export const confirmVerification = async (req, res, next) => {
     // 1. Get the hashed token from the request parameters
     const incomingToken = req.params.token;
 
@@ -246,10 +238,10 @@ exports.confirmVerification = async (req, res, next) => {
 
 // ---------------------- Password Reset ----------------------
 
-// @desc    Forgot Password (Send email with reset link)
-// @route   POST /api/v1/auth/forgotpassword
-// @access  Public
-exports.forgotPassword = async (req, res, next) => {
+// @desc    Forgot Password (Send email with reset link)
+// @route   POST /api/v1/auth/forgotpassword
+// @access  Public
+export const forgotPassword = async (req, res, next) => {
     const user = await User.findOne({ email: req.body.email });
 
     if (!user) {
@@ -261,39 +253,45 @@ exports.forgotPassword = async (req, res, next) => {
     const resetToken = user.getPasswordResetToken();
     await user.save({ validateBeforeSave: false }); 
 
-    // 2. Create the reset URL (MUST point to your frontend's reset page, not the API route)
-    // We use the API route here as a temporary test placeholder
-    // const resetURL = `${req.protocol}://${req.get('host')}/api/v1/auth/resetpassword/${resetToken}`;
-    
-    // const message = `You are receiving this email because you requested a password reset. Click the link below to reset:\n\n${resetURL}\n\nIf you did not request this, please ignore this email.`;
+    // 2. Create the reset URL (MUST point to your frontend's reset page)
+    const resetURL = `${process.env.FRONTEND_URL}/resetpassword/${resetToken}`;
 
-   const resetURL = `${process.env.FRONTEND_URL}/resetpassword/${resetToken}`;
+    const message = `
+        <div style="font-family: Arial, sans-serif; color:#333">
+            <h2>Password Reset Request</h2>
+            <p>Hello ${user.username || "User"},</p>
+            <p>You requested to reset your password. Click the button below:</p>
+            <a href="${resetURL}" 
+                style="display:inline-block; padding:10px 20px; background-color:#000; color:#fff; 
+                text-decoration:none; border-radius:6px;">Reset Password</a>
+            <p>If you didn't request this, please ignore this email.</p>
+            <p>— Biggi Data Support</p>
+        </div>
+    `;
 
-const message = `
-  <div style="font-family: Arial, sans-serif; color:#333">
-    <h2>Password Reset Request</h2>
-    <p>Hello ${user.username || "User"},</p>
-    <p>You requested to reset your password. Click the button below:</p>
-    <a href="${resetURL}" 
-       style="display:inline-block; padding:10px 20px; background-color:#000; color:#fff; 
-       text-decoration:none; border-radius:6px;">Reset Password</a>
-    <p>If you didn't request this, please ignore this email.</p>
-    <p>— Biggi Data Support</p>
-  </div>
-`;
-
-await sendEmail({
-  email: user.email,
-  subject: "Reset Your Biggi Data Password",
-  html: message,
-})
+    try {
+        await sendEmail({
+            email: user.email,
+            subject: "Reset Your Biggi Data Password",
+            html: message,
+        });
+        res.status(200).json({ success: true, data: 'Password reset email sent (if user exists).' });
+    } catch (err) {
+        // If email fails, clear the token and return error
+        user.passwordResetToken = undefined;
+        user.passwordResetExpire = undefined;
+        await user.save({ validateBeforeSave: false });
+        
+        console.error("Email failed:", err);
+        return res.status(500).json({ success: false, error: 'Email could not be sent' });
+    }
 };
 
 
-// @desc    Reset Password (Set new password)
-// @route   PUT /api/v1/auth/resetpassword/:token
-// @access  Public
-exports.resetPassword = async (req, res, next) => {
+// @desc    Reset Password (Set new password)
+// @route   PUT /api/v1/auth/resetpassword/:token
+// @access  Public
+export const resetPassword = async (req, res, next) => {
     // 1. Get the hashed token from the request parameter
     const incomingToken = req.params.token;
     
@@ -315,7 +313,7 @@ exports.resetPassword = async (req, res, next) => {
 
     // 4. Set new password and clear token fields
     if (!req.body.password) {
-         return res.status(400).json({ success: false, error: 'Please provide a new password.' });
+        return res.status(400).json({ success: false, error: 'Please provide a new password.' });
     }
     
     user.password = req.body.password; // The pre-save hook will hash this new password

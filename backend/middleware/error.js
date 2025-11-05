@@ -1,34 +1,39 @@
-// middleware/error.js
+// middleware/error.js (Converted to ESM)
 
 const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
+  let error = { ...err };
+  error.message = err.message;
 
-  // Log to console for dev
-  console.log(err.stack.red);
+  // Log to console for dev
+  // NOTE: Ensure you have the 'colors' package installed/imported if you use '.red'
+  console.log(err.stack); // Removed .red for safety if 'colors' isn't available/imported
 
-  // Mongoose Bad ObjectId (CastError)
-  if (err.name === 'CastError') {
-    const message = `Resource not found with id of ${err.value}`;
-    error = { statusCode: 404, message };
-  }
+  // Mongoose Bad ObjectId (CastError)
+  if (err.name === 'CastError') {
+    const message = `Resource not found with id of ${err.value}`;
+    error = { statusCode: 404, message };
+  }
 
-  // Mongoose Duplicate Key (E11000)
-  if (err.code === 11000) {
-    const message = `Duplicate field value entered: ${Object.keys(err.keyValue)}`;
-    error = { statusCode: 400, message };
-  }
+  // Mongoose Duplicate Key (E11000)
+  if (err.code === 11000) {
+    // Extract the key causing the duplication (e.g., 'email' or 'username')
+    const field = Object.keys(err.keyValue); 
+    const message = `Duplicate field value entered: ${field.join(', ')}.`;
+    error = { statusCode: 400, message };
+  }
 
-  // Mongoose Validation Error
-  if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message);
-    error = { statusCode: 400, message: message.join(', ') };
-  }
+  // Mongoose Validation Error
+  if (err.name === 'ValidationError') {
+    // Extract error messages from all failed fields
+    const message = Object.values(err.errors).map(val => val.message);
+    error = { statusCode: 400, message: message.join(', ') };
+  }
 
-  res.status(error.statusCode || 500).json({
-    success: false,
-    error: error.message || 'Server Error',
-  });
+  res.status(error.statusCode || 500).json({
+    success: false,
+    error: error.message || 'Server Error',
+  });
 };
 
-module.exports = errorHandler;
+// Use ESM default export
+export default errorHandler;

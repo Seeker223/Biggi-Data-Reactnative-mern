@@ -1,6 +1,6 @@
-// utils/sendEmail.js
+// utils/sendEmail.js (Converted to ESM)
 
-const nodemailer = require('nodemailer');
+import nodemailer from 'nodemailer'; // Use import instead of require
 
 const sendEmail = async (options) => {
     // 1. Create a transporter object using SMTP
@@ -17,10 +17,10 @@ const sendEmail = async (options) => {
     // 2. Define the email message options
     const message = {
         from: `${process.env.FROM_NAME} <${process.env.SMTP_EMAIL}>`,
-        to: options.email,        // Recipient's email
+        to: options.email,       // Recipient's email
         subject: options.subject, // Email subject
         text: options.message,    // Plain text body
-        html: options.html || `<p>${options.message}</p>`,      // Optional: HTML body
+        html: options.html || `<p>${options.message}</p>`,       // Optional: HTML body
     };
 
     // 3. Send the email
@@ -29,4 +29,5 @@ const sendEmail = async (options) => {
     console.log('Message sent: %s', info.messageId);
 };
 
-module.exports = sendEmail;
+// Use ESM default export
+export default sendEmail;

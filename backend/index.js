@@ -1,37 +1,42 @@
 // index.js
 
-// 1. Load Environment Variables (MUST be first)
-require('dotenv').config();
+// Node.js ES Modules (ESM) require the full file extension for local imports.
 
-const express = require('express');
-const mongoose = require('mongoose');
-const helmet = require('helmet'); // Security headers
-const cors = require('cors');     // Cross-Origin Resource Sharing
-const cookieParser = require('cookie-parser'); // To read JWT from cookies
-const hpp = require('hpp'); // HTTP Parameter Pollution protection
+import express from 'express';
+import mongoose from 'mongoose';
+import helmet from 'helmet'; // Security headers
+import cors from 'cors';     // Cross-Origin Resource Sharing
+import cookieParser from 'cookie-parser'; // To read JWT from cookies
+import hpp from 'hpp'; // HTTP Parameter Pollution protection
+import "dotenv/config"; // 1. Correctly loads environment variables for ESM
 
-import job from "./utils/cron.js"
-
-job.start();
+import job from "./utils/cron.js";
 
 // Route files
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
+import authRoutes from './routes/authRoutes.js'; // This is now correct
+import userRoutes from './routes/userRoutes.js'; // This is now correct
 
-// Error Handler Middleware
-const errorHandler = require('./middleware/error'); 
+// 3. Import the error handler middleware using dynamic import, 
+//    or ensure your middleware uses ESM export. Assuming it exports default.
+//    If your middleware/error.js is CommonJS (module.exports), use dynamic import:
+const { default: errorHandler } = await import('./middleware/error.js'); 
 
+job.start()
 const app = express();
+
+// --- 3. CRUCIAL RENDER CONFIGURATION ---
+// Server MUST bind to 0.0.0.0 and use Render's PORT environment variable.
 const PORT = process.env.PORT || 5000;
+const HOST = '0.0.0.0'; 
 
 // ---------------------- 2. Database Connection ----------------------
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connection established successfully. 🚀'))
-  .catch((err) => {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1); // Exit process if connection fails
-  });
+  .then(() => console.log('MongoDB connection established successfully. 🚀'))
+  .catch((err) => {
+    console.error('MongoDB connection failed:', err.message);
+    process.exit(1); // Exit process if connection fails
+  });
 
 // ---------------------- 3. Middleware Stack ----------------------
 
@@ -44,9 +49,9 @@ app.use(cookieParser());
 // Enable CORS
 // IMPORTANT: Update 'YOUR_FRONTEND_URL' before deployment
 app.use(cors({
-    origin: process.env.NODE_ENV === 'development' ? '*' : 'YOUR_FRONTEND_URL',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, 
+    origin: process.env.NODE_ENV === 'development' ? '*' : 'YOUR_FRONTEND_URL',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, 
 }));
 
 // Set security headers using Helmet
@@ -59,7 +64,7 @@ app.use(hpp());
 // ---------------------- 4. Mount Routes (API Versioning) ----------------------
 
 app.get('/', (req, res) => {
-  res.send('API is running... Status: OK');
+  res.send('API is running... Status: OK');
 });
 
 // Authentication routes
@@ -74,7 +79,7 @@ app.use('/api/v1/users', userRoutes);
 // Handle requests for non-existent routes (404 Not Found)
 // This must be placed before the final errorHandler
 app.use((req, res, next) => {
-  res.status(404).json({ success: false, error: `Route not found: ${req.originalUrl}` });
+  res.status(404).json({ success: false, error: `Route not found: ${req.originalUrl}` });
 });
 
 // Centralized Error Handler Middleware (MUST be the last thing loaded)
@@ -84,72 +89,15 @@ app.use(errorHandler);
 // ---------------------- 6. Start Server ----------------------
 
 const server = app.listen(
-    PORT,
-    console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode.`)
+    // Use the correctly defined PORT and HOST
+    PORT, 
+    HOST,
+    () => console.log(`Server running on host ${HOST} port ${PORT} in ${process.env.NODE_ENV} mode.`)
 );
 
 // Handle unhandled promise rejections (Good Practice)
 process.on('unhandledRejection', (err, promise) => {
-    console.log(`Error: ${err.message}`);
-    // Close server & exit process
-    server.close(() => process.exit(1));
+    console.log(`Error: ${err.message}`);
+    // Close server & exit process
+    server.close(() => process.exit(1));
 });
-// const express = require('express');
-
-// const mongoose = require('mongoose');
-
-// const dotenv = require('dotenv');
-
-// const cookieParser = require('cookie-parser');
-
-// const helmet = require('helmet');
-
-// const authRoutes = require('./routes/authRoutes');
-
-// const taskRoutes = require('./routes/taskRoutes');
-
-// const { notFound, errorHandler } = require('./middleware/errorMiddleware');
-
-// dotenv.config();
-
-
-// const app = express();
-
-// app.use(helmet());
-
-// app.use(express.json());
-
-// app.use(cookieParser());
-
-
-// mongoose.connect(process.env.MONGO_URI)
-
-//   .then(() => console.log('MongoDB connected!'))
-
-//   .catch(err => console.error('MongoDB connection error:', err));
-
-
-// app.use('/api/auth', authRoutes);
-
-// app.use('/api/tasks', taskRoutes);
-
-
-// app.get('/', (req, res) => {
-
-//   res.send('MERN Task Manager API is running!');
-
-// });
-
-
-// app.use(notFound);
-
-// app.use(errorHandler);
-
-
-// const PORT = process.env.PORT || 5000;
-
-// app.listen(PORT, () => {
-
-//   console.log(`Server running on port ${PORT}`);
-
-// });

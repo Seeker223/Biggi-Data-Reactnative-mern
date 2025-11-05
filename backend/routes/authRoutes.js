@@ -1,16 +1,19 @@
-// routes/authRoutes.js
+// routes/authRoutes.js (Converted to ESM)
 
-const express = require('express');
-const { 
+import { Router } from 'express'; // Use import, not require
+import { 
     register, 
     login, 
     sendVerificationEmail, 
     confirmVerification,
-    forgotPassword,       // ⬅️ NEW: Forgot Password
-    resetPassword         // ⬅️ NEW: Reset Password
-} = require('../controllers/authController');
+    forgotPassword, 
+    resetPassword,
+    // Note: If sendSecurityPin and verifySecurityPin are also named exports, add them here
+    sendSecurityPin,
+    verifySecurityPin
+} from '../controllers/authController.js'; // MUST include .js extension
 
-const router = express.Router();
+const router = Router(); // Use Router from the import
 
 // ---------------------- Core Authentication ----------------------
 router.post('/register', register);
@@ -19,17 +22,12 @@ router.post("/send-pin", sendSecurityPin);
 router.post("/verify-pin", verifySecurityPin);
 
 // ---------------------- Email Verification ----------------------
-// POST: User requests a new verification link
-router.post('/verify-email', sendVerificationEmail);         
-
-// GET: User clicks the link in the email to confirm verification
+router.post('/verify-email', sendVerificationEmail);         
 router.get('/confirm-verification/:token', confirmVerification); 
 
 // ---------------------- Password Reset --------------------------
-// POST: User sends email to request a reset link
 router.post('/forgotpassword', forgotPassword);
-
-// PUT: User uses the token from the email to submit a new password
 router.put('/resetpassword/:token', resetPassword); 
 
-module.exports = router;
+// Use ESM default export
+export default router;

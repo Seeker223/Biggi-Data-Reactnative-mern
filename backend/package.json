@@ -2,6 +2,7 @@
   "name": "biggidata",
   "version": "1.0.0",
   "description": "backend biggidata workflow",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
