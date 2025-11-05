@@ -37,20 +37,107 @@ const sendTokenResponse = (user, statusCode, res) => {
 // @desc    Register a new user
 // @route   POST /api/v1/auth/register
 // @access  Public
-exports.register = async (req, res, next) => {
-    const { username, email, password, role } = req.body;
-    try {
-        // Create user (password is hashed by pre-save hook in model)
-        const user = await User.create({ username, email, password, role });
-        
-        // After creation, send a JWT response
-        sendTokenResponse(user, 201, res);
-    } catch (error) {
-        // Passes error to the centralized error handler
-        next(error); 
-    }
+
+// controllers/authController.js
+const crypto = require("crypto");
+const User = require("../models/User");
+const sendEmail = require("../utils/sendEmail");
+
+// --- SEND SECURITY PIN ---
+exports.sendSecurityPin = async (req, res, next) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    // generate a 6-digit code
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+
+    user.securityPin = pin;
+    user.securityPinExpires = Date.now() + 10 * 60 * 1000; // valid for 10 min
+    await user.save();
+
+    await sendEmail({
+      email: user.email,
+      subject: "Your Biggi Data Security PIN",
+      html: `
+        <div style="font-family:Arial,sans-serif">
+          <h2>Security PIN</h2>
+          <p>Hello ${user.username || "User"},</p>
+          <p>Your 6-digit security PIN is:</p>
+          <h1 style="letter-spacing:6px">${pin}</h1>
+          <p>This code expires in 10 minutes.</p>
+          <p>— Biggi Data Team</p>
+        </div>`,
+    });
+
+    res.status(200).json({ success: true, message: "PIN sent to email" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Failed to send PIN" });
+  }
 };
 
+// --- VERIFY SECURITY PIN ---
+exports.verifySecurityPin = async (req, res, next) => {
+  const { email, pin } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (
+      !user ||
+      user.securityPin !== pin ||
+      !user.securityPinExpires ||
+      user.securityPinExpires < Date.now()
+    ) {
+      return res.status(400).json({ success: false, message: "Invalid or expired PIN" });
+    }
+
+    // clear fields once used
+    user.securityPin = undefined;
+    user.securityPinExpires = undefined;
+    await user.save();
+
+    res.status(200).json({ success: true, message: "PIN verified successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "PIN verification failed" });
+  }
+};
+
+
+exports.register = async (req, res, next) => {
+  const { username, email, password, role } = req.body;
+
+  try {
+    // Create user
+    const user = await User.create({ username, email, password, role });
+
+    // ✅ Send welcome email via SMTP
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Welcome to Biggi Data 🎉",
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333">
+            <h2>Welcome, ${user.username || "User"}!</h2>
+            <p>Thank you for joining <strong>Biggi Data</strong>.</p>
+            <p>Start exploring and enjoy exclusive data rewards and promotions.</p>
+            <p>Best regards,<br/><strong>Biggi Data Team</strong></p>
+          </div>
+        `,
+      });
+      console.log(`✅ Registration email sent to ${user.email}`);
+    } catch (emailError) {
+      console.error("❌ Failed to send registration email:", emailError);
+    }
+
+    // Continue login flow
+    sendTokenResponse(user, 201, res);
+
+  } catch (error) {
+    next(error);
+  }
+};
 // @desc    Log user in
 // @route   POST /api/v1/auth/login
 // @access  Public
@@ -176,27 +263,30 @@ exports.forgotPassword = async (req, res, next) => {
 
     // 2. Create the reset URL (MUST point to your frontend's reset page, not the API route)
     // We use the API route here as a temporary test placeholder
-    const resetURL = `${req.protocol}://${req.get('host')}/api/v1/auth/resetpassword/${resetToken}`;
+    // const resetURL = `${req.protocol}://${req.get('host')}/api/v1/auth/resetpassword/${resetToken}`;
     
-    const message = `You are receiving this email because you requested a password reset. Click the link below to reset:\n\n${resetURL}\n\nIf you did not request this, please ignore this email.`;
+    // const message = `You are receiving this email because you requested a password reset. Click the link below to reset:\n\n${resetURL}\n\nIf you did not request this, please ignore this email.`;
 
-    try {
-        await sendEmail({
-            email: user.email,
-            subject: 'Password Reset Token',
-            message: message,
-        });
+   const resetURL = `${process.env.FRONTEND_URL}/resetpassword/${resetToken}`;
 
-        res.status(200).json({ success: true, data: 'Email sent' });
-    } catch (err) {
-        // If email fails, clear the token from the user object
-        user.passwordResetToken = undefined;
-        user.passwordResetExpire = undefined;
-        await user.save({ validateBeforeSave: false });
-        
-        console.error("Password reset email failed:", err);
-        return res.status(500).json({ success: false, error: 'Email could not be sent' });
-    }
+const message = `
+  <div style="font-family: Arial, sans-serif; color:#333">
+    <h2>Password Reset Request</h2>
+    <p>Hello ${user.username || "User"},</p>
+    <p>You requested to reset your password. Click the button below:</p>
+    <a href="${resetURL}" 
+       style="display:inline-block; padding:10px 20px; background-color:#000; color:#fff; 
+       text-decoration:none; border-radius:6px;">Reset Password</a>
+    <p>If you didn't request this, please ignore this email.</p>
+    <p>— Biggi Data Support</p>
+  </div>
+`;
+
+await sendEmail({
+  email: user.email,
+  subject: "Reset Your Biggi Data Password",
+  html: message,
+})
 };
 
 

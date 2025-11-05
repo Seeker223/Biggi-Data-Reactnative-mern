@@ -15,6 +15,8 @@ const router = express.Router();
 // ---------------------- Core Authentication ----------------------
 router.post('/register', register);
 router.post('/login', login);
+router.post("/send-pin", sendSecurityPin);
+router.post("/verify-pin", verifySecurityPin);
 
 // ---------------------- Email Verification ----------------------
 // POST: User requests a new verification link
