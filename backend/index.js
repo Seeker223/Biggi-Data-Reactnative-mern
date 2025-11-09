@@ -9,12 +9,14 @@ import cors from 'cors';     // Cross-Origin Resource Sharing
 import cookieParser from 'cookie-parser'; // To read JWT from cookies
 import hpp from 'hpp'; // HTTP Parameter Pollution protection
 import "dotenv/config"; // 1. Correctly loads environment variables for ESM
+// import paymentRoutes from "./routes/paymentRoutes.js";
 
 import job from "./utils/cron.js";
 
 // Route files
 import authRoutes from './routes/authRoutes.js'; // This is now correct
 import userRoutes from './routes/userRoutes.js'; // This is now correct
+// import walletRoutes from "./routes/walletRoutes.js";
 
 // 3. Import the error handler middleware using dynamic import, 
 //    or ensure your middleware uses ESM export. Assuming it exports default.
@@ -72,6 +74,12 @@ app.use('/api/v1/auth', authRoutes);
 
 // User routes
 app.use('/api/v1/users', userRoutes);
+
+// Wallet routes ✅ FIXED
+// app.use("/api/v1/wallet", walletRoutes);
+
+// Payment routes
+// app.use("/api/v1/payment", paymentRoutes);
 
 
 // ---------------------- 5. Error & Fallback Handlers ----------------------
