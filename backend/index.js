@@ -16,6 +16,7 @@ import job from "./utils/cron.js";
 // Route files
 import authRoutes from './routes/authRoutes.js'; // This is now correct
 import userRoutes from './routes/userRoutes.js'; // This is now correct
+import walletRoutes from "./routes/walletRoutes.js";
 // import walletRoutes from "./routes/walletRoutes.js";
 
 // 3. Import the error handler middleware using dynamic import, 
@@ -74,6 +75,9 @@ app.use('/api/v1/auth', authRoutes);
 
 // User routes
 app.use('/api/v1/users', userRoutes);
+
+app.use("/api/v1/wallet", walletRoutes);
+
 
 // Wallet routes ✅ FIXED
 // app.use("/api/v1/wallet", walletRoutes);
