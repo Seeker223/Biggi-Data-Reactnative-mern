@@ -40,7 +40,7 @@ const userSchema = new mongoose.Schema({
   },
 phoneNumber: {
   type: String,
-  required: [true, "Phone number is required"],
+  required: false,
   unique: true,
   trim: true,
   match: [/^\+?[0-9]{7,15}$/, "Please enter a valid phone number"],
@@ -48,7 +48,7 @@ phoneNumber: {
 
 birthDate: {
   type: Date,
-  required: [true, "Date of Birth is required"],
+  required: false,
 },
 
   // For one-to-many relationship
