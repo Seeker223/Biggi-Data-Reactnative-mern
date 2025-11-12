@@ -23,7 +23,7 @@ router.post("/verify-pin", verifySecurityPin);
 
 // ---------------------- Email Verification ----------------------
 router.post('/verify-email', sendVerificationEmail);         
-router.get('/confirm-verification/:token', confirmVerification); 
+router.get('/confirm-verification/:token', confirmVerification);
 
 // ---------------------- Password Reset --------------------------
 router.post('/forgotpassword', forgotPassword);

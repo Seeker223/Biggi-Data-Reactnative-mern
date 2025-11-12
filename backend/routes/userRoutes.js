@@ -31,6 +31,31 @@ router.route('/:id')
 export default router;
 
 // // routes/userRoutes.js
+// import { Router } from "express";
+// import {
+//   getAllUsers,
+//   createUser,
+//   getUserById,
+//   updateUser,
+//   deleteUser,
+// } from "../controllers/userController.js";
+
+// import { protect, authorize } from "../middleware/auth.js";
+
+// const router = Router();
+
+// // ✅ Public - create user
+// router.post("/", createUser);
+
+// // ✅ Protected routes
+// router.get("/", protect, authorize("admin"), getAllUsers);
+// router.get("/:id", protect, getUserById);
+// router.put("/:id", protect, authorize("admin", "user"), updateUser);
+// router.delete("/:id", protect, authorize("admin"), deleteUser);
+
+// export default router;
+
+// // routes/userRoutes.js
 
 // const express = require('express');
 // const { 

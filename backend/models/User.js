@@ -38,6 +38,18 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "https://i.pravatar.cc/150?img=15",
   },
+phoneNumber: {
+  type: String,
+  required: [true, "Phone number is required"],
+  unique: true,
+  trim: true,
+  match: [/^\+?[0-9]{7,15}$/, "Please enter a valid phone number"],
+},
+
+birthDate: {
+  type: Date,
+  required: [true, "Date of Birth is required"],
+},
 
   // For one-to-many relationship
   wallets: [

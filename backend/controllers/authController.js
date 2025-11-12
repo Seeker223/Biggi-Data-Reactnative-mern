@@ -37,11 +37,11 @@ const sendTokenResponse = (user, statusCode, res) => {
 // @route   POST /api/v1/auth/register
 // @access  Public
 export const register = async (req, res, next) => {
-    const { username, email, password, role } = req.body;
+    const { username, email, password, phoneNumber, birthDate, role } = req.body;
 
     try {
         // Create user
-        const user = await User.create({ username, email, password, role });
+        const user = await User.create({ username, email, password, phoneNumber, birthDate, role });
 
         // ✅ Send welcome email via SMTP
         try {

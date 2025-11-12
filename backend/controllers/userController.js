@@ -1,3 +1,78 @@
+// // controllers/userController.js
+// import User from "../models/User.js";
+
+// // ✅ GET /api/v1/users/:id
+// export const getUserById = async (req, res) => {
+//   try {
+//     const userId = req.params.id;
+
+//     // Fetch user by ID (exclude password)
+//     const user = await User.findById(userId).select("-password");
+
+//     if (!user) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     res.status(200).json(user);
+//   } catch (error) {
+//     console.error("Error fetching user:", error);
+//     res.status(500).json({ error: "Server error fetching user" });
+//   }
+// };
+
+// // ✅ GET /api/v1/users
+// export const getAllUsers = async (req, res) => {
+//   try {
+//     const users = await User.find().select("-password");
+//     res.status(200).json(users);
+//   } catch (error) {
+//     res.status(500).json({ error: "Failed to fetch users" });
+//   }
+// };
+
+// // ✅ POST /api/v1/users
+// export const createUser = async (req, res) => {
+//   try {
+//     const newUser = await User.create(req.body);
+//     res.status(201).json(newUser);
+//   } catch (error) {
+//     res.status(400).json({ error: "User creation failed" });
+//   }
+// };
+
+// // ✅ PUT /api/v1/users/:id
+// export const updateUser = async (req, res) => {
+//   try {
+//     const user = await User.findByIdAndUpdate(req.params.id, req.body, {
+//       new: true,
+//       runValidators: true,
+//     }).select("-password");
+
+//     if (!user) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     res.status(200).json(user);
+//   } catch (error) {
+//     res.status(400).json({ error: "Update failed" });
+//   }
+// };
+
+// // ✅ DELETE /api/v1/users/:id
+// export const deleteUser = async (req, res) => {
+//   try {
+//     const user = await User.findByIdAndDelete(req.params.id);
+
+//     if (!user) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     res.status(200).json({ message: "User deleted successfully" });
+//   } catch (error) {
+//     res.status(500).json({ error: "Delete failed" });
+//   }
+// };
+
 // controllers/userController.js (Converted to ESM)
 
 import User from '../models/User.js'; // MUST include .js extension
