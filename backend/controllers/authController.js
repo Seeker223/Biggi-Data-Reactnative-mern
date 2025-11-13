@@ -7,24 +7,38 @@ export const register = async (req, res) => {
   try {
     const { username, email, password, phoneNumber, birthDate } = req.body;
 
+    // Dynamically build the duplicate check query
+    const duplicateQuery = [
+      { email },
+      { username }
+    ];
+
+    if (phoneNumber && phoneNumber.trim() !== "") {
+      duplicateQuery.push({ phoneNumber });
+    }
+
     // Check for duplicate user (by email, phone, or username)
-    const existingUser = await User.findOne({
-      $or: [{ email }, { phoneNumber }, { username }],
-    });
+    const existingUser = await User.findOne({ $or: duplicateQuery });
 
     if (existingUser) {
-      const duplicateField = existingUser.email === email
-        ? "Email"
-        : existingUser.phoneNumber === phoneNumber
-        ? "Phone number"
-        : "Username";
+      let duplicateField = "User";
+      if (existingUser.email === email) duplicateField = "Email";
+      else if (phoneNumber && existingUser.phoneNumber === phoneNumber) duplicateField = "Phone number";
+      else if (existingUser.username === username) duplicateField = "Username";
+
       return res
         .status(400)
         .json({ success: false, error: `${duplicateField} already registered` });
     }
 
     // Create user
-    const user = await User.create({ username, email, password, phoneNumber, birthDate });
+    const user = await User.create({
+      username,
+      email,
+      password,
+      phoneNumber: phoneNumber || undefined,
+      birthDate,
+    });
 
     // Generate and save 6-digit OTP
     const pin = user.generateSecurityPin();
