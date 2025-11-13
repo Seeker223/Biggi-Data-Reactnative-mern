@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import User from "../models/User.js";
 import sendEmail from "../utils/sendEmail.js";
 
@@ -6,48 +7,47 @@ export const register = async (req, res) => {
   try {
     const { username, email, password, phoneNumber, birthDate } = req.body;
 
-    // Check duplicates (email or phone)
+    // Check for duplicate user (by email, phone, or username)
     const existingUser = await User.findOne({
-      $or: [{ email }, { phoneNumber }],
+      $or: [{ email }, { phoneNumber }, { username }],
     });
 
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        error:
-          existingUser.email === email
-            ? "Email already registered"
-            : "Phone number already registered",
-      });
+      const duplicateField = existingUser.email === email
+        ? "Email"
+        : existingUser.phoneNumber === phoneNumber
+        ? "Phone number"
+        : "Username";
+      return res
+        .status(400)
+        .json({ success: false, error: `${duplicateField} already registered` });
     }
 
     // Create user
-    const user = await User.create({
-      username,
-      email,
-      password,
-      phoneNumber,
-      birthDate,
-    });
+    const user = await User.create({ username, email, password, phoneNumber, birthDate });
 
-    // Generate and attach 6-digit OTP
+    // Generate and save 6-digit OTP
     const pin = user.generateSecurityPin();
     await user.save({ validateBeforeSave: false });
 
-    // Prepare email
-    const message = `Welcome ${user.username}!\n\nYour 6-digit verification code is: ${pin}\n\n⚠️ This code expires in 10 minutes.`;
+    // Send OTP email
+    const message = `
+      <h2>Welcome, ${user.username}!</h2>
+      <p>Your 6-digit verification code is:</p>
+      <h1 style="letter-spacing:4px;">${pin}</h1>
+      <p>This code will expire in 10 minutes.</p>
+    `;
 
-await sendEmail({
-  email: user.email,
-  username: user.username,
-  subject: "Verify Your Account (6-digit PIN)",
-  message: `Welcome to Biggi Data! Please use the code below to verify your account.`,
-  pin,
-});
+    await sendEmail({
+      email: user.email,
+      subject: "Verify Your Account - Biggi Data",
+      message: message,
+      html: message,
+    });
 
     res.status(201).json({
       success: true,
-      message: "User registered successfully. Verification code sent via email.",
+      message: "User registered successfully. Verification code sent to email.",
     });
   } catch (error) {
     console.error("Register Error:", error);
@@ -60,11 +60,7 @@ export const verifySecurityPin = async (req, res) => {
   try {
     const { email, pin } = req.body;
 
-    if (!email || !pin)
-      return res.status(400).json({ success: false, error: "Email and PIN are required" });
-
     const user = await User.findOne({ email }).select("+securityPin +securityPinExpires");
-
     if (!user) return res.status(404).json({ success: false, error: "User not found" });
 
     if (!user.securityPinExpires || user.securityPinExpires < Date.now()) {
@@ -75,16 +71,12 @@ export const verifySecurityPin = async (req, res) => {
       return res.status(400).json({ success: false, error: "Invalid PIN" });
     }
 
-    // Update verification status
     user.isVerified = true;
     user.securityPin = undefined;
     user.securityPinExpires = undefined;
     await user.save({ validateBeforeSave: false });
 
-    res.status(200).json({
-      success: true,
-      message: "Account verified successfully. You can now log in.",
-    });
+    res.status(200).json({ success: true, message: "Account verified successfully" });
   } catch (error) {
     console.error("Verify PIN Error:", error);
     res.status(500).json({ success: false, error: "Verification failed" });
@@ -96,22 +88,32 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
+    // 1️⃣ Validate input
+    if (!email || !password) {
       return res.status(400).json({ success: false, error: "Please provide email and password" });
+    }
 
+    // 2️⃣ Find user and include password
     const user = await User.findOne({ email }).select("+password");
-    if (!user)
+    if (!user) {
       return res.status(400).json({ success: false, error: "Invalid credentials" });
+    }
 
-    if (!user.isVerified)
+    // 3️⃣ Check if verified
+    if (!user.isVerified) {
       return res.status(403).json({ success: false, error: "Please verify your account first" });
+    }
 
+    // 4️⃣ Compare passwords
     const isMatch = await user.matchPassword(password);
-    if (!isMatch)
+    if (!isMatch) {
       return res.status(400).json({ success: false, error: "Invalid credentials" });
+    }
 
+    // 5️⃣ Generate JWT
     const token = user.getSignedJwtToken();
 
+    // ✅ Include user info (no password)
     res.status(200).json({
       success: true,
       token,
@@ -119,11 +121,13 @@ export const login = async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
+        phoneNumber: user.phoneNumber,
+        age: user.age,
       },
     });
   } catch (error) {
     console.error("Login Error:", error);
-    res.status(500).json({ success: false, error: "Login failed" });
+    res.status(500).json({ success: false, error: "Server Error" });
   }
 };
 
@@ -131,8 +135,6 @@ export const login = async (req, res) => {
 export const resendSecurityPin = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email)
-      return res.status(400).json({ success: false, error: "Email is required" });
 
     const user = await User.findOne({ email });
     if (!user)
@@ -141,18 +143,25 @@ export const resendSecurityPin = async (req, res) => {
     const pin = user.generateSecurityPin();
     await user.save({ validateBeforeSave: false });
 
-    const message = `Your new verification code is: ${pin}\n\n⚠️ This code expires in 10 minutes.`;
+    const message = `
+      <p>Your new verification code is:</p>
+      <h1 style="letter-spacing:4px;">${pin}</h1>
+      <p>This code will expire in 10 minutes.</p>
+    `;
 
-await sendEmail({
-  email: user.email,
-  username: user.username,
-  subject: "New Verification Code",
-  message: `Here is your new verification code:`,
-  pin,
-});
-    res.status(200).json({ success: true, message: "New code sent successfully" });
+    await sendEmail({
+      email: user.email,
+      subject: "New Verification Code - Biggi Data",
+      message,
+      html: message,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "New verification code sent successfully.",
+    });
   } catch (error) {
     console.error("Resend OTP Error:", error);
-    res.status(500).json({ success: false, error: "Failed to resend code" });
+    res.status(500).json({ success: false, error: "Failed to resend verification code" });
   }
 };

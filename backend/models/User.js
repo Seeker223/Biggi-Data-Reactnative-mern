@@ -1,89 +1,126 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
-// Define schema
-const userSchema = new mongoose.Schema(
+const UserSchema = new mongoose.Schema(
   {
     username: {
       type: String,
-      required: [true, "Please enter your username"],
+      required: [true, "Please add a username"],
+      unique: true,
+      trim: true,
+      minlength: [3, "Username must be at least 3 characters"],
+      maxlength: [30, "Username cannot exceed 30 characters"],
     },
+
     email: {
       type: String,
-      required: [true, "Please enter your email"],
+      required: [true, "Please add an email address"],
       unique: true,
       lowercase: true,
+      match: [
+        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        "Please add a valid email address",
+      ],
     },
+
     password: {
       type: String,
-      required: [true, "Please enter your password"],
-      minlength: 6,
-      select: false, // Hide password by default
+      required: [true, "Please add a password"],
+      minlength: [6, "Password must be at least 6 characters long"],
+      select: false,
     },
+
     phoneNumber: {
       type: String,
       required: [true, "Phone number is required"],
       unique: true,
-      match: [/^\+?\d{10,15}$/, "Please enter a valid phone number"],
+      match: [/^\+?[0-9]{10,15}$/, "Please provide a valid phone number"],
     },
+
     birthDate: {
       type: Date,
       required: [true, "Date of Birth is required"],
     },
+
     isVerified: {
       type: Boolean,
       default: false,
     },
-    securityPin: {
+
+    role: {
       type: String,
-      select: false,
+      enum: ["user", "admin"],
+      default: "user",
     },
-    securityPinExpires: {
-      type: Date,
-      select: false,
-    },
+
+    securityPin: String,
+    securityPinExpires: Date,
+
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
 
-//
-// 🔐 1. Encrypt password before saving
-//
-userSchema.pre("save", async function (next) {
+// ---------------------- PASSWORD HASHING ----------------------
+UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-//
-// 🔑 2. Compare entered password with stored hash
-//
-userSchema.methods.matchPassword = async function (enteredPassword) {
+// ---------------------- MATCH PASSWORD ----------------------
+UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-//
-// 🪙 3. Sign and return JWT
-//
-userSchema.methods.getSignedJwtToken = function () {
+// ---------------------- SIGN JWT TOKEN ----------------------
+UserSchema.methods.getSignedJwtToken = function () {
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || "7d",
+    expiresIn: process.env.JWT_EXPIRE || "30d",
   });
 };
 
-//
-// 🔢 4. Generate 6-digit security PIN (OTP)
-//
-userSchema.methods.generateSecurityPin = function () {
-  const pin = Math.floor(100000 + Math.random() * 900000).toString(); // e.g. "483920"
+// ---------------------- GENERATE 6-DIGIT OTP ----------------------
+UserSchema.methods.generateSecurityPin = function () {
+  const pin = Math.floor(100000 + Math.random() * 900000).toString();
   this.securityPin = pin;
-  this.securityPinExpires = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+  this.securityPinExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
   return pin;
 };
 
-//
-// ✅ Export model
-//
-export default mongoose.model("User", userSchema);
+// ---------------------- RESET PASSWORD TOKEN ----------------------
+UserSchema.methods.getResetPasswordToken = function () {
+  const resetToken = crypto.randomBytes(20).toString("hex");
+
+  this.resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+  return resetToken;
+};
+
+// ---------------------- VIRTUAL FIELD: AGE ----------------------
+UserSchema.virtual("age").get(function () {
+  if (!this.birthDate) return null;
+  const today = new Date();
+  const birthDate = new Date(this.birthDate);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+});
+
+const User = mongoose.model("User", UserSchema);
+export default User;
