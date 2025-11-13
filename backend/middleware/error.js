@@ -18,7 +18,7 @@ const errorHandler = (err, req, res, next) => {
   if (err.code === 11000) {
     // Extract the key causing the duplication (e.g., 'email' or 'username')
     const field = Object.keys(err.keyValue); 
-    const message = `Duplicate field value entered: ${field.join(', ')}.`;
+    const message = `This User already exist. Go to login: ${field.join(', ')}.`;
     error = { statusCode: 400, message };
   }
 
