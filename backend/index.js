@@ -51,11 +51,32 @@ app.use(cookieParser());
 
 // Enable CORS
 // IMPORTANT: Update 'YOUR_FRONTEND_URL' before deployment
-app.use(cors({
-    origin: process.env.NODE_ENV === 'development' ? '*' : 'YOUR_FRONTEND_URL',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, 
-}));
+import cors from "cors";
+
+const allowedOrigins = [
+  "http://localhost:8081",               // Expo local dev
+  "http://localhost:3000",               // Web dev (if you use web)
+  "exp://*",                             // Expo app runtime
+  "https://biggi-data-frontend.vercel.app", // your deployed frontend
+  "https://biggi-data-backend.onrender.com", // optional for testing
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin) || origin.startsWith("exp://")) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    credentials: true,
+  })
+);
+
 
 // Set security headers using Helmet
 app.use(helmet());
