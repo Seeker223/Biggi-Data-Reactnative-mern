@@ -51,7 +51,6 @@ app.use(cookieParser());
 
 // Enable CORS
 // IMPORTANT: Update 'YOUR_FRONTEND_URL' before deployment
-import cors from "cors";
 
 const allowedOrigins = [
   "http://localhost:8081",               // Expo local dev
