@@ -89,6 +89,10 @@ app.use(hpp());
 app.get('/', (req, res) => {
   res.send('API is running... Status: OK');
 });
+// in index.js (before errorHandler)
+app.get("/api/v1/auth/ping", (req, res) => {
+  res.json({ success: true, message: "Server is alive!" });
+});
 
 // Authentication routes
 app.use('/api/v1/auth', authRoutes);
