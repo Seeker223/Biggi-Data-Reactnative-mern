@@ -86,12 +86,21 @@ app.use(hpp());
 
 // ---------------------- 4. Mount Routes (API Versioning) ----------------------
 
+// ---------------------- 4. Mount Routes (API Versioning) ----------------------
+
+// Health check (root)
 app.get('/', (req, res) => {
-  res.send('API is running... Status: OK');
+  res.send('API is running... Status: OK');
 });
-// in index.js (before errorHandler)
+
+// ✅ Add a lightweight ping endpoint for mobile debugging
 app.get("/api/v1/auth/ping", (req, res) => {
-  res.json({ success: true, message: "Server is alive!" });
+  res.status(200).json({
+    success: true,
+    message: "🚀 Backend is alive and reachable!",
+    time: new Date().toISOString(),
+    env: process.env.NODE_ENV || "development",
+  });
 });
 
 // Authentication routes
@@ -100,14 +109,9 @@ app.use('/api/v1/auth', authRoutes);
 // User routes
 app.use('/api/v1/users', userRoutes);
 
+// Wallet routes
 app.use("/api/v1/wallet", walletRoutes);
 
-
-// Wallet routes ✅ FIXED
-// app.use("/api/v1/wallet", walletRoutes);
-
-// Payment routes
-// app.use("/api/v1/payment", paymentRoutes);
 
 
 // ---------------------- 5. Error & Fallback Handlers ----------------------

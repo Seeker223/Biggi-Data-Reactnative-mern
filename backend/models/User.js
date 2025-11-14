@@ -47,7 +47,7 @@ const UserSchema = new mongoose.Schema(
 
     isVerified: {
       type: Boolean,
-      default: false,
+      default: true,
     },
 
     role: {
@@ -55,6 +55,43 @@ const UserSchema = new mongoose.Schema(
       enum: ["user", "admin"],
       default: "user",
     },
+    // ---------------- NEW FIELDS ----------------
+
+photo: {
+  type: String,
+  default: null,
+},
+
+mainBalance: {
+  type: Number,
+  default: 0,
+},
+
+rewardBalance: {
+  type: Number,
+  default: 0,
+},
+
+tickets: {
+  type: Number,
+  default: 0,
+},
+
+notifications: {
+  type: Number,
+  default: 0,
+},
+
+lastDailyGame: {
+  type: Date,
+  default: null,
+},
+
+dataBundleCount: {
+  type: Number,
+  default: 0,
+},
+
 
     securityPin: String,
     securityPinExpires: Date,
