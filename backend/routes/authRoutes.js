@@ -1,3 +1,4 @@
+//routes/authRoutes
 import express from "express";
 import {
   register,

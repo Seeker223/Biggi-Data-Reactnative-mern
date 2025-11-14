@@ -61,6 +61,13 @@ photo: {
   type: String,
   default: null,
 },
+virtualAccount: {
+  accountReference: String,
+  accountNumber: String,
+  bankName: String,
+  reservedAccountName: String
+},
+
 
 mainBalance: {
   type: Number,
@@ -68,6 +75,15 @@ mainBalance: {
 },
 
 rewardBalance: {
+  type: Number,
+  default: 0,
+},
+totalDeposits: {
+  type: Number,
+  default: 0,
+},
+
+dataBundleCount: {
   type: Number,
   default: 0,
 },
@@ -87,10 +103,6 @@ lastDailyGame: {
   default: null,
 },
 
-dataBundleCount: {
-  type: Number,
-  default: 0,
-},
 
 
     securityPin: String,

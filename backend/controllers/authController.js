@@ -1,3 +1,5 @@
+//controllers/authController.js
+
 import crypto from "crypto";
 import User from "../models/User.js";
 import sendEmail from "../utils/sendEmail.js";
