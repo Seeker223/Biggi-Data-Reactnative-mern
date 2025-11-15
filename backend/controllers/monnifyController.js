@@ -1,9 +1,11 @@
-// walletController.js
 import axios from "axios";
-import User from "../models/userModel.js";
+import User from "../models/User.js";
 
 const monnifyBase = "https://api.monnify.com";
 
+// ------------------------------------------------------------------
+// GET MONNIFY TOKEN
+// ------------------------------------------------------------------
 const getMonnifyToken = async () => {
   const auth = Buffer.from(
     `${process.env.MONNIFY_API_KEY}:${process.env.MONNIFY_SECRET_KEY}`
@@ -18,27 +20,26 @@ const getMonnifyToken = async () => {
   return res.data.responseBody.accessToken;
 };
 
-// ------------------------------------------------------------
-// CREATE STATIC VIRTUAL ACCOUNT
-// ------------------------------------------------------------
+// ------------------------------------------------------------------
+// 1️⃣ CREATE STATIC VIRTUAL ACCOUNT
+// ------------------------------------------------------------------
 export const createStaticAccount = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const userId = req.user.id;
 
-    // If already has account, return it
-    if (user.virtualAccount.length > 0) {
-      return res.json({ success: true, accounts: user.virtualAccount });
-    }
+    const user = await User.findById(userId);
+    if (!user)
+      return res.status(404).json({ success: false, msg: "User not found" });
 
     const token = await getMonnifyToken();
 
     const payload = {
       accountReference: user._id.toString(),
       accountName: user.username,
+      customerName: user.username,
       customerEmail: user.email,
       contractCode: process.env.MONNIFY_CONTRACT_CODE,
       currencyCode: "NGN",
-      getAllAvailableBanks: true
     };
 
     const response = await axios.post(
@@ -47,46 +48,105 @@ export const createStaticAccount = async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    user.virtualAccount = response.data.responseBody.accounts;
+    const acct = response.data.responseBody;
+
+    // Store inside user model
+    user.monnifyVirtualAccount = {
+      accountNumber: acct.accountNumber,
+      bankName: acct.bankName,
+    };
+
     await user.save();
 
-    res.json({
+    return res.json({
       success: true,
-      accounts: response.data.responseBody.accounts
+      accountNumber: acct.accountNumber,
+      bankName: acct.bankName,
     });
-
-  } catch (error) {
-    console.log("Monnify error:", error);
-    res.status(500).json({ success: false, message: "Error creating account" });
+  } catch (err) {
+    console.log("createStaticAccount error:", err.response?.data || err);
+    return res.status(500).json({
+      success: false,
+      msg: "Could not create static account. It will work when Monnify activates your API.",
+    });
   }
 };
 
-// ------------------------------------------------------------
-// MONNIFY WEBHOOK (Deposit Confirmation)
-// ------------------------------------------------------------
-export const monnifyWebhook = async (req, res) => {
+// ------------------------------------------------------------------
+// 2️⃣ INITIATE PAYMENT FOR WEBVIEW (OPTION B)
+// ------------------------------------------------------------------
+export const initiateMonnifyPayment = async (req, res) => {
   try {
-    const data = req.body;
-
-    // Only accept successful credit alerts
-    if (data.eventType !== "SUCCESSFUL_TRANSACTION") {
-      return res.status(200).send("ignored");
-    }
-
-    const userId = data.eventData.product.reference;
-    const amountPaid = data.eventData.amountPaid;
+    const { amount } = req.body;
+    const userId = req.user.id;
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).send("User not found");
+    if (!user)
+      return res.status(404).json({ success: false, msg: "User not found" });
+
+    const token = await getMonnifyToken();
+
+    const payload = {
+      amount,
+      customerName: user.username,
+      customerEmail: user.email,
+      paymentReference: `${user._id}-${Date.now()}`,
+      paymentDescription: "Wallet Funding - Biggi Data",
+      currencyCode: "NGN",
+      contractCode: process.env.MONNIFY_CONTRACT_CODE,
+      redirectUrl: "https://webhook.site/redirect-test",
+    };
+
+    const response = await axios.post(
+      `${monnifyBase}/api/v1/merchant/transactions/init-transaction`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    return res.json({
+      success: true,
+      checkoutUrl: response.data.responseBody.checkoutUrl,
+      reference: payload.paymentReference,
+    });
+  } catch (error) {
+    console.log("initiateMonnifyPayment error:", error.response?.data || error);
+    res.status(500).json({ success: false, msg: "Payment initialization failed" });
+  }
+};
+
+// ------------------------------------------------------------------
+// 3️⃣ WEBHOOK HANDLER (ONLY IN index.js)
+// ------------------------------------------------------------------
+export const monnifyWebhook = async (req, res) => {
+  try {
+    res.status(200).json({ received: true });
+
+    const event = req.body.eventType;
+    if (event !== "SUCCESSFUL_TRANSACTION") return;
+
+    const data = req.body.eventData;
+    const userId = data.paymentReference.split("-")[0];
+    const amountPaid = data.amountPaid;
+
+    const token = await getMonnifyToken();
+    const verify = await axios.get(
+      `${monnifyBase}/api/v2/transactions/${data.transactionReference}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (verify.data.responseBody.paymentStatus !== "PAID") {
+      console.log("Payment not confirmed by Monnify");
+      return;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return;
 
     user.mainBalance += Number(amountPaid);
-    user.totalDeposits += Number(amountPaid);
-
     await user.save();
 
-    res.status(200).send("OK");
+    console.log(`Wallet credited ₦${amountPaid} for ${user.username}`);
   } catch (err) {
     console.log("Webhook Error:", err);
-    res.status(500).send("Webhook Processing Error");
   }
 };

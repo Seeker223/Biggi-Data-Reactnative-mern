@@ -1,63 +1,69 @@
-// index.js
-
-import express from 'express';
-import mongoose from 'mongoose';
-import helmet from 'helmet';
-import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import hpp from 'hpp';
+import express from "express";
+import mongoose from "mongoose";
+import helmet from "helmet";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import hpp from "hpp";
 import "dotenv/config";
 
 import job from "./utils/cron.js";
 
-// Route files
-import authRoutes from './routes/authRoutes.js';
-import userRoutes from './routes/userRoutes.js';
+// Routes
+import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monnifyRoutes from "./routes/monnifyRoutes.js";
 
-// ✅ IMPORT THE WEBHOOK FUNCTION (you forgot this)
+// Monnify webhook (must NOT be inside router)
 import { monnifyWebhook } from "./controllers/monnifyController.js";
 
-// Error handler
-const { default: errorHandler } = await import('./middleware/error.js');
+// Error middleware
+const { default: errorHandler } = await import("./middleware/error.js");
 
 const app = express();
 
-// Render config
+// Server config
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
-// Database connection
-mongoose.connect(process.env.MONGO_URI)
+// -------------------------------
+// ⛔ CONNECT DATABASE
+// -------------------------------
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected 🚀"))
   .catch((err) => {
     console.error("MongoDB Error:", err.message);
     process.exit(1);
   });
 
-// -------------------------------------
-// 🔴 CRITICAL — Webhook MUST come before express.json()
-// -------------------------------------
-
+// ------------------------------------------------------------
+// ⚠️ CRITICAL — Webhook MUST be placed BEFORE express.json()
+// And MUST use express.raw() not json()
+// ------------------------------------------------------------
 app.post(
   "/api/monnify/webhook",
   express.raw({ type: "*/*" }),
   monnifyWebhook
 );
 
-// Standard middlewares
-app.use(express.json());
+// -------------------------------
+// GLOBAL MIDDLEWARES
+// -------------------------------
+app.use(express.json({ limit: "5mb" }));
 app.use(cookieParser());
 app.use(helmet());
 app.use(hpp());
 
-// CORS
+// -------------------------------
+// CORS CONFIG
+// -------------------------------
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (origin.startsWith("exp://")) return callback(null, true);
+      if (!origin) return callback(null, true); // mobile device
+
+      if (origin.startsWith("exp://")) return callback(null, true); // Expo Go
 
       const allowedOrigins = [
         "http://localhost:8081",
@@ -74,12 +80,14 @@ app.use(
   })
 );
 
-// Health check
+// ------------------------------------------------------------
+// HEALTH CHECK
+// ------------------------------------------------------------
 app.get("/", (req, res) => {
   res.send("API is running... OK");
 });
 
-// Ping
+// Authentication Ping
 app.get("/api/v1/auth/ping", (req, res) => {
   res.json({
     success: true,
@@ -88,16 +96,21 @@ app.get("/api/v1/auth/ping", (req, res) => {
   });
 });
 
-// Routes
+// ------------------------------------------------------------
+// ROUTES
+// ------------------------------------------------------------
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
+
+// 💳 Wallet routes (includes initiate-monnify-payment)
 app.use("/api/v1/wallet", walletRoutes);
 
-// Monnify routes (create account, manual credit)
+// Monnify additional routes (if any: static accounts, manual credit)
 app.use("/api/monnify", monnifyRoutes);
 
-
-// 404
+// -------------------------------
+// 404 Handler
+// -------------------------------
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -105,15 +118,21 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
+// -------------------------------
+// GLOBAL ERROR HANDLER
+// -------------------------------
 app.use(errorHandler);
 
-// Start server
+// -------------------------------
+// START SERVER
+// -------------------------------
 const server = app.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);
 });
 
-// Handle unhandled promise rejections
+// -------------------------------
+// CRASH SAFETY
+// -------------------------------
 process.on("unhandledRejection", (err) => {
   console.log(`Unhandled Error: ${err.message}`);
   server.close(() => process.exit(1));

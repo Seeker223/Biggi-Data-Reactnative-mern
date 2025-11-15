@@ -1,16 +1,15 @@
 import express from "express";
-import { protect } from "../middleware/auth.js";
-import {
-  getUserWallet,
-  initiateMonnifyPayment,
-} from "../controllers/walletController.js";
+import { 
+  createStaticAccount,
+  initiateMonnifyPayment
+} from "../controllers/monnifyController.js";
 
 const router = express.Router();
 
-// Fetch wallet
-router.get("/", protect, getUserWallet);
+// Create Static Virtual Account
+router.get("/create-static-account", createStaticAccount);
 
-// Initialize Monnify payment (WEBVIEW)
-router.post("/initiate-monnify-payment", protect, initiateMonnifyPayment);
+// WebView funding (option B)
+router.post("/initiate-monnify-payment", initiateMonnifyPayment);
 
 export default router;
