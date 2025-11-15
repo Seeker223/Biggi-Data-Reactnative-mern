@@ -75,6 +75,11 @@ rewardBalance: {
   type: Number,
   default: 0,
 },
+// MONNIFY STATIC ACCOUNT
+    monnifyVirtualAccount: {
+      accountNumber: { type: String, default: null },
+      bankName: { type: String, default: null },
+    },
 totalDeposits: {
   type: Number,
   default: 0,
