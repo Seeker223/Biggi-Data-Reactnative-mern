@@ -62,12 +62,9 @@ photo: {
   default: null,
 },
 virtualAccount: {
-  accountReference: String,
-  accountNumber: String,
-  bankName: String,
-  reservedAccountName: String
+  type: Array,
+  default: [],
 },
-
 
 mainBalance: {
   type: Number,

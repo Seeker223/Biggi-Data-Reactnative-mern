@@ -1,26 +1,59 @@
-// controllers/walletController.js
-import Wallet from "../models/Wallet.js";
+import axios from "axios";
 import User from "../models/User.js";
 
-export const getUserWallet = async (req, res) => {
+const monnifyBase = "https://api.monnify.com";
+
+const getMonnifyToken = async () => {
+  const auth = Buffer.from(
+    `${process.env.MONNIFY_API_KEY}:${process.env.MONNIFY_SECRET_KEY}`
+  ).toString("base64");
+
+  const res = await axios.post(
+    `${monnifyBase}/api/v1/auth/login`,
+    {},
+    { headers: { Authorization: `Basic ${auth}` } }
+  );
+
+  return res.data.responseBody.accessToken;
+};
+
+// --------------------------------------------------------
+// INITIATE PAYMENT — For WebView Checkout
+// --------------------------------------------------------
+export const initiateMonnifyPayment = async (req, res) => {
   try {
-    // In production, you’d use req.user.id (after auth middleware)
-    const userId = req.query.userId || "672f2b871b0f29160bce2a10"; // demo fallback ID
+    const { amount } = req.body;
+    const userId = req.user.id;
 
-    const user = await User.findById(userId).select("username photo email");
-    if (!user) return res.status(404).json({ success: false, error: "User not found" });
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, msg: "User not found" });
 
-    const wallet = await Wallet.findOne({ userId });
-    if (!wallet)
-      return res.status(404).json({ success: false, error: "Wallet not found" });
+    const token = await getMonnifyToken();
 
-    res.status(200).json({
+    const payload = {
+      amount,
+      customerName: user.username,
+      customerEmail: user.email,
+      paymentReference: `${user._id}-${Date.now()}`,
+      paymentDescription: "Wallet Funding - Biggi Data",
+      currencyCode: "NGN",
+      contractCode: process.env.MONNIFY_CONTRACT_CODE,
+      redirectUrl: "https://webhook.site/redirect-test",
+    };
+
+    const response = await axios.post(
+      `${monnifyBase}/api/v1/merchant/transactions/init-transaction`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    return res.json({
       success: true,
-      user,
-      wallet,
+      checkoutUrl: response.data.responseBody.checkoutUrl,
     });
-  } catch (err) {
-    console.error("Wallet fetch error:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+
+  } catch (error) {
+    console.log("initiateMonnifyPayment error:", error.response?.data || error);
+    res.status(500).json({ success: false, msg: "Payment initialization failed" });
   }
 };

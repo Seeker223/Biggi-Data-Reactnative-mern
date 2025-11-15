@@ -1,143 +1,120 @@
 // index.js
 
-// Node.js ES Modules (ESM) require the full file extension for local imports.
-
 import express from 'express';
 import mongoose from 'mongoose';
-import helmet from 'helmet'; // Security headers
-import cors from 'cors';     // Cross-Origin Resource Sharing
-import cookieParser from 'cookie-parser'; // To read JWT from cookies
-import hpp from 'hpp'; // HTTP Parameter Pollution protection
-import "dotenv/config"; // 1. Correctly loads environment variables for ESM
-// import paymentRoutes from "./routes/paymentRoutes.js";
+import helmet from 'helmet';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import hpp from 'hpp';
+import "dotenv/config";
 
 import job from "./utils/cron.js";
 
 // Route files
-import authRoutes from './routes/authRoutes.js'; // This is now correct
-import userRoutes from './routes/userRoutes.js'; // This is now correct
+import authRoutes from './routes/authRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 import walletRoutes from "./routes/walletRoutes.js";
-// import walletRoutes from "./routes/walletRoutes.js";
+import monnifyRoutes from "./routes/monnifyRoutes.js";
 
-// 3. Import the error handler middleware using dynamic import, 
-//    or ensure your middleware uses ESM export. Assuming it exports default.
-//    If your middleware/error.js is CommonJS (module.exports), use dynamic import:
-const { default: errorHandler } = await import('./middleware/error.js'); 
+// ✅ IMPORT THE WEBHOOK FUNCTION (you forgot this)
+import { monnifyWebhook } from "./controllers/monnifyController.js";
 
-job.start()
+// Error handler
+const { default: errorHandler } = await import('./middleware/error.js');
+
 const app = express();
 
-// --- 3. CRUCIAL RENDER CONFIGURATION ---
-// Server MUST bind to 0.0.0.0 and use Render's PORT environment variable.
+// Render config
 const PORT = process.env.PORT || 5000;
-const HOST = '0.0.0.0'; 
+const HOST = "0.0.0.0";
 
-// ---------------------- 2. Database Connection ----------------------
-
+// Database connection
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connection established successfully. 🚀'))
-  .catch((err) => {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1); // Exit process if connection fails
-  });
+  .then(() => console.log("MongoDB Connected 🚀"))
+  .catch((err) => {
+    console.error("MongoDB Error:", err.message);
+    process.exit(1);
+  });
 
-// ---------------------- 3. Middleware Stack ----------------------
+// -------------------------------------
+// 🔴 CRITICAL — Webhook MUST come before express.json()
+// -------------------------------------
 
-// Body Parser for JSON data
+app.post(
+  "/api/monnify/webhook",
+  express.raw({ type: "*/*" }),
+  monnifyWebhook
+);
+
+// Standard middlewares
 app.use(express.json());
-
-// Cookie Parser
 app.use(cookieParser());
+app.use(helmet());
+app.use(hpp());
 
-// Enable CORS
-// IMPORTANT: Update 'YOUR_FRONTEND_URL' before deployment
-
-const allowedOrigins = [
-  "http://localhost:8081",               // Expo local dev
-  "http://localhost:3000",               // Web dev (if you use web)
-  "exp://*",                             // Expo app runtime
-  "https://biggi-data-frontend.vercel.app", // your deployed frontend
-  "https://biggi-data-backend.onrender.com", // optional for testing
-];
-
+// CORS
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || origin.startsWith("exp://")) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
+      if (origin.startsWith("exp://")) return callback(null, true);
+
+      const allowedOrigins = [
+        "http://localhost:8081",
+        "http://localhost:3000",
+        "https://biggi-data-frontend.vercel.app",
+      ];
+
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+
+      callback(new Error("Not allowed by CORS"));
     },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   })
 );
 
-
-// Set security headers using Helmet
-app.use(helmet());
-
-// Protect against HTTP Parameter Pollution
-app.use(hpp()); 
-
-
-// ---------------------- 4. Mount Routes (API Versioning) ----------------------
-
-// ---------------------- 4. Mount Routes (API Versioning) ----------------------
-
-// Health check (root)
-app.get('/', (req, res) => {
-  res.send('API is running... Status: OK');
+// Health check
+app.get("/", (req, res) => {
+  res.send("API is running... OK");
 });
 
-// ✅ Add a lightweight ping endpoint for mobile debugging
+// Ping
 app.get("/api/v1/auth/ping", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
-    message: "🚀 Backend is alive and reachable!",
+    message: "Backend is alive",
     time: new Date().toISOString(),
-    env: process.env.NODE_ENV || "development",
   });
 });
 
-// Authentication routes
-app.use('/api/v1/auth', authRoutes);
-
-// User routes
-app.use('/api/v1/users', userRoutes);
-
-// Wallet routes
+// Routes
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/wallet", walletRoutes);
 
+// Monnify routes (create account, manual credit)
+app.use("/api/monnify", monnifyRoutes);
 
 
-// ---------------------- 5. Error & Fallback Handlers ----------------------
-
-// Handle requests for non-existent routes (404 Not Found)
-// This must be placed before the final errorHandler
-app.use((req, res, next) => {
-  res.status(404).json({ success: false, error: `Route not found: ${req.originalUrl}` });
+// 404
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: `Route not found: ${req.originalUrl}`,
+  });
 });
 
-// Centralized Error Handler Middleware (MUST be the last thing loaded)
+// Error handler
 app.use(errorHandler);
 
+// Start server
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`);
+});
 
-// ---------------------- 6. Start Server ----------------------
-
-const server = app.listen(
-    // Use the correctly defined PORT and HOST
-    PORT, 
-    HOST,
-    () => console.log(`Server running on host ${HOST} port ${PORT} in ${process.env.NODE_ENV} mode.`)
-);
-
-// Handle unhandled promise rejections (Good Practice)
-process.on('unhandledRejection', (err, promise) => {
-    console.log(`Error: ${err.message}`);
-    // Close server & exit process
-    server.close(() => process.exit(1));
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (err) => {
+  console.log(`Unhandled Error: ${err.message}`);
+  server.close(() => process.exit(1));
 });
