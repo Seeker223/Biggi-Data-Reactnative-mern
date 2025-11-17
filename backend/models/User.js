@@ -3,8 +3,34 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
+const DailyGameSchema = new mongoose.Schema({
+  numbers: {
+    type: [Number],
+    validate: {
+      validator: (v) => v.length === 5,
+      message: "Selection must contain exactly 5 numbers",
+    },
+  },
+  result: {
+    type: [Number],
+    default: [],
+  },
+  isWinner: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const WeeklyGameSchema = new mongoose.Schema({
+  numbers: { type: [Number], default: [] },
+  result: { type: [Number], default: [] },
+  isWinner: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+});
+
 const UserSchema = new mongoose.Schema(
   {
+    // -------------------------------------------------
+    // BASIC USER INFO
+    // -------------------------------------------------
     username: {
       type: String,
       required: [true, "Please add a username"],
@@ -34,7 +60,7 @@ const UserSchema = new mongoose.Schema(
 
     phoneNumber: {
       type: String,
-      required: [true, "Phone number is required"],
+      required: true,
       unique: true,
       match: [/^\+?[0-9]{10,15}$/, "Enter a valid phone number"],
       sparse: true,
@@ -56,9 +82,14 @@ const UserSchema = new mongoose.Schema(
       default: "user",
     },
 
-    // -------------------- PROFILE & ACCOUNT --------------------
+    // -------------------------------------------------
+    // PROFILE
+    // -------------------------------------------------
     photo: { type: String, default: null },
 
+    // -------------------------------------------------
+    // ACCOUNTS (Monnify, Wallet, etc.)
+    // -------------------------------------------------
     virtualAccount: {
       type: Array,
       default: [],
@@ -69,7 +100,9 @@ const UserSchema = new mongoose.Schema(
       bankName: { type: String, default: null },
     },
 
-    // -------------------- BALANCES --------------------
+    // -------------------------------------------------
+    // BALANCES & STATS
+    // -------------------------------------------------
     mainBalance: { type: Number, default: 0 },
     rewardBalance: { type: Number, default: 0 },
 
@@ -79,38 +112,17 @@ const UserSchema = new mongoose.Schema(
     tickets: { type: Number, default: 0 },
     notifications: { type: Number, default: 0 },
 
-    // -------------------- DAILY GAME --------------------
-    dailyNumberDraw: [
-      {
-        numbers: {
-          type: [Number], // exactly 5 numbers
-          validate: {
-            validator: (v) => v.length === 5,
-            message: "Selection must contain exactly 5 numbers",
-          },
-        },
-        result: {
-          type: [Number], // winning numbers (system-generated)
-          default: [],
-        },
-        isWinner: { type: Boolean, default: false },
-        createdAt: { type: Date, default: Date.now },
-      },
-    ],
-
+    // -------------------------------------------------
+    // GAME SYSTEM: DAILY / WEEKLY
+    // -------------------------------------------------
+    dailyNumberDraw: [DailyGameSchema],
     lastDailyGame: { type: Date, default: null },
 
-    // -------------------- WEEKLY GAME (future support) --------------------
-    weeklyNumberDraw: [
-      {
-        numbers: [Number],
-        result: [Number],
-        isWinner: Boolean,
-        createdAt: { type: Date, default: Date.now },
-      },
-    ],
+    weeklyNumberDraw: [WeeklyGameSchema],
 
-    // -------------------- SECURITY FIELDS --------------------
+    // -------------------------------------------------
+    // SECURITY / OTP / RESET
+    // -------------------------------------------------
     securityPin: String,
     securityPinExpires: Date,
 
@@ -126,24 +138,26 @@ const UserSchema = new mongoose.Schema(
 );
 
 //
-// =================== PASSWORD HASHING ===================
+// ================= PASSWORD HASHING =================
 //
 UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+
   next();
 });
 
 //
-// =================== MATCH PASSWORD ===================
+// ================= MATCH PASSWORD =================
 //
 UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 //
-// =================== JWT TOKEN ===================
+// ================= JWT TOKEN =================
 //
 UserSchema.methods.getSignedJwtToken = function () {
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
@@ -152,7 +166,7 @@ UserSchema.methods.getSignedJwtToken = function () {
 };
 
 //
-// =================== SECURITY PIN (OTP) ===================
+// ================= GENERATE SECURITY PIN (OTP) =================
 //
 UserSchema.methods.generateSecurityPin = function () {
   const pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -162,7 +176,7 @@ UserSchema.methods.generateSecurityPin = function () {
 };
 
 //
-// =================== RESET PASSWORD TOKEN ===================
+// ================= RESET PASSWORD TOKEN =================
 //
 UserSchema.methods.getResetPasswordToken = function () {
   const resetToken = crypto.randomBytes(20).toString("hex");
@@ -178,19 +192,21 @@ UserSchema.methods.getResetPasswordToken = function () {
 };
 
 //
-// =================== AGE VIRTUAL FIELD ===================
+// ================= AGE (VIRTUAL FIELD) =================
 //
 UserSchema.virtual("age").get(function () {
   if (!this.birthDate) return null;
 
   const today = new Date();
   const birth = new Date(this.birthDate);
-  let age = today.getFullYear() - birth.getFullYear();
 
+  let age = today.getFullYear() - birth.getFullYear();
   const month = today.getMonth() - birth.getMonth();
+
   if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) {
     age--;
   }
+
   return age;
 });
 
