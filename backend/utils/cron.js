@@ -4,11 +4,11 @@ import https from "https";
 import http from "http";
 import User from "../models/User.js";
 
-// ---------------------------------------------------------------------
-// 1. KEEP-ALIVE PING (Every 14 minutes for Render)
-// ---------------------------------------------------------------------
+/* ---------------------------------------------------------
+   1. KEEP-ALIVE PING (Render - every 14 minutes)
+--------------------------------------------------------- */
 
-const KEEP_ALIVE_URL = process.env.API_URL; 
+const KEEP_ALIVE_URL = process.env.API_URL;
 // Example in .env:
 // API_URL=https://biggi-data-reactnative-mern.onrender.com/
 
@@ -35,73 +35,80 @@ const keepAliveJob = new CronJob("*/14 * * * *", () => {
   req.end();
 });
 
+/* ---------------------------------------------------------
+   2. DAILY GAME DRAW (Runs every day at 00:01 AM)
+--------------------------------------------------------- */
 
-// ---------------------------------------------------------------------
-// 2. DAILY GAME DRAW (Runs every day at 00:01)
-// ---------------------------------------------------------------------
-
-// Generate 5 winning numbers between 1–50
+// Generate 5 unique winning numbers between 1–70
 function generateWinningNumbers() {
   const nums = new Set();
   while (nums.size < 5) {
-    nums.add(Math.floor(Math.random() * 50) + 1);
+    nums.add(Math.floor(Math.random() * 70) + 1);
   }
   return [...nums];
 }
 
 const dailyGameJob = new CronJob(
-  "1 0 * * *", // Runs daily at 00:01
+  "1 0 * * *", // Run at 00:01 AM daily
   async () => {
     try {
       console.log("🎯 [CRON] Running Daily Game Draw...");
 
       const winningNumbers = generateWinningNumbers();
-      console.log("🎉 Winning numbers:", winningNumbers);
+      console.log("🎉 Today’s Winning Numbers:", winningNumbers);
 
+      // Find all users who played within last 24 hours
       const users = await User.find();
 
       for (const user of users) {
         if (!user.dailyNumberDraw.length) continue;
 
-        let updated = false;
+        let mustSave = false;
 
-        user.dailyNumberDraw.forEach((draw) => {
-          // Only process plays from the last 24 hours
-          const diff = Date.now() - new Date(draw.createdAt).getTime();
+        user.dailyNumberDraw.forEach((entry) => {
+          const diff = Date.now() - new Date(entry.createdAt).getTime();
+
+          // Ignore entries older than 24 hours
           if (diff > 24 * 60 * 60 * 1000) return;
 
-          draw.result = winningNumbers;
+          entry.result = winningNumbers;
 
-          const matched = draw.numbers.every((n) =>
+          // Check if all 5 selected are inside winning numbers
+          const matchedAll = entry.numbers.every((n) =>
             winningNumbers.includes(n)
           );
 
-          draw.isWinner = matched;
+          entry.isWinner = matchedAll;
 
-          if (matched) {
-            user.rewardBalance += 500; // You can change reward amount
+          if (matchedAll) {
+            user.rewardBalance += 500; // reward for perfect match
+            user.notifications += 1;   // notify user
           }
 
-          updated = true;
+          mustSave = true;
         });
 
-        if (updated) await user.save();
+        if (mustSave) {
+          await user.save();
+        }
       }
 
-      console.log("✅ Daily game draw completed and user results updated.");
+      console.log("✅ Daily game draw completed successfully.");
     } catch (err) {
-      console.error("❌ Daily game cron error:", err);
+      console.error("❌ Daily Game Cron Error:", err);
     }
   },
   null,
   true
 );
 
+/* ---------------------------------------------------------
+   3. AUTO-START CRONS (prevent double-start on hot reload)
+--------------------------------------------------------- */
 
-// ---------------------------------------------------------------------
-// 3. AUTO-START BOTH CRONS
-// ---------------------------------------------------------------------
 if (!keepAliveJob.running) keepAliveJob.start();
 if (!dailyGameJob.running) dailyGameJob.start();
+
+console.log("⏱️ CRON SERVICE RUNNING...");
 
 export default { keepAliveJob, dailyGameJob };

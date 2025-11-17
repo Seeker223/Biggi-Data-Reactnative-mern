@@ -13,6 +13,8 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monnifyRoutes from "./routes/monnifyRoutes.js";
+import dailyGameRoutes from "./routes/dailyGameRoutes.js";
+
 
 // Monnify webhook (must NOT be inside router)
 import { monnifyWebhook } from "./controllers/monnifyController.js";
@@ -107,6 +109,7 @@ app.use("/api/v1/wallet", walletRoutes);
 
 // Monnify additional routes (if any: static accounts, manual credit)
 app.use("/api/v1/monnify", monnifyRoutes);
+app.use("/api/v1/daily-game", dailyGameRoutes);
 
 // -------------------------------
 // 404 Handler
