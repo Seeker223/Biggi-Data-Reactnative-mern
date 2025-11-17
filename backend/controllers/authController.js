@@ -71,6 +71,26 @@ export const register = async (req, res) => {
   }
 };
 
+export const getMe = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Not authorized" });
+    }
+
+    // fetch fresh user from DB and exclude password
+    const user = await User.findById(userId).select("-password");
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    return res.status(200).json({ success: true, user });
+  } catch (err) {
+    console.error("GET /auth/me error:", err);
+    return res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
 // ---------------------- VERIFY PIN ----------------------
 export const verifySecurityPin = async (req, res) => {
   try {

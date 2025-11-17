@@ -106,7 +106,7 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/wallet", walletRoutes);
 
 // Monnify additional routes (if any: static accounts, manual credit)
-app.use("/api/monnify", monnifyRoutes);
+app.use("/api/v1/monnify", monnifyRoutes);
 
 // -------------------------------
 // 404 Handler

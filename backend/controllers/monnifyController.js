@@ -3,9 +3,9 @@ import User from "../models/User.js";
 
 const monnifyBase = process.env.MONNIFY_BASE_URL;
 
-// ------------------------------------------------------------------
-// GET MONNIFY TOKEN
-// ------------------------------------------------------------------
+/* -----------------------------------------------------------
+   0. GET MONNIFY TOKEN
+----------------------------------------------------------- */
 const getMonnifyToken = async () => {
   const auth = Buffer.from(
     `${process.env.MONNIFY_API_KEY}:${process.env.MONNIFY_SECRET_KEY}`
@@ -20,16 +20,30 @@ const getMonnifyToken = async () => {
   return res.data.responseBody.accessToken;
 };
 
-// ------------------------------------------------------------------
-// 1️⃣ CREATE STATIC VIRTUAL ACCOUNT
-// ------------------------------------------------------------------
+/* -----------------------------------------------------------
+   1. CREATE STATIC MONNIFY ACCOUNT
+----------------------------------------------------------- */
 export const createStaticAccount = async (req, res) => {
   try {
-    const userId = req.user.id;
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ success: false, msg: "Unauthorized" });
+    }
 
-    const user = await User.findById(userId);
+    const user = await User.findById(req.user.id);
     if (!user)
       return res.status(404).json({ success: false, msg: "User not found" });
+
+    // Don't create duplicate static accounts
+    if (
+      user.monnifyVirtualAccount &&
+      user.monnifyVirtualAccount.accountNumber
+    ) {
+      return res.json({
+        success: true,
+        accountNumber: user.monnifyVirtualAccount.accountNumber,
+        bankName: user.monnifyVirtualAccount.bankName,
+      });
+    }
 
     const token = await getMonnifyToken();
 
@@ -50,7 +64,6 @@ export const createStaticAccount = async (req, res) => {
 
     const acct = response.data.responseBody;
 
-    // Store inside user model
     user.monnifyVirtualAccount = {
       accountNumber: acct.accountNumber,
       bankName: acct.bankName,
@@ -64,33 +77,41 @@ export const createStaticAccount = async (req, res) => {
       bankName: acct.bankName,
     });
   } catch (err) {
-    console.log("createStaticAccount error:", err.response?.data || err);
+    console.log("createStaticAccount ERROR:", err.response?.data || err);
+
     return res.status(500).json({
       success: false,
-      msg: "Could not create static account. It will work when Monnify activates your API.",
+      msg: "Monnify static account creation failed. Wait for activation.",
     });
   }
 };
 
-// ------------------------------------------------------------------
-// 2️⃣ INITIATE PAYMENT FOR WEBVIEW (OPTION B)
-// ------------------------------------------------------------------
+/* -----------------------------------------------------------
+   2. INITIATE WEBVIEW PAYMENT
+----------------------------------------------------------- */
 export const initiateMonnifyPayment = async (req, res) => {
   try {
     const { amount } = req.body;
-    const userId = req.user.id;
 
-    const user = await User.findById(userId);
+    if (!amount || amount < 100)
+      return res.status(400).json({
+        success: false,
+        msg: "Amount must be at least ₦100",
+      });
+
+    const user = await User.findById(req.user.id);
     if (!user)
       return res.status(404).json({ success: false, msg: "User not found" });
 
     const token = await getMonnifyToken();
 
+    const paymentReference = `${user._id}-${Date.now()}`;
+
     const payload = {
       amount,
       customerName: user.username,
       customerEmail: user.email,
-      paymentReference: `${user._id}-${Date.now()}`,
+      paymentReference,
       paymentDescription: "Wallet Funding - Biggi Data",
       currencyCode: "NGN",
       contractCode: process.env.MONNIFY_CONTRACT_CODE,
@@ -106,47 +127,63 @@ export const initiateMonnifyPayment = async (req, res) => {
     return res.json({
       success: true,
       checkoutUrl: response.data.responseBody.checkoutUrl,
-      reference: payload.paymentReference,
+      reference: paymentReference,
     });
   } catch (error) {
-    console.log("initiateMonnifyPayment error:", error.response?.data || error);
-    res.status(500).json({ success: false, msg: "Payment initialization failed" });
+    console.log("initiateMonnifyPayment ERROR:", error.response?.data || error);
+    res.status(500).json({
+      success: false,
+      msg: "Payment initialization failed",
+    });
   }
 };
 
-// ------------------------------------------------------------------
-// 3️⃣ WEBHOOK HANDLER (ONLY IN index.js)
-// ------------------------------------------------------------------
+/* -----------------------------------------------------------
+   3. MONNIFY WEBHOOK (index.js must use raw body)
+----------------------------------------------------------- */
 export const monnifyWebhook = async (req, res) => {
   try {
     res.status(200).json({ received: true });
 
-    const event = req.body.eventType;
-    if (event !== "SUCCESSFUL_TRANSACTION") return;
+    const eventType = req.body.eventType;
+    if (eventType !== "SUCCESSFUL_TRANSACTION") return;
 
     const data = req.body.eventData;
+
     const userId = data.paymentReference.split("-")[0];
-    const amountPaid = data.amountPaid;
+    const amountPaid = Number(data.amountPaid);
 
     const token = await getMonnifyToken();
+
+    // Verify from monnify
     const verify = await axios.get(
       `${monnifyBase}/api/v2/transactions/${data.transactionReference}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
     );
 
     if (verify.data.responseBody.paymentStatus !== "PAID") {
-      console.log("Payment not confirmed by Monnify");
+      console.log("❌ Payment not confirmed by Monnify");
       return;
     }
 
     const user = await User.findById(userId);
-    if (!user) return;
+    if (!user) {
+      console.log("❌ User not found for payment");
+      return;
+    }
 
-    user.mainBalance += Number(amountPaid);
+    // CREDIT WALLET
+    user.mainBalance = Number(user.mainBalance) + amountPaid;
+    user.totalDeposits = Number(user.totalDeposits) + amountPaid;
+
     await user.save();
 
-    console.log(`Wallet credited ₦${amountPaid} for ${user.username}`);
+    console.log(
+      `✅ Wallet credited ₦${amountPaid} for ${user.username}. New balance: ₦${user.mainBalance}`
+    );
   } catch (err) {
-    console.log("Webhook Error:", err);
+    console.log("Webhook ERROR:", err);
   }
 };

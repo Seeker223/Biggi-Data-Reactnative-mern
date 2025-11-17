@@ -7,45 +7,28 @@ import User from '../models/User.js'; // MUST include .js extension for Mongoose
 // Ensures the user is logged in (has a valid JWT)
 
 export const protect = async (req, res, next) => {
-    let token;
+  let token;
 
-    // 1. Check for token in the Authorization header (Bearer token standard)
-    if (
-        req.headers.authorization &&
-        req.headers.authorization.startsWith('Bearer')
-    ) {
-        // Example: "Bearer [TOKEN]" -> extract [TOKEN]
-        token = req.headers.authorization.split(' ')[1];
-    } 
-    // Optional: Check for token in cookies (if you chose a cookie-based approach)
-    // else if (req.cookies.token) {
-    //   token = req.cookies.token;
-    // }
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
+  }
 
-    // 2. Make sure token exists
-    if (!token) {
-        // Use 401 Unauthorized
-        return res.status(401).json({ success: false, error: 'Not authorized to access this route, no token provided' });
-    }
+  if (!token) {
+    return res.status(401).json({ success: false, error: "Not authorized" });
+  }
 
-    try {
-        // 3. Verify token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // 4. Attach user object to the request for use in controllers
-        // Exclude the password since the model has `select: false`, but ensure user exists
-        req.user = await User.findById(decoded.id);
-
-        if (!req.user) {
-            // Token was valid, but user might have been deleted from DB
-            return res.status(401).json({ success: false, error: 'User associated with token no longer exists' });
-        }
-        
-        next();
-    } catch (err) {
-        // This catches expired tokens, bad signatures, etc.
-        return res.status(401).json({ success: false, error: 'Not authorized, token is invalid or expired' });
-    }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // attach minimal user info (id) to req.user
+    req.user = { id: decoded.id };
+    next();
+  } catch (err) {
+    console.error("Protect middleware error:", err);
+    return res.status(401).json({ success: false, error: "Token invalid" });
+  }
 };
 
 
