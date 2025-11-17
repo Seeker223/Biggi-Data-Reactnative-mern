@@ -10,25 +10,25 @@ const UserSchema = new mongoose.Schema(
       required: [true, "Please add a username"],
       unique: true,
       trim: true,
-      minlength: [3, "Username must be at least 3 characters"],
-      maxlength: [30, "Username cannot exceed 30 characters"],
+      minlength: 3,
+      maxlength: 30,
     },
 
     email: {
       type: String,
-      required: [true, "Please add an email address"],
+      required: [true, "Please add an email"],
       unique: true,
       lowercase: true,
       match: [
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        "Please add a valid email address",
+        "Please add a valid email",
       ],
     },
 
     password: {
       type: String,
       required: [true, "Please add a password"],
-      minlength: [6, "Password must be at least 6 characters long"],
+      minlength: 6,
       select: false,
     },
 
@@ -36,13 +36,13 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: [true, "Phone number is required"],
       unique: true,
-      match: [/^\+?[0-9]{10,15}$/, "Please provide a valid phone number"],
+      match: [/^\+?[0-9]{10,15}$/, "Enter a valid phone number"],
       sparse: true,
     },
 
     birthDate: {
       type: Date,
-      required: [true, "Date of Birth is required"],
+      required: true,
     },
 
     isVerified: {
@@ -55,64 +55,69 @@ const UserSchema = new mongoose.Schema(
       enum: ["user", "admin"],
       default: "user",
     },
-    // ---------------- NEW FIELDS ----------------
 
-photo: {
-  type: String,
-  default: null,
-},
-virtualAccount: {
-  type: Array,
-  default: [],
-},
+    // -------------------- PROFILE & ACCOUNT --------------------
+    photo: { type: String, default: null },
 
-mainBalance: {
-  type: Number,
-  default: 0,
-},
+    virtualAccount: {
+      type: Array,
+      default: [],
+    },
 
-rewardBalance: {
-  type: Number,
-  default: 0,
-},
-// MONNIFY STATIC ACCOUNT
     monnifyVirtualAccount: {
       accountNumber: { type: String, default: null },
       bankName: { type: String, default: null },
     },
-totalDeposits: {
-  type: Number,
-  default: 0,
-},
 
-dataBundleCount: {
-  type: Number,
-  default: 0,
-},
+    // -------------------- BALANCES --------------------
+    mainBalance: { type: Number, default: 0 },
+    rewardBalance: { type: Number, default: 0 },
 
-tickets: {
-  type: Number,
-  default: 0,
-},
+    totalDeposits: { type: Number, default: 0 },
+    dataBundleCount: { type: Number, default: 0 },
 
-notifications: {
-  type: Number,
-  default: 0,
-},
+    tickets: { type: Number, default: 0 },
+    notifications: { type: Number, default: 0 },
 
-lastDailyGame: {
-  type: Date,
-  default: null,
-},
+    // -------------------- DAILY GAME --------------------
+    dailyNumberDraw: [
+      {
+        numbers: {
+          type: [Number], // exactly 5 numbers
+          validate: {
+            validator: (v) => v.length === 5,
+            message: "Selection must contain exactly 5 numbers",
+          },
+        },
+        result: {
+          type: [Number], // winning numbers (system-generated)
+          default: [],
+        },
+        isWinner: { type: Boolean, default: false },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
 
+    lastDailyGame: { type: Date, default: null },
 
+    // -------------------- WEEKLY GAME (future support) --------------------
+    weeklyNumberDraw: [
+      {
+        numbers: [Number],
+        result: [Number],
+        isWinner: Boolean,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
 
+    // -------------------- SECURITY FIELDS --------------------
     securityPin: String,
     securityPinExpires: Date,
 
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
+
   {
     timestamps: true,
     toJSON: { virtuals: true },
@@ -120,7 +125,9 @@ lastDailyGame: {
   }
 );
 
-// ---------------------- PASSWORD HASHING ----------------------
+//
+// =================== PASSWORD HASHING ===================
+//
 UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
@@ -128,27 +135,35 @@ UserSchema.pre("save", async function (next) {
   next();
 });
 
-// ---------------------- MATCH PASSWORD ----------------------
+//
+// =================== MATCH PASSWORD ===================
+//
 UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ---------------------- SIGN JWT TOKEN ----------------------
+//
+// =================== JWT TOKEN ===================
+//
 UserSchema.methods.getSignedJwtToken = function () {
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || "30d",
   });
 };
 
-// ---------------------- GENERATE 6-DIGIT OTP ----------------------
+//
+// =================== SECURITY PIN (OTP) ===================
+//
 UserSchema.methods.generateSecurityPin = function () {
   const pin = Math.floor(100000 + Math.random() * 900000).toString();
   this.securityPin = pin;
-  this.securityPinExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+  this.securityPinExpires = Date.now() + 10 * 60 * 1000;
   return pin;
 };
 
-// ---------------------- RESET PASSWORD TOKEN ----------------------
+//
+// =================== RESET PASSWORD TOKEN ===================
+//
 UserSchema.methods.getResetPasswordToken = function () {
   const resetToken = crypto.randomBytes(20).toString("hex");
 
@@ -157,22 +172,26 @@ UserSchema.methods.getResetPasswordToken = function () {
     .update(resetToken)
     .digest("hex");
 
-  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
+
   return resetToken;
 };
 
-// ---------------------- VIRTUAL FIELD: AGE ----------------------
+//
+// =================== AGE VIRTUAL FIELD ===================
+//
 UserSchema.virtual("age").get(function () {
   if (!this.birthDate) return null;
+
   const today = new Date();
-  const birthDate = new Date(this.birthDate);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+  const birth = new Date(this.birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+
+  const month = today.getMonth() - birth.getMonth();
+  if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) {
     age--;
   }
   return age;
 });
 
-const User = mongoose.model("User", UserSchema);
-export default User;
+export default mongoose.model("User", UserSchema);
