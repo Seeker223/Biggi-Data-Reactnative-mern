@@ -1,7 +1,7 @@
 import axios from "axios";
 import User from "../models/User.js";
 
-const monnifyBase = "https://api.monnify.com";
+const monnifyBase = process.env.MONNIFY_BASE_URL;
 
 // ------------------------------------------------------------------
 // GET MONNIFY TOKEN
