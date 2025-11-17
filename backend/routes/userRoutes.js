@@ -1,95 +1,67 @@
-// routes/userRoutes.js (Converted to ESM)
+// routes/userRoutes.js
 
-import { Router } from 'express'; // Use import, not require
-import { 
-    getAllUsers, 
-    createUser, 
-    getUserById, 
-    updateUser, 
-    deleteUser 
-} from '../controllers/userController.js'; // MUST include .js extension
+import { Router } from "express";
 
-// Import middleware using ESM
-import { protect, authorize } from '../middleware/auth.js'; // MUST include .js extension
+// Controllers
+import {
+    getAllUsers,
+    createUser,
+    getUserById,
+    updateUser,
+    deleteUser,
+    getMe,
+} from "../controllers/userController.js";
+
+// Middleware
+import { protect, authorize } from "../middleware/auth.js";
 
 const router = Router();
 
-// ---------------------- Public & Protected Collection Routes ----------------------
+/**
+ * @route   GET /api/users/me
+ * @desc    Get logged-in user's profile
+ * @access  Private
+ */
+router.get("/me", protect, getMe);
 
-router.route('/')
-  .get(protect, authorize('admin', 'publisher'), getAllUsers) 
-  .post(createUser); 
 
-// ---------------------- Protected Single Resource Routes ----------------------
+/**
+ * @route   GET /api/users
+ * @desc    Admin: Get all users
+ * @access  Private/Admin
+ */
+router.get("/", protect, authorize("admin"), getAllUsers);
 
-router.route('/:id')
-  .get(protect, getUserById) 
-  .put(protect, authorize('admin', 'user'), updateUser)
-  .delete(protect, authorize('admin'), deleteUser);
 
-// Use ESM default export
+/**
+ * @route   POST /api/users
+ * @desc    Admin: Create a new user
+ * @access  Private/Admin
+ */
+router.post("/", protect, authorize("admin"), createUser);
+
+
+/**
+ * @route   GET /api/users/:id
+ * @desc    Get single user by ID
+ * @access  Private
+ */
+router.get("/:id", protect, getUserById);
+
+
+/**
+ * @route   PUT /api/users/:id
+ * @desc    Update user
+ * @access  Private (user can update own profile) / Admin
+ */
+router.put("/:id", protect, updateUser);
+
+
+/**
+ * @route   DELETE /api/users/:id
+ * @desc    Admin: Delete user
+ * @access  Private/Admin
+ */
+router.delete("/:id", protect, authorize("admin"), deleteUser);
+
 export default router;
-
-// // routes/userRoutes.js
-// import { Router } from "express";
-// import {
-//   getAllUsers,
-//   createUser,
-//   getUserById,
-//   updateUser,
-//   deleteUser,
-// } from "../controllers/userController.js";
-
-// import { protect, authorize } from "../middleware/auth.js";
-
-// const router = Router();
-
-// // ✅ Public - create user
-// router.post("/", createUser);
-
-// // ✅ Protected routes
-// router.get("/", protect, authorize("admin"), getAllUsers);
-// router.get("/:id", protect, getUserById);
-// router.put("/:id", protect, authorize("admin", "user"), updateUser);
-// router.delete("/:id", protect, authorize("admin"), deleteUser);
-
-// export default router;
-
-// // routes/userRoutes.js
-
-// const express = require('express');
-// const { 
-//   getAllUsers, 
-//   createUser,       // Note: In a production app, user creation is often handled by authRoutes.js (register)
-//   getUserById, 
-//   updateUser, 
-//   deleteUser 
-// } = require('../controllers/userController');
-
-// // Import middleware for protection and authorization
-// const { protect, authorize } = require('../middleware/auth'); 
-
-// const router = express.Router();
-
-// // ---------------------- Public & Protected Collection Routes ----------------------
-
-// router.route('/')
-//   // GET: Get all users (Example: make this public for browsing, or protect it)
-//   .get(protect, authorize('admin', 'publisher'), getAllUsers) 
-  
-//   // POST: Create a new user (Note: Typically handled by the /api/v1/auth/register route)
-//   .post(createUser); 
-
-// // ---------------------- Protected Single Resource Routes ----------------------
-
-// router.route('/:id')
-//   // GET: Get a single user by ID (Protected: Requires login)
-//   .get(protect, getUserById) 
-  
-//   // PUT: Update a user (Protected: Requires login and specific roles)
-//   .put(protect, authorize('admin', 'user'), updateUser)
-  
-//   // DELETE: Delete a user (Highly Restricted: Requires Admin role)
-//   .delete(protect, authorize('admin'), deleteUser);
-
-// module.exports = router;
