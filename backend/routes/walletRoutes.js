@@ -18,5 +18,10 @@ router.post("/initiate-monnify-payment", initiateMonnifyPayment);
 
 router.post("/withdraw", protect, withdrawFunds);
 
+router.get("/withdraw/history", protect, async (req, res) => {
+  const history = await Withdraw.find({ user: req.user.id })
+    .sort({ createdAt: -1 });
+  res.json({ success: true, history });
+});
 
 export default router;
