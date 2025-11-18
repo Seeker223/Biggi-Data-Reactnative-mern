@@ -14,6 +14,8 @@ import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monnifyRoutes from "./routes/monnifyRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
+import dataRoutes from "./routes/dataBundleRoutes.js";
+
 
 
 // Monnify webhook (must NOT be inside router)
@@ -111,6 +113,7 @@ app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/monnify", monnifyRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
 
+app.use("/api/data", dataRoutes);
 // -------------------------------
 // 404 Handler
 // -------------------------------
