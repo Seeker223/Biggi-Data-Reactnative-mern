@@ -113,8 +113,7 @@ app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/monnify", monnifyRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
 
-app.use("/api/data", dataRoutes);
-// -------------------------------
+app.use("/api/v1/data", dataRoutes);// -------------------------------
 // 404 Handler
 // -------------------------------
 app.use((req, res) => {
