@@ -6,6 +6,10 @@ import cookieParser from "cookie-parser";
 import hpp from "hpp";
 import "dotenv/config";
 
+console.log("Zeni API KEY =>", process.env.ZENI_API_KEY);
+console.log("Zeni CONTRACT KEY =>", process.env.ZENI_CONTRACT_KEY);
+
+
 import job from "./utils/cron.js";
 
 // Routes
@@ -15,6 +19,8 @@ import walletRoutes from "./routes/walletRoutes.js";
 import monnifyRoutes from "./routes/monnifyRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
 import dataRoutes from "./routes/dataBundleRoutes.js";
+import planRoutes from "./routes/planRoutes.js";
+import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 
 
 
@@ -112,6 +118,9 @@ app.use("/api/v1/wallet", walletRoutes);
 // Monnify additional routes (if any: static accounts, manual credit)
 app.use("/api/v1/monnify", monnifyRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
+
+app.use("/api/v1/plans", planRoutes);
+app.use("/api/v1/data", dataPurchaseRoutes);
 
 app.use("/api/v1/data", dataRoutes);// -------------------------------
 // 404 Handler

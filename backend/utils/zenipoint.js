@@ -1,22 +1,43 @@
 import axios from "axios";
 
-const ZENI_API_URL = "https://zenipoint.com/api";
-const ZENI_API_KEY = process.env.ZENI_API_KEY;
-const ZENI_CONTRACT_KEY = process.env.ZENI_CONTRACT_KEY;
+const ZENI_API_URL = "https://api.zenipoint.com.ng/api"; // CORRECT
 
-const authHeader = Buffer.from(`${ZENI_API_KEY}:${ZENI_CONTRACT_KEY}`).toString("base64");
+function getAuthHeader() {
+  const key = process.env.ZENI_API_KEY;
+  const contract = process.env.ZENI_CONTRACT_KEY;
 
-export const zenipointRequest = axios.create({
+  if (!key || !contract) {
+    throw new Error("Zenipoint API credentials missing");
+  }
+
+  return `Basic ${Buffer.from(`${key}:${contract}`).toString("base64")}`;
+}
+
+export const zeniClient = axios.create({
   baseURL: ZENI_API_URL,
-  headers: {
-    "Authorization": `Basic ${authHeader}`,
-    "Content-Type": "application/json"
-  },
-  timeout: 15000,
+  timeout: 20000,
 });
 
-/** Generate Reference */
+/* GET */
+export const zenipointGet = async (path) => {
+  return zeniClient.get(path, {
+    headers: {
+      Authorization: getAuthHeader(),
+      Accept: "application/json",
+    },
+  });
+};
+
+/* POST */
+export const zenipointPost = async (path, payload) => {
+  return zeniClient.post(path, payload, {
+    headers: {
+      Authorization: getAuthHeader(),
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+  });
+};
+
 export const generateReference = () =>
-  String(Math.floor(10000000 + Math.random() * 90000000)) +
-  Date.now() +
-  Math.floor(Math.random() * 99999);
+  `BGG-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
