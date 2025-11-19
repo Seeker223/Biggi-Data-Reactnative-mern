@@ -1,3 +1,4 @@
+// models/DataPlan.js
 import mongoose from "mongoose";
 
 const dataPlanSchema = new mongoose.Schema(
@@ -17,12 +18,12 @@ const dataPlanSchema = new mongoose.Schema(
     plan_id: {
       type: String,
       required: true,
-      unique: true, // Internal unique ID (e.g. mtnsme_1)
+      unique: true,
     },
 
     zenipoint_code: {
       type: String,
-      required: true, // The actual PLAN_CODE Zenipoint needs (e.g. 1000)
+      required: true,
     },
 
     name: {
