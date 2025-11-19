@@ -1,4 +1,4 @@
-// seeds/dataPlans.js
+// backend/data/seedPlans.js
 import mongoose from "mongoose";
 import DataPlan from "../models/DataPlan.js";
 import "dotenv/config.js";

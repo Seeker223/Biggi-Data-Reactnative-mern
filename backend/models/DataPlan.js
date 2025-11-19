@@ -1,42 +1,22 @@
-// models/DataPlan.js
+// backend/models/DataPlan.js
 import mongoose from "mongoose";
 
-const dataPlanSchema = new mongoose.Schema(
+const DataPlanSchema = new mongoose.Schema(
   {
-    network: {
-      type: String,
-      required: true,
-      enum: ["mtn", "glo", "airtel", "etisalat"],
-    },
+    plan_id: { type: String, required: true, unique: true }, // e.g. mtn_sme_1gb
+    name: { type: String, required: true }, // MTN SME 1GB
+    network: { type: String, required: true }, // mtn, glo, airtel
+    category: { type: String, required: true }, // sme, gift, corporate
+    amount: { type: Number, required: true },
+    validity: { type: String, default: "30 days" },
 
-    category: {
-      type: String,
-      required: true,
-      enum: ["SME", "GIFTING", "CG"],
-    },
+    // LIVE Zenipoint Code
+    zenipoint_code: { type: String, default: null }, // actual plan code from Zenipoint
 
-    plan_id: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-
-    zenipoint_code: {
-      type: String,
-      required: true,
-    },
-
-    name: {
-      type: String,
-      required: true,
-    },
-
-    amount: {
-      type: Number,
-      required: true,
-    },
+    // optional flags
+    active: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
-export default mongoose.model("DataPlan", dataPlanSchema);
+export default mongoose.model("DataPlan", DataPlanSchema);

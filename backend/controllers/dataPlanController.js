@@ -1,6 +1,7 @@
+// backend/controllers/plansController.js
 import DataPlan from "../models/DataPlan.js";
 
-/* Create */
+/* Create plan (admin) */
 export const createPlan = async (req, res) => {
   try {
     const plan = await DataPlan.create(req.body);
@@ -10,7 +11,7 @@ export const createPlan = async (req, res) => {
   }
 };
 
-/* Update */
+/* Update plan (admin) */
 export const updatePlan = async (req, res) => {
   try {
     const plan = await DataPlan.findByIdAndUpdate(req.params.id, req.body, {
@@ -22,7 +23,7 @@ export const updatePlan = async (req, res) => {
   }
 };
 
-/* Delete */
+/* Delete plan (admin) */
 export const deletePlan = async (req, res) => {
   try {
     await DataPlan.findByIdAndDelete(req.params.id);
@@ -32,7 +33,7 @@ export const deletePlan = async (req, res) => {
   }
 };
 
-/* Get All Plans */
+/* Get all plans (public) */
 export const getAllPlans = async (req, res) => {
   try {
     const plans = await DataPlan.find();
@@ -42,7 +43,7 @@ export const getAllPlans = async (req, res) => {
   }
 };
 
-/* Get Plans by Category */
+/* Get plans by network + category (public) */
 export const getPlansByCategory = async (req, res) => {
   try {
     const { network, category } = req.params;

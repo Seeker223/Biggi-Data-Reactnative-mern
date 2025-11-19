@@ -9,7 +9,7 @@ import "dotenv/config";
 console.log("Zeni API KEY =>", process.env.ZENI_API_KEY);
 console.log("Zeni CONTRACT KEY =>", process.env.ZENI_CONTRACT_KEY);
 
-
+// Cron job
 import job from "./utils/cron.js";
 
 // Routes
@@ -18,11 +18,13 @@ import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monnifyRoutes from "./routes/monnifyRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
-import dataRoutes from "./routes/dataBundleRoutes.js";
+
+// NEW plan + data purchase routes
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 
-
+// Debug helper
+import DataPlan from "./models/DataPlan.js";
 
 // Monnify webhook (must NOT be inside router)
 import { monnifyWebhook } from "./controllers/monnifyController.js";
@@ -32,13 +34,12 @@ const { default: errorHandler } = await import("./middleware/error.js");
 
 const app = express();
 
-// Server config
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
-// -------------------------------
-// ⛔ CONNECT DATABASE
-// -------------------------------
+// ----------------------------------------
+// 🔌 CONNECT MONGO
+// ----------------------------------------
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected 🚀"))
@@ -48,8 +49,7 @@ mongoose
   });
 
 // ------------------------------------------------------------
-// ⚠️ CRITICAL — Webhook MUST be placed BEFORE express.json()
-// And MUST use express.raw() not json()
+// 🚨 MONNIFY WEBHOOK — MUST BE BEFORE express.json()
 // ------------------------------------------------------------
 app.post(
   "/api/monnify/webhook",
@@ -57,21 +57,33 @@ app.post(
   monnifyWebhook
 );
 
-// -------------------------------
+// ------------------------------------------------------------
+// 🔍 DEBUG: Check data plans in DB
+// ------------------------------------------------------------
+app.get("/check-plans", async (req, res) => {
+  try {
+    const plans = await DataPlan.find();
+    res.json({ success: true, plans });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ----------------------------------------
 // GLOBAL MIDDLEWARES
-// -------------------------------
+// ----------------------------------------
 app.use(express.json({ limit: "5mb" }));
 app.use(cookieParser());
 app.use(helmet());
 app.use(hpp());
 
-// -------------------------------
+// ----------------------------------------
 // CORS CONFIG
-// -------------------------------
+// ----------------------------------------
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // mobile device
+      if (!origin) return callback(null, true); // Mobile / Postman / CLI
 
       if (origin.startsWith("exp://")) return callback(null, true); // Expo Go
 
@@ -90,41 +102,43 @@ app.use(
   })
 );
 
-// ------------------------------------------------------------
-// HEALTH CHECK
-// ------------------------------------------------------------
+// ----------------------------------------
+// HEALTH ROUTES
+// ----------------------------------------
 app.get("/", (req, res) => {
   res.send("API is running... OK");
 });
 
-// Authentication Ping
 app.get("/api/v1/auth/ping", (req, res) => {
   res.json({
     success: true,
-    message: "Backend is alive",
+    message: "Backend alive",
     time: new Date().toISOString(),
   });
 });
 
-// ------------------------------------------------------------
-// ROUTES
-// ------------------------------------------------------------
+// ----------------------------------------
+// MAIN ROUTES
+// ----------------------------------------
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 
-// 💳 Wallet routes (includes initiate-monnify-payment)
 app.use("/api/v1/wallet", walletRoutes);
-
-// Monnify additional routes (if any: static accounts, manual credit)
 app.use("/api/v1/monnify", monnifyRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
 
+// ⭐ NEW — DB-BASED DATA PLAN LISTING
 app.use("/api/v1/plans", planRoutes);
+
+// ⭐ NEW — ZENIPOINT DATA PURCHASE
 app.use("/api/v1/data", dataPurchaseRoutes);
 
-app.use("/api/v1/data", dataRoutes);// -------------------------------
-// 404 Handler
-// -------------------------------
+// ⚠️ REMOVED — old local-JSON dataBundleRoutes
+// app.use("/api/v1/data/plans", dataRoutes);  <-- DELETED COMPLETELY
+
+// ----------------------------------------
+// 404 HANDLER
+// ----------------------------------------
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -132,21 +146,21 @@ app.use((req, res) => {
   });
 });
 
-// -------------------------------
+// ----------------------------------------
 // GLOBAL ERROR HANDLER
-// -------------------------------
+// ----------------------------------------
 app.use(errorHandler);
 
-// -------------------------------
+// ----------------------------------------
 // START SERVER
-// -------------------------------
+// ----------------------------------------
 const server = app.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);
 });
 
-// -------------------------------
+// ----------------------------------------
 // CRASH SAFETY
-// -------------------------------
+// ----------------------------------------
 process.on("unhandledRejection", (err) => {
   console.log(`Unhandled Error: ${err.message}`);
   server.close(() => process.exit(1));

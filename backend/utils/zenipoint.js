@@ -1,43 +1,40 @@
+// backend/utils/zenipoint.js
 import axios from "axios";
 
-const ZENI_API_URL = "https://api.zenipoint.com.ng/api"; // CORRECT
-
-function getAuthHeader() {
-  const key = process.env.ZENI_API_KEY;
-  const contract = process.env.ZENI_CONTRACT_KEY;
-
-  if (!key || !contract) {
-    throw new Error("Zenipoint API credentials missing");
-  }
-
-  return `Basic ${Buffer.from(`${key}:${contract}`).toString("base64")}`;
-}
-
-export const zeniClient = axios.create({
-  baseURL: ZENI_API_URL,
-  timeout: 20000,
-});
-
-/* GET */
-export const zenipointGet = async (path) => {
-  return zeniClient.get(path, {
-    headers: {
-      Authorization: getAuthHeader(),
-      Accept: "application/json",
-    },
-  });
-};
-
-/* POST */
-export const zenipointPost = async (path, payload) => {
-  return zeniClient.post(path, payload, {
-    headers: {
-      Authorization: getAuthHeader(),
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-  });
-};
+const BASE_URL = process.env.ZENI_BASE_URL || "https://zenipoint.com/api";
+const LIVE = process.env.ZENI_LIVE === "true";
 
 export const generateReference = () =>
-  `BGG-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  "BD" + Date.now() + Math.floor(Math.random() * 999999);
+
+export const zenipointPost = async (endpoint, payload) => {
+  if (!LIVE) {
+    // LOCAL SIMULATION MODE
+    return {
+      data: {
+        status: "success",
+        code: 200,
+        message: `[LOCAL TEST MODE] Simulated purchase OK`,
+        payload,
+      },
+    };
+  }
+
+  const apiKey = process.env.ZENI_API_KEY;
+  const contractKey = process.env.ZENI_CONTRACT_KEY;
+
+  const authKey = Buffer.from(`${apiKey}:${contractKey}`).toString("base64");
+
+  try {
+    return await axios.post(`${BASE_URL}${endpoint}`, payload, {
+      headers: {
+        Authorization: `Basic ${authKey}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 12000,
+    });
+  } catch (err) {
+    console.error("ZENIPOINT ERROR:", err.response?.data || err.message);
+    throw err;
+  }
+};

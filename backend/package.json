@@ -7,8 +7,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "seed": "node data/seedPlan.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  
   "author": "badun oluwatobi",
   "license": "ISC",
   "dependencies": {
