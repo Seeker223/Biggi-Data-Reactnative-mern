@@ -3,47 +3,56 @@ import DataPlan from "../models/DataPlan.js";
 import User from "../models/User.js";
 import { zenipointPost, generateReference } from "../utils/zenipoint.js";
 
-const LIVE = process.env.ZENI_LIVE === "true";
-
-/**
- * POST /api/v1/data/buy
- * LOCAL & PRODUCTION (Zenipoint Live) READY
- */
 export const buyData = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId)
-      return res.status(401).json({ success: false, msg: "Unauthorized" });
+    if (!userId) {
+      return res.status(401).json({ success: false, msg: "Not authorized" });
+    }
 
     const { plan_id, mobile_no } = req.body;
+
     if (!plan_id || !mobile_no) {
       return res.status(400).json({
         success: false,
-        msg: "plan_id and mobile_no are required",
+        msg: "plan_id and mobile_no required",
       });
     }
 
-    // Get plan from DB
-    const plan = await DataPlan.findOne({ plan_id });
-    if (!plan)
-      return res.status(404).json({ success: false, msg: "Invalid plan" });
+    // Normalize incoming plan_id
+    const normalizedPlanId = (plan_id || "").trim().toLowerCase();
 
-    // Check zenipoint_code (needed for live mode)
-    if (LIVE && !plan.zenipoint_code) {
-      return res.status(400).json({
+    // --- Debugging (Optional) ---
+    console.log("📦 Incoming plan_id:", normalizedPlanId);
+
+    // Fetch plan
+    const plan = await DataPlan.findOne({
+      plan_id: normalizedPlanId,
+      active: true,
+    });
+
+    if (!plan) {
+      console.log("❌ Plan not found:", normalizedPlanId);
+      return res.status(404).json({
         success: false,
-        msg: "Plan has no Zenipoint code",
+        msg: "Invalid plan — plan_id not found in DB",
       });
     }
 
-    // Get user
+    // Fetch user
     const user = await User.findById(userId);
-    if (!user)
+    if (!user) {
       return res.status(404).json({ success: false, msg: "User not found" });
+    }
 
     const amount = Number(plan.amount);
+
+    // Check wallet balance
     if (user.mainBalance < amount) {
-      return res.status(400).json({ success: false, msg: "Insufficient balance" });
+      return res.status(400).json({
+        success: false,
+        msg: "Insufficient balance",
+      });
     }
 
     // Deduct user balance
@@ -52,84 +61,65 @@ export const buyData = async (req, res) => {
 
     const reference = generateReference();
 
-    // ==========================================================
-    //  🔥 LOCAL TEST MODE — SKIP ZENIPOINT COMPLETELY
-    // ==========================================================
-    if (!LIVE) {
+    const payload = {
+      mobile_no,
+      plan_id: plan.zenipoint_code, // Zenipoint expects *their* code
+      reference,
+    };
+
+    // ---- CALL ZENIPOINT API ----
+    const response = await zenipointPost("/data/buy", payload);
+    const zen = response?.data;
+
+    // Local test mode
+    if (zen?.mode === "LOCAL_TEST_MODE") {
       return res.status(200).json({
         success: true,
-        mode: "LOCAL_TEST_MODE",
-        msg: "Data purchase simulated successfully",
+        msg: "Simulated success (LOCAL_TEST_MODE)",
         reference,
-        plan: {
-          plan_id: plan.plan_id,
-          name: plan.name,
-          amount: plan.amount,
-        },
+        plan,
         newBalance: user.mainBalance,
       });
     }
 
-    // ==========================================================
-    //  🔥 LIVE MODE — SEND REAL REQUEST TO ZENIPOINT
-    // ==========================================================
-    const payload = {
-      mobile_no,
-      plan_id: plan.zenipoint_code,
-      reference,
-    };
-
-    const zeniRes = await zenipointPost("/data", payload);
-    const zen = zeniRes.data;
-
-    const successOk =
-      zen?.status === "success" ||
-      zen?.code === 200 ||
-      zen?.data?.status === "success";
-
-    if (successOk) {
+    // Live success
+    if (zen?.status === "success" || zen?.code === 200) {
       return res.status(200).json({
         success: true,
-        mode: "LIVE_MODE",
-        msg: zen.message || "Data purchase successful",
+        msg: "Data purchased successfully",
         reference,
-        plan: {
-          plan_id: plan.plan_id,
-          name: plan.name,
-          amount: plan.amount,
-        },
+        plan,
         zenipoint: zen,
         newBalance: user.mainBalance,
       });
     }
 
-    // ❌ Zenipoint returned failure → Refund user
+    // Zenipoint rejected → REFUND
     user.mainBalance += amount;
     await user.save();
 
     return res.status(400).json({
       success: false,
-      msg: zen.message || "Zenipoint transaction failed",
+      msg: zen?.message || "Zenipoint rejected transaction",
       zenipoint: zen,
     });
-
   } catch (err) {
-    console.error("DATA PURCHASE ERROR:", err.response?.data || err.message);
+    console.error("ZENIPOINT ERROR:", err.response?.data || err.message);
 
-    // Refund on crash
+    // ----------- REFUND ON ERROR -----------
     try {
-      const { plan_id } = req.body;
-      const plan = await DataPlan.findOne({ plan_id });
+      const normalizedPlanId = (req.body.plan_id || "").trim().toLowerCase();
+      const plan = await DataPlan.findOne({ plan_id: normalizedPlanId });
 
       if (plan) {
-        const u = await User.findById(req.user.id);
-        if (u) {
-          u.mainBalance += Number(plan.amount);
-          await u.save();
+        const user = await User.findById(req.user.id);
+        if (user) {
+          user.mainBalance += Number(plan.amount);
+          await user.save();
         }
       }
-    } catch (refundErr) {
-      console.error("Refund failed:", refundErr);
+    } catch (refundError) {
+      console.error("Refund Error:", refundError.message);
     }
 
     return res.status(500).json({

@@ -1,15 +1,26 @@
 // backend/controllers/plansController.js
 import DataPlan from "../models/DataPlan.js";
 
-// GET all plans within network (mtn, glo, airtel, etc)
+/* ------------------------------------------------------
+   GET all plans for a specific network
+   Example: /api/v1/plans/network/mtn
+------------------------------------------------------- */
 export const getNetworkPlans = async (req, res) => {
   try {
-    const { network } = req.params;
-    const plans = await DataPlan.find({ network, active: true }).sort({
-      amount: 1,
-    });
+    let { network } = req.params;
 
-    return res.json({ success: true, count: plans.length, plans });
+    network = (network || "").trim().toLowerCase();
+
+    const plans = await DataPlan.find({
+      network,
+      active: true,
+    }).sort({ amount: 1 });
+
+    return res.json({
+      success: true,
+      count: plans.length,
+      plans,
+    });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -19,17 +30,30 @@ export const getNetworkPlans = async (req, res) => {
   }
 };
 
-// GET single plan details
+/* ------------------------------------------------------
+   GET single plan by plan_id
+   Example: /api/v1/plans/single/mtn_sme_1gb
+------------------------------------------------------- */
 export const getPlanById = async (req, res) => {
   try {
-    const { plan_id } = req.params;
+    let { plan_id } = req.params;
+
+    // Normalize plan_id
+    plan_id = (plan_id || "").trim().toLowerCase();
 
     const plan = await DataPlan.findOne({ plan_id });
+
     if (!plan) {
-      return res.status(404).json({ success: false, msg: "Plan not found" });
+      return res.status(404).json({
+        success: false,
+        msg: "Plan not found",
+      });
     }
 
-    return res.json({ success: true, plan });
+    return res.json({
+      success: true,
+      plan,
+    });
   } catch (err) {
     return res.status(500).json({
       success: false,

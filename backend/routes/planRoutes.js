@@ -4,10 +4,14 @@ import { getNetworkPlans, getPlanById } from "../controllers/plansController.js"
 
 const router = express.Router();
 
-router.get("/:network", getNetworkPlans);         // /plans/mtn
-router.get("/single/:plan_id", getPlanById);      // /plans/single/mtn_sme_1gb
+// specific routes FIRST
+router.get("/single/:plan_id", getPlanById);
+
+// network filter
+router.get("/network/:network", getNetworkPlans);
 
 export default router;
+
 
 
 // // backend/routes/planRoutes.js

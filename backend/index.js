@@ -53,7 +53,7 @@ mongoose
 // ------------------------------------------------------------
 app.post(
   "/api/monnify/webhook",
-  express.raw({ type: "*/*" }),
+  express.raw({ type: "application/json" }),
   monnifyWebhook
 );
 
