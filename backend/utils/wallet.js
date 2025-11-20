@@ -3,8 +3,7 @@ import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 
 /**
- * Syncs Wallet.balance with User.mainBalance
- * Ensures wallet always reflects current user main balance
+ * Sync Wallet.balance with User.mainBalance
  */
 export const syncWalletBalance = async (userId) => {
   try {
@@ -14,19 +13,19 @@ export const syncWalletBalance = async (userId) => {
     let wallet = await Wallet.findOne({ userId, type: "main" });
 
     if (!wallet) {
-      // Create wallet if missing
       wallet = await Wallet.create({
         userId,
         type: "main",
         balance: user.mainBalance,
         transactions: [],
+        lastUpdated: new Date(),
       });
       return wallet;
     }
 
     wallet.balance = user.mainBalance;
+    wallet.lastUpdated = new Date();
     await wallet.save();
-
     return wallet;
   } catch (err) {
     console.error("Wallet sync failed:", err.message);
@@ -35,11 +34,11 @@ export const syncWalletBalance = async (userId) => {
 };
 
 /**
- * Logs a wallet transaction safely
+ * Log wallet transaction safely
  */
 export const logWalletTransaction = async (userId, type, amount, reference, status) => {
   try {
-    const wallet = await syncWalletBalance(userId); // Ensure balance is synced
+    const wallet = await syncWalletBalance(userId);
     if (!wallet) return;
 
     wallet.transactions.push({
@@ -50,6 +49,7 @@ export const logWalletTransaction = async (userId, type, amount, reference, stat
       reference,
     });
 
+    wallet.lastUpdated = new Date();
     await wallet.save();
   } catch (err) {
     console.error("Wallet transaction log failed:", err.message);

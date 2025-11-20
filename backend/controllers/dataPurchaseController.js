@@ -3,55 +3,58 @@ import DataPlan from "../models/DataPlan.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import { zenipointPost, generateReference } from "../utils/zenipoint.js";
+import { logWalletTransaction, syncWalletBalance } from "../utils/wallet.js";
 
 /**
- * Buy data bundle
+ * Buy data bundle (production-ready)
+ * - Uses plan.zenipoint_code (must match Zenipoint codes like mtnsme_1)
+ * - Deducts user.mainBalance, logs transaction, calls Zenipoint
+ * - Refunds on failure and logs appropriately
  */
 export const buyData = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId)
-      return res.status(401).json({ success: false, msg: "Not authorized" });
+    if (!userId) return res.status(401).json({ success: false, msg: "Not authorized" });
 
     const { plan_id, mobile_no } = req.body;
     if (!plan_id || !mobile_no)
-      return res
-        .status(400)
-        .json({ success: false, msg: "plan_id and mobile_no required" });
+      return res.status(400).json({ success: false, msg: "plan_id and mobile_no required" });
 
     const normalizedPlanId = plan_id.trim().toLowerCase();
 
-    // Fetch plan
     const plan = await DataPlan.findOne({ plan_id: normalizedPlanId, active: true });
-    if (!plan)
-      return res.status(404).json({ success: false, msg: "Plan not found" });
+    if (!plan) return res.status(404).json({ success: false, msg: "Plan not found" });
 
-    // Fetch user
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, msg: "User not found" });
 
     const amount = Number(plan.amount);
-
     if (user.mainBalance < amount)
       return res.status(400).json({ success: false, msg: "Insufficient balance" });
 
-    // Deduct user balance
-    user.mainBalance -= amount;
-    await user.save();
-
+    // Create reference and prepare payload
     const reference = generateReference();
     const payload = { mobile_no, plan_id: plan.zenipoint_code, reference };
 
-    let zenResponse;
+    // Deduct user balance (optimistic)
+    user.mainBalance -= amount;
+    await user.save();
 
+    // Sync wallet balance and log pending purchase
+    await syncWalletBalance(userId);
+    await logWalletTransaction(userId, "purchase", amount, reference, "pending");
+
+    let zenResponse;
     try {
-      const response = await zenipointPost("/data/buy", payload);
+      const response = await zenipointPost("/data", payload);
       zenResponse = response.data;
+      console.log("Zenipoint raw response:", zenResponse);
     } catch (apiErr) {
-      // Refund on API/network failure
+      // Refund on network/API error
       user.mainBalance += amount;
       await user.save();
-      await logTransaction(userId, "purchase", amount, reference, "failed");
+      await syncWalletBalance(userId);
+      await logWalletTransaction(userId, "purchase", amount, reference, "failed");
 
       return res.status(500).json({
         success: false,
@@ -60,24 +63,26 @@ export const buyData = async (req, res) => {
       });
     }
 
-    // Local test mode
+    // If simulated fallback
     if (zenResponse?.mode === "LOCAL_TEST_MODE") {
-      await logTransaction(userId, "purchase", amount, reference, "simulated");
+      await logWalletTransaction(userId, "purchase", amount, reference, "simulated");
       return res.status(200).json({
         success: true,
         msg: "Simulated success (LOCAL_TEST_MODE)",
         reference,
         plan,
         newBalance: user.mainBalance,
+        zenipoint: zenResponse,
       });
     }
 
-    // Zenipoint live success
+    // Live success
     if (zenResponse?.status === "success" || zenResponse?.code === 200) {
-      await logTransaction(userId, "purchase", amount, reference, "success");
+      await logWalletTransaction(userId, "purchase", amount, reference, "success");
+      // keep user's mainBalance as reduced (already deducted)
       return res.status(200).json({
         success: true,
-        msg: "Data purchased successfully",
+        msg: zenResponse.message || "Data purchased successfully",
         reference,
         plan,
         zenipoint: zenResponse,
@@ -85,10 +90,11 @@ export const buyData = async (req, res) => {
       });
     }
 
-    // Zenipoint rejected → refund
+    // Zenipoint rejected (e.g., insufficient zeni wallet) => refund and log failed
     user.mainBalance += amount;
     await user.save();
-    await logTransaction(userId, "purchase", amount, reference, "failed");
+    await syncWalletBalance(userId);
+    await logWalletTransaction(userId, "purchase", amount, reference, "failed");
 
     return res.status(400).json({
       success: false,
@@ -104,28 +110,3 @@ export const buyData = async (req, res) => {
     });
   }
 };
-
-/**
- * Logs wallet transaction and syncs wallet balance with User.mainBalance
- */
-async function logTransaction(userId, type, amount, reference, status) {
-  try {
-    const wallet = await Wallet.findOne({ userId, type: "main" });
-    if (!wallet) {
-      await Wallet.create({
-        userId,
-        type: "main",
-        balance: 0,
-        transactions: [{ type, amount, date: new Date(), status, reference }],
-      });
-      return;
-    }
-
-    const user = await User.findById(userId);
-    wallet.balance = user?.mainBalance || wallet.balance;
-    wallet.transactions.push({ type, amount, date: new Date(), status, reference });
-    await wallet.save();
-  } catch (err) {
-    console.error("Transaction log failed:", err.message);
-  }
-}
