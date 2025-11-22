@@ -5,6 +5,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import hpp from "hpp";
 import "dotenv/config";
+import { startMonnifyPolling } from "./utils/monnifyPoller.js";
 
 console.log("Zeni API KEY =>", process.env.ZENI_API_KEY);
 console.log("Zeni CONTRACT KEY =>", process.env.ZENI_CONTRACT_KEY);
@@ -145,6 +146,10 @@ app.use((req, res) => {
     error: `Route not found: ${req.originalUrl}`,
   });
 });
+
+
+startMonnifyPolling();
+
 
 // ----------------------------------------
 // GLOBAL ERROR HANDLER

@@ -10,7 +10,6 @@
     "seed": "node data/seedPlan.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  
   "author": "badun oluwatobi",
   "license": "ISC",
   "dependencies": {
@@ -30,6 +29,7 @@
     "mongo": "^0.1.0",
     "mongoose": "^8.19.2",
     "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
     "nodemailer": "^7.0.10",
     "nodemon": "^3.1.10",
     "paystack-api": "^2.0.6",

@@ -1,5 +1,8 @@
+// controllers/monnifyController.js
 import axios from "axios";
 import User from "../models/User.js";
+import Deposit from "../models/Deposit.js"; // Ensure this model exists
+import { logWalletTransaction } from "../utils/wallet.js";
 
 const monnifyBase = process.env.MONNIFY_BASE_URL;
 
@@ -21,11 +24,11 @@ const getMonnifyToken = async () => {
 };
 
 /* -----------------------------------------------------------
-   1. CREATE STATIC MONNIFY ACCOUNT
+   1. CREATE STATIC VIRTUAL ACCOUNT (for Bank Transfer Deposits)
 ----------------------------------------------------------- */
 export const createStaticAccount = async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
+    if (!req.user?.id) {
       return res.status(401).json({ success: false, msg: "Unauthorized" });
     }
 
@@ -33,11 +36,7 @@ export const createStaticAccount = async (req, res) => {
     if (!user)
       return res.status(404).json({ success: false, msg: "User not found" });
 
-    // Don't create duplicate static accounts
-    if (
-      user.monnifyVirtualAccount &&
-      user.monnifyVirtualAccount.accountNumber
-    ) {
+    if (user.monnifyVirtualAccount?.accountNumber) {
       return res.json({
         success: true,
         accountNumber: user.monnifyVirtualAccount.accountNumber,
@@ -105,13 +104,22 @@ export const initiateMonnifyPayment = async (req, res) => {
 
     const token = await getMonnifyToken();
 
-    const paymentReference = `${user._id}-${Date.now()}`;
+    const reference = `${user._id}-${Date.now()}`;
+
+    // Save pending deposit record
+    await Deposit.create({
+      user: user._id,
+      amount,
+      reference,
+      status: "pending",
+      channel: "monnify-webview",
+    });
 
     const payload = {
       amount,
       customerName: user.username,
       customerEmail: user.email,
-      paymentReference,
+      paymentReference: reference,
       paymentDescription: "Wallet Funding - Biggi Data",
       currencyCode: "NGN",
       contractCode: process.env.MONNIFY_CONTRACT_CODE,
@@ -127,7 +135,7 @@ export const initiateMonnifyPayment = async (req, res) => {
     return res.json({
       success: true,
       checkoutUrl: response.data.responseBody.checkoutUrl,
-      reference: paymentReference,
+      reference,
     });
   } catch (error) {
     console.log("initiateMonnifyPayment ERROR:", error.response?.data || error);
@@ -139,7 +147,8 @@ export const initiateMonnifyPayment = async (req, res) => {
 };
 
 /* -----------------------------------------------------------
-   3. MONNIFY WEBHOOK (index.js must use raw body)
+   3. MONNIFY WEBHOOK
+   (index.js must use raw body middleware)
 ----------------------------------------------------------- */
 export const monnifyWebhook = async (req, res) => {
   try {
@@ -155,12 +164,9 @@ export const monnifyWebhook = async (req, res) => {
 
     const token = await getMonnifyToken();
 
-    // Verify from monnify
     const verify = await axios.get(
       `${monnifyBase}/api/v2/transactions/${data.transactionReference}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
 
     if (verify.data.responseBody.paymentStatus !== "PAID") {
@@ -170,20 +176,103 @@ export const monnifyWebhook = async (req, res) => {
 
     const user = await User.findById(userId);
     if (!user) {
-      console.log("❌ User not found for payment");
+      console.log("❌ User not found");
       return;
     }
 
-    // CREDIT WALLET
-    user.mainBalance = Number(user.mainBalance) + amountPaid;
-    user.totalDeposits = Number(user.totalDeposits) + amountPaid;
+    // Check if already processed
+    const existing = await Deposit.findOne({ reference: data.paymentReference });
+    if (existing && existing.status === "successful") {
+      console.log("⚠ Payment already credited.");
+      return;
+    }
 
+    // Credit user
+    user.mainBalance += amountPaid;
+    user.totalDeposits += amountPaid;
     await user.save();
+
+    await Deposit.findOneAndUpdate(
+      { reference: data.paymentReference },
+      { status: "successful" }
+    );
+
+    await logWalletTransaction(
+      user._id,
+      "deposit",
+      amountPaid,
+      data.paymentReference,
+      "success"
+    );
 
     console.log(
       `✅ Wallet credited ₦${amountPaid} for ${user.username}. New balance: ₦${user.mainBalance}`
     );
   } catch (err) {
-    console.log("Webhook ERROR:", err);
+    console.log("Webhook ERROR:", err.response?.data || err);
   }
 };
+
+/* -----------------------------------------------------------
+   4. PAYMENT STATUS POLLING (automatic fallback)
+----------------------------------------------------------- */
+
+// Called repeatedly from cron or server interval
+export const pollPendingMonnifyDeposits = async () => {
+  try {
+    const pending = await Deposit.find({ status: "pending" }).limit(20);
+
+    if (!pending.length) return;
+
+    const token = await getMonnifyToken();
+
+    for (const dep of pending) {
+      try {
+        const verify = await axios.get(
+          `${monnifyBase}/api/v2/transactions/${dep.reference}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        const paymentStatus = verify.data.responseBody?.paymentStatus;
+
+        if (paymentStatus === "PAID") {
+          const user = await User.findById(dep.user);
+
+          if (!user) continue;
+
+          user.mainBalance += dep.amount;
+          user.totalDeposits += dep.amount;
+          await user.save();
+
+          dep.status = "successful";
+          await dep.save();
+
+          await logWalletTransaction(
+            user._id,
+            "deposit",
+            dep.amount,
+            dep.reference,
+            "success"
+          );
+
+          console.log(
+            `🔁 POLL CREDITED ₦${dep.amount} (ref: ${dep.reference})`
+          );
+        }
+      } catch (err) {
+        console.log("Poll error:", err.response?.data || err);
+      }
+    }
+  } catch (err) {
+    console.log("Global Poll ERROR:", err);
+  }
+};
+
+/* -----------------------------------------------------------
+   5. Start Polling Every 30 Seconds
+----------------------------------------------------------- */
+setInterval(() => {
+  pollPendingMonnifyDeposits();
+}, 30000);
