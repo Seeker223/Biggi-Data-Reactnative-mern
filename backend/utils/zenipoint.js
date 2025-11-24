@@ -9,7 +9,7 @@ const ZENI_LIVE = (process.env.ZENI_LIVE || "false").toLowerCase() === "true";
 const makeAuth = () =>
   apiKey && contractKey
     ? "Basic " + Buffer.from(`${apiKey}:${contractKey}`).toString("base64")
-    : null;
+    : null
 
 /**
  * POST helper with:
