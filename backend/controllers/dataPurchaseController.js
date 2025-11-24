@@ -1,4 +1,3 @@
-// backend/controllers/dataPurchaseController.js
 import DataPlan from "../models/DataPlan.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
@@ -7,9 +6,10 @@ import { logWalletTransaction, syncWalletBalance } from "../utils/wallet.js";
 
 /**
  * Buy data bundle (production-ready)
- * - Uses plan.zenipoint_code (must match Zenipoint codes like mtnsme_1)
+ * - Uses plan.zenipoint_code
  * - Deducts user.mainBalance, logs transaction, calls Zenipoint
- * - Refunds on failure and logs appropriately
+ * - Adds ticket reward on success
+ * - Refunds on failure
  */
 export const buyData = async (req, res) => {
   try {
@@ -21,7 +21,6 @@ export const buyData = async (req, res) => {
       return res.status(400).json({ success: false, msg: "plan_id and mobile_no required" });
 
     const normalizedPlanId = plan_id.trim().toLowerCase();
-
     const plan = await DataPlan.findOne({ plan_id: normalizedPlanId, active: true });
     if (!plan) return res.status(404).json({ success: false, msg: "Plan not found" });
 
@@ -66,12 +65,18 @@ export const buyData = async (req, res) => {
     // If simulated fallback
     if (zenResponse?.mode === "LOCAL_TEST_MODE") {
       await logWalletTransaction(userId, "purchase", amount, reference, "simulated");
+
+      // Add ticket for simulated purchase
+      user.tickets = (user.tickets || 0) + 1;
+      await user.save();
+
       return res.status(200).json({
         success: true,
         msg: "Simulated success (LOCAL_TEST_MODE)",
         reference,
         plan,
         newBalance: user.mainBalance,
+        tickets: user.tickets,
         zenipoint: zenResponse,
       });
     }
@@ -79,7 +84,11 @@ export const buyData = async (req, res) => {
     // Live success
     if (zenResponse?.status === "success" || zenResponse?.code === 200) {
       await logWalletTransaction(userId, "purchase", amount, reference, "success");
-      // keep user's mainBalance as reduced (already deducted)
+
+      // Add ticket reward
+      user.tickets = (user.tickets || 0) + 1; // Or plan.ticketReward if variable
+      await user.save();
+
       return res.status(200).json({
         success: true,
         msg: zenResponse.message || "Data purchased successfully",
@@ -87,6 +96,7 @@ export const buyData = async (req, res) => {
         plan,
         zenipoint: zenResponse,
         newBalance: user.mainBalance,
+        tickets: user.tickets,
       });
     }
 

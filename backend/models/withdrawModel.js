@@ -1,3 +1,5 @@
+// models/WithDrawModel.js
+
 import mongoose from "mongoose";
 
 const withdrawSchema = new mongoose.Schema(
