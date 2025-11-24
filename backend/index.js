@@ -19,6 +19,8 @@ import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monnifyRoutes from "./routes/monnifyRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
+
 
 // NEW plan + data purchase routes
 import planRoutes from "./routes/planRoutes.js";
@@ -127,6 +129,8 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/monnify", monnifyRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
+app.use("/api/v1/user", profileRoutes);
+
 
 // ⭐ NEW — DB-BASED DATA PLAN LISTING
 app.use("/api/v1/plans", planRoutes);
