@@ -1,5 +1,5 @@
-// backend/controllers/flutterwaveController.js
 import axios from "axios";
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
@@ -39,14 +39,18 @@ export const verifyFlutterwavePayment = async (req, res) => {
     }
 
     const txRef = payment.tx_ref;
-    const userId = txRef.split("_")[0];
+    const rawUserId = txRef.split("_")[0];
 
-    const user = await User.findById(userId);
+    // ✅ Safe User lookup: allow ObjectId or fallback for test refs
+    let user = null;
+    if (mongoose.Types.ObjectId.isValid(rawUserId)) {
+      user = await User.findById(rawUserId);
+    } else {
+      user = await User.findOne({ testRef: rawUserId });
+    }
+
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     // 🚫 Prevent duplicate credit
@@ -65,12 +69,10 @@ export const verifyFlutterwavePayment = async (req, res) => {
     // 💾 Save deposit
     await Deposit.create({
       user: user._id,
-      amount: Number(payment.amount),
+      amount: payment.amount,
       reference: txRef,
       status: "successful",
       channel: "flutterwave",
-      flutterwaveTransactionId: payment.id,
-      gatewayResponse: verifyRes.data,
     });
 
     // 💰 Credit wallet
@@ -93,13 +95,11 @@ export const verifyFlutterwavePayment = async (req, res) => {
       balance: user.mainBalance,
     });
   } catch (error) {
-    console.error(
-      "Verify Flutterwave Error:",
-      error.response?.data || error.message
-    );
+    console.error("Verify Flutterwave Error:", error.response?.data || error);
 
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
+      message: "Payment verification failed",
       error: error.response?.data || error.message,
     });
   }
@@ -108,11 +108,11 @@ export const verifyFlutterwavePayment = async (req, res) => {
 /**
  * FLUTTERWAVE WEBHOOK HANDLER
  * Flutterwave → Backend (Server-to-server)
- * Must use express.raw({ type: "application/json" }) in route
+ * Must use express.raw({ type: 'application/json' }) in route
  */
 export const flutterwaveWebhook = async (req, res) => {
   try {
-    const payload = req.body;
+    const payload = req.body; // raw JSON
     console.log("Flutterwave Webhook Received:", payload);
 
     const event = payload.event;
@@ -120,9 +120,15 @@ export const flutterwaveWebhook = async (req, res) => {
 
     if (event === "charge.completed" && data.status === "successful") {
       const txRef = data.tx_ref;
-      const userId = txRef.split("_")[0];
+      const rawUserId = txRef.split("_")[0];
 
-      const user = await User.findById(userId);
+      let user = null;
+      if (mongoose.Types.ObjectId.isValid(rawUserId)) {
+        user = await User.findById(rawUserId);
+      } else {
+        user = await User.findOne({ testRef: rawUserId });
+      }
+
       if (!user) return res.status(404).send("User not found");
 
       // 🚫 Prevent duplicate credit
@@ -130,20 +136,15 @@ export const flutterwaveWebhook = async (req, res) => {
         reference: txRef,
         status: "successful",
       });
-
-      if (alreadyCredited) {
-        return res.status(200).send("Already processed");
-      }
+      if (alreadyCredited) return res.status(200).send("Already processed");
 
       // 💾 Save deposit
       await Deposit.create({
         user: user._id,
-        amount: Number(data.amount),
+        amount: data.amount,
         reference: txRef,
         status: "successful",
         channel: "flutterwave",
-        flutterwaveTransactionId: data.id,
-        gatewayResponse: payload,
       });
 
       // 💰 Credit wallet
@@ -163,9 +164,9 @@ export const flutterwaveWebhook = async (req, res) => {
       return res.status(200).send("Webhook processed successfully");
     }
 
-    return res.status(200).send("Event ignored");
+    res.status(200).send("Event ignored");
   } catch (error) {
     console.error("Flutterwave Webhook Error:", error);
-    return res.status(500).send("Webhook processing failed");
+    res.status(500).send("Webhook processing failed");
   }
 };

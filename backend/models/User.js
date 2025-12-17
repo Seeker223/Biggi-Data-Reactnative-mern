@@ -100,6 +100,10 @@ const UserSchema = new mongoose.Schema(
 
     resetPasswordToken: String,
     resetPasswordExpire: Date,
+
+    /* ---------------- TESTING ---------------- */
+    // Used for Postman / test transactions (matches tx_ref prefix)
+    testRef: { type: String, unique: true, sparse: true },
   },
   { timestamps: true }
 );

@@ -6,11 +6,15 @@ import { protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Flutterwave redirect verification
+/**
+ * POST /api/v1/wallet/verify-flutterwave
+ * Verifies a Flutterwave transaction (Redirect-based)
+ * - Works with live ObjectId users
+ * - Works with test transactions using `testRef`
+ */
 router.post("/verify-flutterwave", protect, verifyFlutterwavePayment);
 
-// Withdraw
+// Withdraw funds from wallet
 router.post("/withdraw", protect, withdrawFunds);
 
 export default router;
-
