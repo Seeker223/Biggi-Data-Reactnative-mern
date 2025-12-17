@@ -1,3 +1,5 @@
+//backend/config/monnify.js
+
 import axios from "axios";
 
 const MONNIFY_BASE_URL = process.env.MONNIFY_BASE_URL || "https://api.monnify.com";
