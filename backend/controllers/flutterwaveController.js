@@ -41,7 +41,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
     const txRef = payment.tx_ref;
     const rawUserId = txRef.split("_")[0];
 
-    // ✅ Safe User lookup: allow ObjectId or fallback for test refs
+    // ✅ Safe User lookup: allow ObjectId or fallback to testRef
     let user = null;
     if (mongoose.Types.ObjectId.isValid(rawUserId)) {
       user = await User.findById(rawUserId);
@@ -115,6 +115,7 @@ export const flutterwaveWebhook = async (req, res) => {
     const payload = req.body; // raw JSON
     console.log("Flutterwave Webhook Received:", payload);
 
+    // Verify event type
     const event = payload.event;
     const data = payload.data;
 
@@ -122,6 +123,7 @@ export const flutterwaveWebhook = async (req, res) => {
       const txRef = data.tx_ref;
       const rawUserId = txRef.split("_")[0];
 
+      // ✅ Safe lookup
       let user = null;
       if (mongoose.Types.ObjectId.isValid(rawUserId)) {
         user = await User.findById(rawUserId);
