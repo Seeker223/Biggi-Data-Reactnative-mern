@@ -43,7 +43,10 @@ export const verifyFlutterwavePayment = async (req, res) => {
 
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     // 🚫 Prevent duplicate credit
@@ -62,10 +65,12 @@ export const verifyFlutterwavePayment = async (req, res) => {
     // 💾 Save deposit
     await Deposit.create({
       user: user._id,
-      amount: payment.amount,
+      amount: Number(payment.amount),
       reference: txRef,
       status: "successful",
       channel: "flutterwave",
+      flutterwaveTransactionId: payment.id,
+      gatewayResponse: verifyRes.data,
     });
 
     // 💰 Credit wallet
@@ -88,11 +93,14 @@ export const verifyFlutterwavePayment = async (req, res) => {
       balance: user.mainBalance,
     });
   } catch (error) {
-    console.error("Verify Flutterwave Error:", error.response?.data || error);
+    console.error(
+      "Verify Flutterwave Error:",
+      error.response?.data || error.message
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Payment verification failed",
+      error: error.response?.data || error.message,
     });
   }
 };
@@ -100,14 +108,13 @@ export const verifyFlutterwavePayment = async (req, res) => {
 /**
  * FLUTTERWAVE WEBHOOK HANDLER
  * Flutterwave → Backend (Server-to-server)
- * Must use express.raw({ type: 'application/json' }) in route
+ * Must use express.raw({ type: "application/json" }) in route
  */
 export const flutterwaveWebhook = async (req, res) => {
   try {
-    const payload = req.body; // raw JSON
+    const payload = req.body;
     console.log("Flutterwave Webhook Received:", payload);
 
-    // Verify event type
     const event = payload.event;
     const data = payload.data;
 
@@ -123,15 +130,20 @@ export const flutterwaveWebhook = async (req, res) => {
         reference: txRef,
         status: "successful",
       });
-      if (alreadyCredited) return res.status(200).send("Already processed");
+
+      if (alreadyCredited) {
+        return res.status(200).send("Already processed");
+      }
 
       // 💾 Save deposit
       await Deposit.create({
         user: user._id,
-        amount: data.amount,
+        amount: Number(data.amount),
         reference: txRef,
         status: "successful",
         channel: "flutterwave",
+        flutterwaveTransactionId: data.id,
+        gatewayResponse: payload,
       });
 
       // 💰 Credit wallet
@@ -151,9 +163,9 @@ export const flutterwaveWebhook = async (req, res) => {
       return res.status(200).send("Webhook processed successfully");
     }
 
-    res.status(200).send("Event ignored");
+    return res.status(200).send("Event ignored");
   } catch (error) {
     console.error("Flutterwave Webhook Error:", error);
-    res.status(500).send("Webhook processing failed");
+    return res.status(500).send("Webhook processing failed");
   }
 };
