@@ -1,3 +1,4 @@
+//backend/index.js
 import express from "express";
 import mongoose from "mongoose";
 import helmet from "helmet";
@@ -5,34 +6,30 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import hpp from "hpp";
 import "dotenv/config";
-import { startMonnifyPolling } from "./utils/monnifyPoller.js";
 
+/* ---------------- LOG KEYS (OPTIONAL) ---------------- */
 console.log("Zeni API KEY =>", process.env.ZENI_API_KEY);
 console.log("Zeni CONTRACT KEY =>", process.env.ZENI_CONTRACT_KEY);
 
-// Cron job
+/* ---------------- CRON JOB ---------------- */
 import job from "./utils/cron.js";
 
-// Routes
+/* ---------------- ROUTES ---------------- */
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
-import monnifyRoutes from "./routes/monnifyRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
+import flutterwaveRoutes from "./routes/flutterwaveRoutes.js";
 
-
-// NEW plan + data purchase routes
+/* ---------------- NEW ROUTES ---------------- */
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 
-// Debug helper
+/* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
 
-// Monnify webhook (must NOT be inside router)
-import { monnifyWebhook } from "./controllers/monnifyController.js";
-
-// Error middleware
+/* ---------------- ERROR HANDLER ---------------- */
 const { default: errorHandler } = await import("./middleware/error.js");
 
 const app = express();
@@ -40,9 +37,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
-// ----------------------------------------
-// 🔌 CONNECT MONGO
-// ----------------------------------------
+/* ----------------------------------------
+   🔌 CONNECT MONGO
+---------------------------------------- */
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected 🚀"))
@@ -51,42 +48,30 @@ mongoose
     process.exit(1);
   });
 
-// ------------------------------------------------------------
-// 🚨 MONNIFY WEBHOOK — MUST BE BEFORE express.json()
-// ------------------------------------------------------------
-app.post(
-  "/api/monnify/webhook",
-  express.raw({ type: "application/json" }),
-  monnifyWebhook
+/* ----------------------------------------------------
+   🚨 FLUTTERWAVE WEBHOOK (RAW BODY REQUIRED)
+   MUST BE BEFORE express.json()
+---------------------------------------------------- */
+app.use(
+  "/api/flutterwave/webhook",
+  express.raw({ type: "application/json" })
 );
 
-// ------------------------------------------------------------
-// 🔍 DEBUG: Check data plans in DB
-// ------------------------------------------------------------
-app.get("/check-plans", async (req, res) => {
-  try {
-    const plans = await DataPlan.find();
-    res.json({ success: true, plans });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
-// ----------------------------------------
-// GLOBAL MIDDLEWARES
-// ----------------------------------------
+/* ----------------------------------------
+   GLOBAL MIDDLEWARES
+---------------------------------------- */
 app.use(express.json({ limit: "5mb" }));
 app.use(cookieParser());
 app.use(helmet());
 app.use(hpp());
 
-// ----------------------------------------
-// CORS CONFIG
-// ----------------------------------------
+/* ----------------------------------------
+   CORS CONFIG
+---------------------------------------- */
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // Mobile / Postman / CLI
+      if (!origin) return callback(null, true); // Mobile / Postman
 
       if (origin.startsWith("exp://")) return callback(null, true); // Expo Go
 
@@ -105,9 +90,9 @@ app.use(
   })
 );
 
-// ----------------------------------------
-// HEALTH ROUTES
-// ----------------------------------------
+/* ----------------------------------------
+   HEALTH CHECK
+---------------------------------------- */
 app.get("/", (req, res) => {
   res.send("API is running... OK");
 });
@@ -120,30 +105,37 @@ app.get("/api/v1/auth/ping", (req, res) => {
   });
 });
 
-// ----------------------------------------
-// MAIN ROUTES
-// ----------------------------------------
+/* ----------------------------------------
+   DEBUG ROUTE
+---------------------------------------- */
+app.get("/check-plans", async (req, res) => {
+  try {
+    const plans = await DataPlan.find();
+    res.json({ success: true, plans });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+/* ----------------------------------------
+   MAIN ROUTES
+---------------------------------------- */
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
-
-app.use("/api/v1/wallet", walletRoutes);
-app.use("/api/v1/monnify", monnifyRoutes);
-app.use("/api/v1/daily-game", dailyGameRoutes);
 app.use("/api/v1/user", profileRoutes);
 
+app.use("/api/v1/wallet", walletRoutes);
+app.use("/api/flutterwave", flutterwaveRoutes);
 
-// ⭐ NEW — DB-BASED DATA PLAN LISTING
+app.use("/api/v1/daily-game", dailyGameRoutes);
+
+/* ⭐ DATA & PLANS */
 app.use("/api/v1/plans", planRoutes);
-
-// ⭐ NEW — ZENIPOINT DATA PURCHASE
 app.use("/api/v1/data", dataPurchaseRoutes);
 
-// ⚠️ REMOVED — old local-JSON dataBundleRoutes
-// app.use("/api/v1/data/plans", dataRoutes);  <-- DELETED COMPLETELY
-
-// ----------------------------------------
-// 404 HANDLER
-// ----------------------------------------
+/* ----------------------------------------
+   404 HANDLER
+---------------------------------------- */
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -151,26 +143,22 @@ app.use((req, res) => {
   });
 });
 
-
-startMonnifyPolling();
-
-
-// ----------------------------------------
-// GLOBAL ERROR HANDLER
-// ----------------------------------------
+/* ----------------------------------------
+   GLOBAL ERROR HANDLER
+---------------------------------------- */
 app.use(errorHandler);
 
-// ----------------------------------------
-// START SERVER
-// ----------------------------------------
+/* ----------------------------------------
+   START SERVER
+---------------------------------------- */
 const server = app.listen(PORT, HOST, () => {
   console.log(`Server running on ${HOST}:${PORT}`);
 });
 
-// ----------------------------------------
-// CRASH SAFETY
-// ----------------------------------------
+/* ----------------------------------------
+   CRASH SAFETY
+---------------------------------------- */
 process.on("unhandledRejection", (err) => {
-  console.log(`Unhandled Error: ${err.message}`);
+  console.error(`Unhandled Error: ${err.message}`);
   server.close(() => process.exit(1));
 });

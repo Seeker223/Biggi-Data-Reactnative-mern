@@ -15,10 +15,7 @@ const DailyGameSchema = new mongoose.Schema({
       message: "Daily game selection must contain exactly 5 numbers",
     },
   },
-  result: {
-    type: [Number],
-    default: [],
-  },
+  result: { type: [Number], default: [] },
   isWinner: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
@@ -27,14 +24,8 @@ const DailyGameSchema = new mongoose.Schema({
    WEEKLY GAME SCHEMA
 ------------------------------------------- */
 const WeeklyGameSchema = new mongoose.Schema({
-  numbers: {
-    type: [Number],
-    default: [],
-  },
-  result: {
-    type: [Number],
-    default: [],
-  },
+  numbers: { type: [Number], default: [] },
+  result: { type: [Number], default: [] },
   isWinner: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
@@ -44,10 +35,10 @@ const WeeklyGameSchema = new mongoose.Schema({
 ------------------------------------------- */
 const UserSchema = new mongoose.Schema(
   {
-    /* ---------------- BASIC USER INFO ---------------- */
+    /* ---------------- BASIC INFO ---------------- */
     username: {
       type: String,
-      required: [true, "Please add a username"],
+      required: true,
       unique: true,
       trim: true,
       minlength: 3,
@@ -56,18 +47,15 @@ const UserSchema = new mongoose.Schema(
 
     email: {
       type: String,
-      required: [true, "Please add an email"],
+      required: true,
       unique: true,
       lowercase: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        "Please add a valid email",
-      ],
+      match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, "Invalid email"],
     },
 
     password: {
       type: String,
-      required: [true, "Please add a password"],
+      required: true,
       minlength: 6,
       select: false,
     },
@@ -76,19 +64,10 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      match: [/^\+?[0-9]{10,15}$/, "Enter a valid phone number"],
-      sparse: true,
+      match: [/^\+?[0-9]{10,15}$/, "Invalid phone number"],
     },
 
-    birthDate: {
-      type: Date,
-      required: true,
-    },
-
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
+    birthDate: { type: Date, required: true },
 
     role: {
       type: String,
@@ -96,21 +75,11 @@ const UserSchema = new mongoose.Schema(
       default: "user",
     },
 
-    /* ---------------- PROFILE ---------------- */
+    isVerified: { type: Boolean, default: false },
+
     photo: { type: String, default: null },
 
-    /* ---------------- ACCOUNTS (Monnify) ---------------- */
-    virtualAccount: {
-      type: Array, // old system support
-      default: [],
-    },
-
-    monnifyVirtualAccount: {
-      accountNumber: { type: String, default: null },
-      bankName: { type: String, default: null },
-    },
-
-    /* ---------------- WALLET BALANCES ---------------- */
+    /* ---------------- WALLET ---------------- */
     mainBalance: { type: Number, default: 0 },
     rewardBalance: { type: Number, default: 0 },
 
@@ -118,28 +87,21 @@ const UserSchema = new mongoose.Schema(
     dataBundleCount: { type: Number, default: 0 },
 
     tickets: { type: Number, default: 0 },
-
     notifications: { type: Number, default: 0 },
 
-    /* ---------------- GAME SYSTEM ---------------- */
+    /* ---------------- GAMES ---------------- */
     dailyNumberDraw: [DailyGameSchema],
     lastDailyGame: { type: Date, default: null },
-
     weeklyNumberDraw: [WeeklyGameSchema],
 
-    /* ---------------- SECURITY / RESET ---------------- */
+    /* ---------------- SECURITY ---------------- */
     securityPin: String,
     securityPinExpires: Date,
 
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
-
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
-  }
+  { timestamps: true }
 );
 
 /* ==========================================
