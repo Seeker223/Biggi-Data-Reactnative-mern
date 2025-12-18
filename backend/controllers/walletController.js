@@ -1,7 +1,10 @@
-//backend/controllers/walletController.js
 import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
+import Deposit from "../models/Deposit.js"; // Make sure you have a Deposit model
 
+/* =====================================================
+   WITHDRAW FUNDS
+===================================================== */
 export const withdrawFunds = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -26,7 +29,7 @@ export const withdrawFunds = async (req, res) => {
     user.mainBalance -= Number(amount);
     await user.save();
 
-    // Create withdrawal
+    // Create withdrawal record
     const newWithdraw = await Withdraw.create({
       user: userId,
       method,
@@ -44,7 +47,27 @@ export const withdrawFunds = async (req, res) => {
       balance: user.mainBalance,
     });
   } catch (err) {
-    console.log(err);
+    console.error("WithdrawFunds Error:", err);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+/* =====================================================
+   GET DEPOSIT HISTORY
+===================================================== */
+export const getDepositHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Assuming you have a Deposit model that stores user deposits
+    const deposits = await Deposit.find({ user: userId }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      deposits,
+    });
+  } catch (err) {
+    console.error("GetDepositHistory Error:", err);
+    res.status(500).json({ success: false, error: "Server error" });
   }
 };

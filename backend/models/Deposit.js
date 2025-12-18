@@ -1,4 +1,3 @@
-// models/Deposit.js
 import mongoose from "mongoose";
 
 const depositSchema = new mongoose.Schema(
@@ -54,4 +53,3 @@ const depositSchema = new mongoose.Schema(
 );
 
 export default mongoose.model("Deposit", depositSchema);
-
