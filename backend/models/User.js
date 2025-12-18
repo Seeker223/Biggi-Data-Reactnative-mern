@@ -1,4 +1,3 @@
-//backend/models/User.js
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -51,7 +50,10 @@ const UserSchema = new mongoose.Schema(
       required: true,
       unique: true,
       lowercase: true,
-      match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, "Invalid email"],
+      match: [
+        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        "Invalid email",
+      ],
     },
 
     password: {
@@ -83,7 +85,6 @@ const UserSchema = new mongoose.Schema(
     /* ---------------- WALLET ---------------- */
     mainBalance: { type: Number, default: 0 },
     rewardBalance: { type: Number, default: 0 },
-
     totalDeposits: { type: Number, default: 0 },
     dataBundleCount: { type: Number, default: 0 },
 
@@ -102,8 +103,13 @@ const UserSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
 
+    /* ---------------- REFRESH TOKEN ---------------- */
+    refreshToken: {
+      type: String,
+      select: false,
+    },
+
     /* ---------------- TESTING ---------------- */
-    // Used for Postman / test transactions (matches tx_ref prefix)
     testRef: { type: String, unique: true, sparse: true },
   },
   { timestamps: true }
@@ -117,7 +123,6 @@ UserSchema.pre("save", async function (next) {
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
-
   next();
 });
 
@@ -129,12 +134,36 @@ UserSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 /* ==========================================
-   JWT SIGN
+   ACCESS TOKEN (JWT)
 ========================================== */
 UserSchema.methods.getSignedJwtToken = function () {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is missing in environment variables");
+  }
+
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || "30d",
+    expiresIn: process.env.JWT_EXPIRE || "15m",
   });
+};
+
+/* ==========================================
+   REFRESH TOKEN
+========================================== */
+UserSchema.methods.getRefreshToken = function () {
+  if (!process.env.JWT_REFRESH_SECRET) {
+    throw new Error("JWT_REFRESH_SECRET is missing in environment variables");
+  }
+
+  const refreshToken = jwt.sign(
+    { id: this._id },
+    process.env.JWT_REFRESH_SECRET,
+    {
+      expiresIn: process.env.JWT_REFRESH_EXPIRE || "7d",
+    }
+  );
+
+  this.refreshToken = refreshToken;
+  return refreshToken;
 };
 
 /* ==========================================
@@ -143,7 +172,7 @@ UserSchema.methods.getSignedJwtToken = function () {
 UserSchema.methods.generateSecurityPin = function () {
   const pin = Math.floor(100000 + Math.random() * 900000).toString();
   this.securityPin = pin;
-  this.securityPinExpires = Date.now() + 10 * 60 * 1000; // 10 mins
+  this.securityPinExpires = Date.now() + 10 * 60 * 1000;
   return pin;
 };
 

@@ -1,3 +1,4 @@
+//backend/routes/authRoutes.js
 import express from "express";
 import {
   register,
@@ -19,7 +20,7 @@ router.post("/login", login);
 router.post("/verify-pin", verifySecurityPin);
 router.post("/resend-pin", resendSecurityPin);
 
-// 🔁 Refresh access token (PUBLIC)
+// 🔁 Refresh access token (public)
 router.post("/refresh", refreshTokenController);
 
 /* =======================

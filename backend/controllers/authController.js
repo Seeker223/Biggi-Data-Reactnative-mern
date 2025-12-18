@@ -74,7 +74,7 @@ export const getMe = async (req, res) => {
       return res.status(401).json({ success: false, error: "Not authorized" });
     }
 
-    const user = await User.findById(userId).select("-password");
+    const user = await User.findById(userId).select("-password -refreshToken");
     if (!user) {
       return res.status(404).json({ success: false, error: "User not found" });
     }
@@ -135,7 +135,7 @@ export const login = async (req, res) => {
         .json({ success: false, error: "Please provide email and password" });
     }
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email }).select("+password +refreshToken");
     if (!user)
       return res.status(400).json({ success: false, error: "Invalid credentials" });
 
@@ -149,19 +149,11 @@ export const login = async (req, res) => {
     if (!isMatch)
       return res.status(400).json({ success: false, error: "Invalid credentials" });
 
-    // 🔐 Access token (short-lived)
-    const accessToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
-    );
+    // 🔐 Generate tokens using model helpers
+    const accessToken = user.getSignedJwtToken();
+    const refreshToken = user.getRefreshToken();
 
-    // 🔁 Refresh token (long-lived)
-    const refreshToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: "30d" }
-    );
+    await user.save({ validateBeforeSave: false });
 
     res.status(200).json({
       success: true,
@@ -182,7 +174,7 @@ export const login = async (req, res) => {
 };
 
 /* =====================================================
-   REFRESH ACCESS TOKEN (REQUIRED)
+   REFRESH ACCESS TOKEN
 ===================================================== */
 export const refreshTokenController = async (req, res) => {
   const { refreshToken } = req.body;
@@ -199,20 +191,16 @@ export const refreshTokenController = async (req, res) => {
       process.env.JWT_REFRESH_SECRET
     );
 
-    const user = await User.findById(decoded.id);
-    if (!user) {
+    const user = await User.findById(decoded.id).select("+refreshToken");
+    if (!user || user.refreshToken !== refreshToken) {
       return res
-        .status(404)
-        .json({ success: false, error: "User not found" });
+        .status(401)
+        .json({ success: false, error: "Invalid refresh token" });
     }
 
-    const newAccessToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
-    );
+    const newAccessToken = user.getSignedJwtToken();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       accessToken: newAccessToken,
     });
