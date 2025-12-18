@@ -1,17 +1,14 @@
-//backend/controllers/flutterwaveController.js
 import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 
-/**
- * =====================================================
- * INITIATE FLUTTERWAVE PAYMENT
- * Backend → Flutterwave
- * Returns payment link and tx_ref
- * =====================================================
- */
+/* =====================================================
+   INITIATE FLUTTERWAVE PAYMENT
+   Backend → Flutterwave
+   Returns payment link and tx_ref
+===================================================== */
 export const initiateFlutterwavePayment = async (req, res) => {
   try {
     const { amount } = req.body;
@@ -63,15 +60,11 @@ export const initiateFlutterwavePayment = async (req, res) => {
   }
 };
 
-/**
- * =====================================================
- * VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)
- * Frontend → Backend
- *
- * ⚠️ DOES NOT CREDIT WALLET
- * Wallet crediting happens ONLY in webhook
- * =====================================================
- */
+/* =====================================================
+   VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)
+   Frontend → Backend
+   DOES NOT CREDIT WALLET (webhook does)
+===================================================== */
 export const verifyFlutterwavePayment = async (req, res) => {
   try {
     const { tx_ref } = req.body;
@@ -121,12 +114,10 @@ export const verifyFlutterwavePayment = async (req, res) => {
   }
 };
 
-/**
- * =====================================================
- * GET DEPOSIT STATUS (FOR POLLING)
- * Frontend can poll /wallet/deposit-status/:tx_ref
- * =====================================================
- */
+/* =====================================================
+   GET DEPOSIT STATUS (FOR POLLING)
+   Frontend polls /wallet/deposit-status/:tx_ref
+===================================================== */
 export const getDepositStatus = async (req, res) => {
   try {
     const { tx_ref } = req.params;
@@ -134,20 +125,41 @@ export const getDepositStatus = async (req, res) => {
 
     if (!deposit) return res.json({ status: "pending" });
 
-    return res.json({ status: deposit.status }); // success | failed | reversed
+    return res.json({ status: deposit.status }); // pending | successful | failed
   } catch (err) {
     console.error("Deposit status error:", err);
     return res.status(500).json({ status: "failed" });
   }
 };
 
-/**
- * =====================================================
- * FLUTTERWAVE WEBHOOK HANDLER
- * Flutterwave → Backend (SERVER TO SERVER)
- * Wallet crediting happens ONLY here
- * =====================================================
- */
+/* =====================================================
+   GET DEPOSIT HISTORY
+   Frontend calls /wallet/deposit-history
+===================================================== */
+export const getDepositHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const deposits = await Deposit.find({ user: userId }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      deposits,
+    });
+  } catch (err) {
+    console.error("Deposit history error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch deposit history",
+    });
+  }
+};
+
+/* =====================================================
+   FLUTTERWAVE WEBHOOK HANDLER
+   Flutterwave → Backend (SERVER TO SERVER)
+   Wallet crediting happens ONLY here
+===================================================== */
 export const flutterwaveWebhook = async (req, res) => {
   try {
     // Verify webhook signature
@@ -179,7 +191,6 @@ export const flutterwaveWebhook = async (req, res) => {
       reference: txRef,
       status: "successful",
     });
-
     if (alreadyCredited) return res.status(200).send("Already processed");
 
     // Save deposit
@@ -199,13 +210,7 @@ export const flutterwaveWebhook = async (req, res) => {
     await user.save();
 
     // Log wallet transaction
-    await logWalletTransaction(
-      user._id,
-      "deposit",
-      Number(data.amount),
-      txRef,
-      "success"
-    );
+    await logWalletTransaction(user._id, "deposit", Number(data.amount), txRef, "success");
 
     return res.status(200).send("Webhook processed successfully");
   } catch (error) {
