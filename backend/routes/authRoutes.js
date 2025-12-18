@@ -12,20 +12,14 @@ import { protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
-/* =======================
-   PUBLIC ROUTES
-======================= */
+/* ===================== PUBLIC ROUTES ===================== */
 router.post("/register", register);
 router.post("/login", login);
 router.post("/verify-pin", verifySecurityPin);
 router.post("/resend-pin", resendSecurityPin);
-
-// 🔁 Refresh access token (public)
 router.post("/refresh", refreshTokenController);
 
-/* =======================
-   PROTECTED ROUTES
-======================= */
+/* ===================== PROTECTED ROUTES ===================== */
 router.get("/me", protect, getMe);
 
 export default router;
