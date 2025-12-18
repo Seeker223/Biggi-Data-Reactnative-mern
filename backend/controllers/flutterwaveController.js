@@ -1,4 +1,4 @@
-//backend/controllers/flutterwaveController.js
+// backend/controllers/flutterwaveController.js
 import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
@@ -7,12 +7,69 @@ import { logWalletTransaction } from "../utils/wallet.js";
 
 /**
  * =====================================================
+ * INITIATE FLUTTERWAVE PAYMENT
+ * Backend → Flutterwave
+ * Returns payment link and tx_ref
+ * =====================================================
+ */
+export const initiateFlutterwavePayment = async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Amount is required and must be greater than 0",
+      });
+    }
+
+    const tx_ref = `flw_${req.user._id}_${Date.now()}`;
+
+    const paymentData = {
+      tx_ref,
+      amount,
+      currency: "NGN",
+      redirect_url: `${process.env.FRONTEND_URL}/deposit/confirmation`,
+      customer: {
+        email: req.user.email,
+        phonenumber: req.user.phoneNumber,
+        name: req.user.username,
+      },
+      payment_options: "card,banktransfer,ussd",
+    };
+
+    const response = await axios.post(
+      "https://api.flutterwave.com/v3/payments",
+      paymentData,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: response.data.data,
+      message: "Payment initiated",
+      tx_ref,
+    });
+  } catch (err) {
+    console.error("Initiate Flutterwave Error:", err.response?.data || err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to initiate payment",
+    });
+  }
+};
+
+/**
+ * =====================================================
  * VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)
  * Frontend → Backend
  *
  * ⚠️ IMPORTANT:
  * - This endpoint DOES NOT credit wallet
- * - It only confirms payment status for UI feedback
  * - Wallet crediting happens ONLY in webhook
  * =====================================================
  */
@@ -27,7 +84,6 @@ export const verifyFlutterwavePayment = async (req, res) => {
       });
     }
 
-    // 🔎 Verify by reference (recommended)
     const verifyRes = await axios.get(
       `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${tx_ref}`,
       {
@@ -70,23 +126,14 @@ export const verifyFlutterwavePayment = async (req, res) => {
  * =====================================================
  * FLUTTERWAVE WEBHOOK HANDLER
  * Flutterwave → Backend (SERVER TO SERVER)
- *
- * ✅ SINGLE SOURCE OF TRUTH
- * ✅ WALLET CREDITING HAPPENS HERE ONLY
- *
- * NOTE:
- * Route must use:
- * express.raw({ type: "application/json" })
+ * Wallet crediting happens ONLY here
  * =====================================================
  */
 export const flutterwaveWebhook = async (req, res) => {
   try {
     // 🔐 Verify webhook signature
     const signature = req.headers["verif-hash"];
-    if (
-      !signature ||
-      signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET
-    ) {
+    if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
       return res.status(401).send("Invalid signature");
     }
 
@@ -98,13 +145,6 @@ export const flutterwaveWebhook = async (req, res) => {
     }
 
     const txRef = data.tx_ref;
-
-    /**
-     * EXPECTED tx_ref FORMAT:
-     * flw_<USER_ID>_<timestamp>
-     * Example:
-     * flw_65d2a5dfe89cfae9a1234567_1700000000000
-     */
     const parts = txRef.split("_");
     const userId = parts[1];
 
@@ -121,9 +161,7 @@ export const flutterwaveWebhook = async (req, res) => {
       status: "successful",
     });
 
-    if (alreadyCredited) {
-      return res.status(200).send("Already processed");
-    }
+    if (alreadyCredited) return res.status(200).send("Already processed");
 
     // 💾 Save deposit
     await Deposit.create({
