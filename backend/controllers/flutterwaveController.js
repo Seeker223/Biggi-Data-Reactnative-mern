@@ -1,4 +1,3 @@
-// backend/controllers/flutterwaveController.js
 import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
@@ -68,9 +67,8 @@ export const initiateFlutterwavePayment = async (req, res) => {
  * VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)
  * Frontend → Backend
  *
- * ⚠️ IMPORTANT:
- * - This endpoint DOES NOT credit wallet
- * - Wallet crediting happens ONLY in webhook
+ * ⚠️ DOES NOT CREDIT WALLET
+ * Wallet crediting happens ONLY in webhook
  * =====================================================
  */
 export const verifyFlutterwavePayment = async (req, res) => {
@@ -124,6 +122,26 @@ export const verifyFlutterwavePayment = async (req, res) => {
 
 /**
  * =====================================================
+ * GET DEPOSIT STATUS (FOR POLLING)
+ * Frontend can poll /wallet/deposit-status/:tx_ref
+ * =====================================================
+ */
+export const getDepositStatus = async (req, res) => {
+  try {
+    const { tx_ref } = req.params;
+    const deposit = await Deposit.findOne({ reference: tx_ref });
+
+    if (!deposit) return res.json({ status: "pending" });
+
+    return res.json({ status: deposit.status }); // success | failed | reversed
+  } catch (err) {
+    console.error("Deposit status error:", err);
+    return res.status(500).json({ status: "failed" });
+  }
+};
+
+/**
+ * =====================================================
  * FLUTTERWAVE WEBHOOK HANDLER
  * Flutterwave → Backend (SERVER TO SERVER)
  * Wallet crediting happens ONLY here
@@ -131,7 +149,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
  */
 export const flutterwaveWebhook = async (req, res) => {
   try {
-    // 🔐 Verify webhook signature
+    // Verify webhook signature
     const signature = req.headers["verif-hash"];
     if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
       return res.status(401).send("Invalid signature");
@@ -155,7 +173,7 @@ export const flutterwaveWebhook = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).send("User not found");
 
-    // 🚫 Prevent double credit
+    // Prevent double credit
     const alreadyCredited = await Deposit.findOne({
       reference: txRef,
       status: "successful",
@@ -163,7 +181,7 @@ export const flutterwaveWebhook = async (req, res) => {
 
     if (alreadyCredited) return res.status(200).send("Already processed");
 
-    // 💾 Save deposit
+    // Save deposit
     await Deposit.create({
       user: user._id,
       amount: Number(data.amount),
@@ -174,12 +192,12 @@ export const flutterwaveWebhook = async (req, res) => {
       gatewayResponse: data,
     });
 
-    // 💰 Credit wallet
+    // Credit wallet
     user.mainBalance += Number(data.amount);
     user.totalDeposits += Number(data.amount);
     await user.save();
 
-    // 🧾 Log wallet transaction
+    // Log wallet transaction
     await logWalletTransaction(
       user._id,
       "deposit",
