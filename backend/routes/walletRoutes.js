@@ -1,4 +1,3 @@
-// backend/routes/walletRoutes.js
 import express from "express";
 import { verifyFlutterwavePayment } from "../controllers/flutterwaveController.js";
 import { withdrawFunds } from "../controllers/walletController.js";
@@ -8,9 +7,9 @@ const router = express.Router();
 
 /**
  * POST /api/v1/wallet/verify-flutterwave
- * Verifies a Flutterwave transaction (Redirect-based)
- * - Works with live ObjectId users
- * - Works with test transactions using `testRef`
+ * Redirect-based verification (UI confirmation only)
+ * ⚠️ Does NOT credit wallet
+ * Wallet crediting happens ONLY via webhook
  */
 router.post("/verify-flutterwave", protect, verifyFlutterwavePayment);
 

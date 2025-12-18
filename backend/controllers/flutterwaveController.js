@@ -1,3 +1,4 @@
+//backend/controllers/flutterwaveController.js
 import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
@@ -5,23 +6,30 @@ import Deposit from "../models/Deposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 
 /**
- * VERIFY FLUTTERWAVE PAYMENT (Redirect-based)
+ * =====================================================
+ * VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)
  * Frontend → Backend
+ *
+ * ⚠️ IMPORTANT:
+ * - This endpoint DOES NOT credit wallet
+ * - It only confirms payment status for UI feedback
+ * - Wallet crediting happens ONLY in webhook
+ * =====================================================
  */
 export const verifyFlutterwavePayment = async (req, res) => {
   try {
-    const { transaction_id } = req.body;
+    const { tx_ref } = req.body;
 
-    if (!transaction_id) {
+    if (!tx_ref) {
       return res.status(400).json({
         success: false,
-        message: "Transaction ID required",
+        message: "tx_ref is required",
       });
     }
 
-    // 🔎 Verify with Flutterwave
+    // 🔎 Verify by reference (recommended)
     const verifyRes = await axios.get(
-      `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`,
+      `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${tx_ref}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
@@ -29,144 +37,120 @@ export const verifyFlutterwavePayment = async (req, res) => {
       }
     );
 
-    const payment = verifyRes.data.data;
+    const payment = verifyRes.data?.data;
 
-    if (payment.status !== "successful") {
+    if (!payment || payment.status !== "successful") {
       return res.status(400).json({
         success: false,
         message: "Payment not successful",
       });
     }
 
-    const txRef = payment.tx_ref;
-    const rawUserId = txRef.split("_")[0];
+    return res.json({
+      success: true,
+      message: "Payment verified successfully. Awaiting webhook confirmation.",
+      amount: payment.amount,
+      currency: payment.currency,
+      tx_ref: payment.tx_ref,
+    });
+  } catch (error) {
+    console.error(
+      "Verify Flutterwave Error:",
+      error.response?.data || error.message
+    );
 
-    // ✅ Safe User lookup: allow ObjectId or fallback to testRef
-    let user = null;
-    if (mongoose.Types.ObjectId.isValid(rawUserId)) {
-      user = await User.findById(rawUserId);
-    } else {
-      user = await User.findOne({ testRef: rawUserId });
+    res.status(500).json({
+      success: false,
+      message: "Payment verification failed",
+    });
+  }
+};
+
+/**
+ * =====================================================
+ * FLUTTERWAVE WEBHOOK HANDLER
+ * Flutterwave → Backend (SERVER TO SERVER)
+ *
+ * ✅ SINGLE SOURCE OF TRUTH
+ * ✅ WALLET CREDITING HAPPENS HERE ONLY
+ *
+ * NOTE:
+ * Route must use:
+ * express.raw({ type: "application/json" })
+ * =====================================================
+ */
+export const flutterwaveWebhook = async (req, res) => {
+  try {
+    // 🔐 Verify webhook signature
+    const signature = req.headers["verif-hash"];
+    if (
+      !signature ||
+      signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET
+    ) {
+      return res.status(401).send("Invalid signature");
     }
 
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+    const payload = JSON.parse(req.body.toString());
+    const { event, data } = payload;
+
+    if (event !== "charge.completed" || data.status !== "successful") {
+      return res.status(200).send("Event ignored");
     }
 
-    // 🚫 Prevent duplicate credit
+    const txRef = data.tx_ref;
+
+    /**
+     * EXPECTED tx_ref FORMAT:
+     * flw_<USER_ID>_<timestamp>
+     * Example:
+     * flw_65d2a5dfe89cfae9a1234567_1700000000000
+     */
+    const parts = txRef.split("_");
+    const userId = parts[1];
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).send("Invalid user reference");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).send("User not found");
+
+    // 🚫 Prevent double credit
     const alreadyCredited = await Deposit.findOne({
       reference: txRef,
       status: "successful",
     });
 
     if (alreadyCredited) {
-      return res.json({
-        success: true,
-        message: "Payment already processed",
-      });
+      return res.status(200).send("Already processed");
     }
 
     // 💾 Save deposit
     await Deposit.create({
       user: user._id,
-      amount: payment.amount,
+      amount: Number(data.amount),
       reference: txRef,
       status: "successful",
       channel: "flutterwave",
+      flutterwaveTransactionId: data.id,
+      gatewayResponse: data,
     });
 
     // 💰 Credit wallet
-    user.mainBalance += Number(payment.amount);
-    user.totalDeposits += Number(payment.amount);
+    user.mainBalance += Number(data.amount);
+    user.totalDeposits += Number(data.amount);
     await user.save();
 
-    // 🧾 Log transaction
+    // 🧾 Log wallet transaction
     await logWalletTransaction(
       user._id,
       "deposit",
-      Number(payment.amount),
+      Number(data.amount),
       txRef,
       "success"
     );
 
-    return res.json({
-      success: true,
-      message: "Wallet funded successfully",
-      balance: user.mainBalance,
-    });
-  } catch (error) {
-    console.error("Verify Flutterwave Error:", error.response?.data || error);
-
-    res.status(500).json({
-      success: false,
-      message: "Payment verification failed",
-      error: error.response?.data || error.message,
-    });
-  }
-};
-
-/**
- * FLUTTERWAVE WEBHOOK HANDLER
- * Flutterwave → Backend (Server-to-server)
- * Must use express.raw({ type: 'application/json' }) in route
- */
-export const flutterwaveWebhook = async (req, res) => {
-  try {
-    const payload = req.body; // raw JSON
-    console.log("Flutterwave Webhook Received:", payload);
-
-    // Verify event type
-    const event = payload.event;
-    const data = payload.data;
-
-    if (event === "charge.completed" && data.status === "successful") {
-      const txRef = data.tx_ref;
-      const rawUserId = txRef.split("_")[0];
-
-      // ✅ Safe lookup
-      let user = null;
-      if (mongoose.Types.ObjectId.isValid(rawUserId)) {
-        user = await User.findById(rawUserId);
-      } else {
-        user = await User.findOne({ testRef: rawUserId });
-      }
-
-      if (!user) return res.status(404).send("User not found");
-
-      // 🚫 Prevent duplicate credit
-      const alreadyCredited = await Deposit.findOne({
-        reference: txRef,
-        status: "successful",
-      });
-      if (alreadyCredited) return res.status(200).send("Already processed");
-
-      // 💾 Save deposit
-      await Deposit.create({
-        user: user._id,
-        amount: data.amount,
-        reference: txRef,
-        status: "successful",
-        channel: "flutterwave",
-      });
-
-      // 💰 Credit wallet
-      user.mainBalance += Number(data.amount);
-      user.totalDeposits += Number(data.amount);
-      await user.save();
-
-      // 🧾 Log transaction
-      await logWalletTransaction(
-        user._id,
-        "deposit",
-        Number(data.amount),
-        txRef,
-        "success"
-      );
-
-      return res.status(200).send("Webhook processed successfully");
-    }
-
-    res.status(200).send("Event ignored");
+    return res.status(200).send("Webhook processed successfully");
   } catch (error) {
     console.error("Flutterwave Webhook Error:", error);
     res.status(500).send("Webhook processing failed");

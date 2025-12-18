@@ -1,4 +1,3 @@
-//backend/index.js
 import express from "express";
 import mongoose from "mongoose";
 import helmet from "helmet";
@@ -6,10 +5,6 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import hpp from "hpp";
 import "dotenv/config";
-
-/* ---------------- LOG KEYS (OPTIONAL) ---------------- */
-console.log("Zeni API KEY =>", process.env.ZENI_API_KEY);
-console.log("Zeni CONTRACT KEY =>", process.env.ZENI_CONTRACT_KEY);
 
 /* ---------------- CRON JOB ---------------- */
 import job from "./utils/cron.js";
@@ -21,8 +16,6 @@ import walletRoutes from "./routes/walletRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import flutterwaveRoutes from "./routes/flutterwaveRoutes.js";
-
-/* ---------------- NEW ROUTES ---------------- */
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 
@@ -48,31 +41,16 @@ mongoose
     process.exit(1);
   });
 
-/* ----------------------------------------------------
-   🚨 FLUTTERWAVE WEBHOOK (RAW BODY REQUIRED)
-   MUST BE BEFORE express.json()
----------------------------------------------------- */
-app.use(
-  "/api/flutterwave/webhook",
-  express.raw({ type: "application/json" })
-);
-
 /* ----------------------------------------
    GLOBAL MIDDLEWARES
 ---------------------------------------- */
-app.use(express.json({ limit: "5mb" }));
-app.use(cookieParser());
 app.use(helmet());
 app.use(hpp());
 
-/* ----------------------------------------
-   CORS CONFIG
----------------------------------------- */
 app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true); // Mobile / Postman
-
       if (origin.startsWith("exp://")) return callback(null, true); // Expo Go
 
       const allowedOrigins = [
@@ -82,13 +60,15 @@ app.use(
       ];
 
       if (allowedOrigins.includes(origin)) return callback(null, true);
-
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   })
 );
+
+app.use(express.json({ limit: "5mb" }));
+app.use(cookieParser());
 
 /* ----------------------------------------
    HEALTH CHECK
@@ -123,15 +103,15 @@ app.get("/check-plans", async (req, res) => {
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/user", profileRoutes);
-
 app.use("/api/v1/wallet", walletRoutes);
-app.use("/api/flutterwave", flutterwaveRoutes);
-
 app.use("/api/v1/daily-game", dailyGameRoutes);
-
-/* ⭐ DATA & PLANS */
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
+
+/* ----------------------------------------
+   FLUTTERWAVE WEBHOOK (RAW BODY HANDLED IN ROUTE)
+---------------------------------------- */
+app.use("/api/flutterwave", flutterwaveRoutes);
 
 /* ----------------------------------------
    404 HANDLER

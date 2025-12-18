@@ -4,7 +4,16 @@ import { flutterwaveWebhook } from "../controllers/flutterwaveController.js";
 
 const router = express.Router();
 
-router.post("/webhook", express.raw({ type: "application/json" }), flutterwaveWebhook);
+/**
+ * POST /api/v1/flutterwave/webhook
+ * Flutterwave server → backend
+ * MUST use raw body
+ * MUST NOT be protected
+ */
+router.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  flutterwaveWebhook
+);
 
 export default router;
-
