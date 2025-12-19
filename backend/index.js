@@ -16,7 +16,6 @@ import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
-import flutterwaveRoutes from "./routes/flutterwaveRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 
@@ -112,7 +111,6 @@ app.use("/api/v1/data", dataPurchaseRoutes);
 /* ----------------------------------------
    FLUTTERWAVE WEBHOOK (RAW BODY HANDLED IN ROUTE)
 ---------------------------------------- */
-app.use("/api/flutterwave", flutterwaveRoutes);
 
 /* ----------------------------------------
    404 HANDLER

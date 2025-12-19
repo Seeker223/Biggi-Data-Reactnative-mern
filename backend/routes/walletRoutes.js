@@ -1,4 +1,3 @@
-//backend/routes/walletRoutes.js
 import express from "express";
 import { protect } from "../middleware/auth.js";
 import { paymentLimiter } from "../middleware/rateLimit.js";
@@ -6,6 +5,7 @@ import { paymentLimiter } from "../middleware/rateLimit.js";
 import {
   verifyFlutterwavePayment,
   getDepositStatus,
+  flutterwaveWebhook,
 } from "../controllers/flutterwaveController.js";
 
 import {
@@ -15,10 +15,9 @@ import {
 
 const router = express.Router();
 
-/* =====================================================
-   FLUTTERWAVE PAYMENT (CLIENT INITIATED)
-   React Native SDK → Backend verification
-===================================================== */
+/* ===============================
+   FLUTTERWAVE (SDK-ONLY FLOW)
+================================ */
 
 // Verify payment after Flutterwave SDK completes
 router.post(
@@ -35,22 +34,18 @@ router.get(
   getDepositStatus
 );
 
-/* =====================================================
-   WALLET OPERATIONS
-===================================================== */
-
-// Withdraw funds
+// 🚨 WEBHOOK (PUBLIC, RAW BODY, NO AUTH)
 router.post(
-  "/withdraw",
-  protect,
-  withdrawFunds
+  "/flutterwave-webhook",
+  express.raw({ type: "application/json" }),
+  flutterwaveWebhook
 );
 
-// Deposit history
-router.get(
-  "/deposit-history",
-  protect,
-  getDepositHistory
-);
+/* ===============================
+   WALLET
+================================ */
+
+router.post("/withdraw", protect, withdrawFunds);
+router.get("/deposit-history", protect, getDepositHistory);
 
 export default router;
