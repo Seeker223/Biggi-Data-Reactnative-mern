@@ -1,3 +1,4 @@
+// backend/models/Deposit.js
 import mongoose from "mongoose";
 
 const depositSchema = new mongoose.Schema(

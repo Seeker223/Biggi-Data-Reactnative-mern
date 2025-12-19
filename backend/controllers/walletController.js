@@ -1,7 +1,7 @@
-//backend/controllers/walletController.js
+// backend/controllers/walletController.js
 import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
-import Deposit from "../models/Deposit.js"; // Make sure you have a Deposit model
+import Deposit from "../models/Deposit.js"; // Ensure Deposit model exists
 
 /* =====================================================
    WITHDRAW FUNDS
@@ -60,7 +60,7 @@ export const getDepositHistory = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Assuming you have a Deposit model that stores user deposits
+    // Fetch all deposits for user, sorted newest first
     const deposits = await Deposit.find({ user: userId }).sort({ createdAt: -1 });
 
     res.status(200).json({

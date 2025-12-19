@@ -1,3 +1,4 @@
+// backend/routes/walletRoutes.js
 import express from "express";
 import { protect } from "../middleware/auth.js";
 import { paymentLimiter } from "../middleware/rateLimit.js";
@@ -19,7 +20,7 @@ const router = express.Router();
    FLUTTERWAVE (SDK-ONLY FLOW)
 ================================ */
 
-// Verify payment after Flutterwave SDK completes
+// Verify payment after Flutterwave SDK completes (protected)
 router.post(
   "/verify-flutterwave",
   protect,
@@ -27,12 +28,8 @@ router.post(
   verifyFlutterwavePayment
 );
 
-// Poll deposit status
-router.get(
-  "/deposit-status/:tx_ref",
-  protect,
-  getDepositStatus
-);
+// Poll deposit status (protected)
+router.get("/deposit-status/:tx_ref", protect, getDepositStatus);
 
 // 🚨 WEBHOOK (PUBLIC, RAW BODY, NO AUTH)
 router.post(

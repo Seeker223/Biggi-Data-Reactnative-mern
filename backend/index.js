@@ -1,4 +1,4 @@
-//backend/index.js
+// backend/index.js
 import express from "express";
 import mongoose from "mongoose";
 import helmet from "helmet";
@@ -67,6 +67,7 @@ app.use(
   })
 );
 
+// express.json for normal routes; webhook uses raw body in route
 app.use(express.json({ limit: "5mb" }));
 app.use(cookieParser());
 
@@ -107,10 +108,6 @@ app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
-
-/* ----------------------------------------
-   FLUTTERWAVE WEBHOOK (RAW BODY HANDLED IN ROUTE)
----------------------------------------- */
 
 /* ----------------------------------------
    404 HANDLER
