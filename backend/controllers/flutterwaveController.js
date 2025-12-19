@@ -6,71 +6,7 @@ import Deposit from "../models/Deposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 
 /* =====================================================
-   INITIATE FLUTTERWAVE PAYMENT
-   Backend → Flutterwave
-   Returns payment link and tx_ref
-===================================================== */
-export const initiateFlutterwavePayment = async (req, res) => {
-  try {
-    const { amount } = req.body;
-
-    if (!amount || Number(amount) < 100) {
-      return res.status(400).json({
-        success: false,
-        message: "Minimum deposit amount is ₦100",
-      });
-    }
-
-    const tx_ref = `flw_${req.user._id}_${Date.now()}`;
-
-    const paymentData = {
-      tx_ref,
-      amount: Number(amount),
-      currency: "NGN",
-      redirect_url: `${process.env.FRONTEND_URL}/deposit/confirmation`,
-      customer: {
-        email: req.user.email,
-        phonenumber: req.user.phoneNumber,
-        name: req.user.username,
-      },
-      payment_options: "card,banktransfer,ussd",
-    };
-
-    const response = await axios.post(
-      "https://api.flutterwave.com/v3/payments",
-      paymentData,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    return res.status(200).json({
-      success: true,
-      data: response.data.data,
-      tx_ref,
-    });
-  } catch (err) {
-    console.error(
-      "Initiate Flutterwave Error:",
-      err.response?.data || err.message
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        err.response?.data?.message ||
-        err.response?.data?.error ||
-        "Flutterwave initiation failed",
-    });
-  }
-};
-
-
-/* =====================================================
-   VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)
+   VERIFY FLUTTERWAVE PAYMENT (CLIENT-INITIATED)
    Frontend → Backend
    DOES NOT CREDIT WALLET (webhook does)
 ===================================================== */
@@ -103,9 +39,9 @@ export const verifyFlutterwavePayment = async (req, res) => {
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
-      message: "Payment verified successfully. Awaiting webhook confirmation.",
+      message: "Payment verified. Awaiting webhook confirmation.",
       amount: payment.amount,
       currency: payment.currency,
       tx_ref: payment.tx_ref,
@@ -116,7 +52,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       error.response?.data || error.message
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Payment verification failed",
     });
@@ -124,15 +60,18 @@ export const verifyFlutterwavePayment = async (req, res) => {
 };
 
 /* =====================================================
-   GET DEPOSIT STATUS (FOR POLLING)
+   GET DEPOSIT STATUS (POLLING)
    Frontend polls /wallet/deposit-status/:tx_ref
 ===================================================== */
 export const getDepositStatus = async (req, res) => {
   try {
     const { tx_ref } = req.params;
+
     const deposit = await Deposit.findOne({ reference: tx_ref });
 
-    if (!deposit) return res.json({ status: "pending" });
+    if (!deposit) {
+      return res.json({ status: "pending" });
+    }
 
     return res.json({ status: deposit.status }); // pending | successful | failed
   } catch (err) {
@@ -143,37 +82,41 @@ export const getDepositStatus = async (req, res) => {
 
 /* =====================================================
    GET DEPOSIT HISTORY
-   Frontend calls /wallet/deposit-history
+   Frontend → /wallet/deposit-history
 ===================================================== */
 export const getDepositHistory = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const deposits = await Deposit.find({ user: userId }).sort({ createdAt: -1 });
+    const deposits = await Deposit.find({ user: userId })
+      .sort({ createdAt: -1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       deposits,
     });
   } catch (err) {
     console.error("Deposit history error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: "Failed to fetch deposit history",
+      message: "Failed to fetch deposit history",
     });
   }
 };
 
 /* =====================================================
-   FLUTTERWAVE WEBHOOK HANDLER
+   FLUTTERWAVE WEBHOOK HANDLER (CRITICAL)
    Flutterwave → Backend (SERVER TO SERVER)
    Wallet crediting happens ONLY here
 ===================================================== */
 export const flutterwaveWebhook = async (req, res) => {
   try {
-    // Verify webhook signature
     const signature = req.headers["verif-hash"];
-    if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
+
+    if (
+      !signature ||
+      signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET
+    ) {
       return res.status(401).send("Invalid signature");
     }
 
@@ -200,9 +143,12 @@ export const flutterwaveWebhook = async (req, res) => {
       reference: txRef,
       status: "successful",
     });
-    if (alreadyCredited) return res.status(200).send("Already processed");
 
-    // Save deposit
+    if (alreadyCredited) {
+      return res.status(200).send("Already processed");
+    }
+
+    // Save deposit record
     await Deposit.create({
       user: user._id,
       amount: Number(data.amount),
@@ -218,12 +164,18 @@ export const flutterwaveWebhook = async (req, res) => {
     user.totalDeposits += Number(data.amount);
     await user.save();
 
-    // Log wallet transaction
-    await logWalletTransaction(user._id, "deposit", Number(data.amount), txRef, "success");
+    // Wallet transaction log
+    await logWalletTransaction(
+      user._id,
+      "deposit",
+      Number(data.amount),
+      txRef,
+      "success"
+    );
 
     return res.status(200).send("Webhook processed successfully");
   } catch (error) {
     console.error("Flutterwave Webhook Error:", error);
-    res.status(500).send("Webhook processing failed");
+    return res.status(500).send("Webhook processing failed");
   }
 };
