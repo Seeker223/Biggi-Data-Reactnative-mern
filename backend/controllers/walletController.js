@@ -1,3 +1,4 @@
+//backend/controllers/walletController.js
 import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
 import Deposit from "../models/Deposit.js"; // Make sure you have a Deposit model

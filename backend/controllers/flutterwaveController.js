@@ -1,3 +1,4 @@
+//backend/controllers/flutterwaveController.js
 import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
@@ -13,10 +14,10 @@ export const initiateFlutterwavePayment = async (req, res) => {
   try {
     const { amount } = req.body;
 
-    if (!amount || amount <= 0) {
+    if (!amount || Number(amount) < 100) {
       return res.status(400).json({
         success: false,
-        message: "Amount is required and must be greater than 0",
+        message: "Minimum deposit amount is ₦100",
       });
     }
 
@@ -24,7 +25,7 @@ export const initiateFlutterwavePayment = async (req, res) => {
 
     const paymentData = {
       tx_ref,
-      amount,
+      amount: Number(amount),
       currency: "NGN",
       redirect_url: `${process.env.FRONTEND_URL}/deposit/confirmation`,
       customer: {
@@ -41,6 +42,7 @@ export const initiateFlutterwavePayment = async (req, res) => {
       {
         headers: {
           Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
         },
       }
     );
@@ -48,17 +50,24 @@ export const initiateFlutterwavePayment = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: response.data.data,
-      message: "Payment initiated",
       tx_ref,
     });
   } catch (err) {
-    console.error("Initiate Flutterwave Error:", err.response?.data || err);
+    console.error(
+      "Initiate Flutterwave Error:",
+      err.response?.data || err.message
+    );
+
     return res.status(500).json({
       success: false,
-      message: "Failed to initiate payment",
+      message:
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        "Flutterwave initiation failed",
     });
   }
 };
+
 
 /* =====================================================
    VERIFY FLUTTERWAVE PAYMENT (REDIRECT-BASED)

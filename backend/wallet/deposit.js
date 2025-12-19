@@ -1,3 +1,4 @@
+//backend/wallet/deposit.js
 router.get("/deposit-history", protect, async (req, res) => {
   try {
     const deposits = await Deposit.find({ user: req.user._id })

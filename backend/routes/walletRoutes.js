@@ -8,10 +8,10 @@ import {
   verifyFlutterwavePayment,
   getDepositStatus,
   flutterwaveWebhook,
-  getDepositHistory,  // ← import this
 } from "../controllers/flutterwaveController.js";
 
-import { withdrawFunds } from "../controllers/walletController.js";
+import { withdrawFunds, getDepositHistory } 
+from "../controllers/walletController.js";
 
 const router = express.Router();
 
