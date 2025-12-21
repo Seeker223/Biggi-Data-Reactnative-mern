@@ -10,10 +10,14 @@ import {
 } from "../controllers/flutterwaveController.js";
 
 import {
+  flutterwaveWithdrawal,
+  flutterwaveWithdrawWebhook,
+  verifyBankAccount,
   withdrawFunds,
   getDepositHistory,
   getWithdrawalHistory,
   getUserBalance,
+  getDepositStats,
 } from "../controllers/walletController.js";
 
 const router = express.Router();
@@ -45,9 +49,34 @@ router.post(
 );
 
 /* ===============================
-   WITHDRAWAL MANAGEMENT
+   WITHDRAWAL MANAGEMENT - FLUTTERWAVE
 ================================ */
-// Submit withdrawal request
+// Submit withdrawal request via Flutterwave
+router.post(
+  "/flutterwave-withdraw",
+  protect,
+  paymentLimiter,
+  flutterwaveWithdrawal
+);
+
+// Verify bank account for withdrawal
+router.post(
+  "/verify-account",
+  protect,
+  verifyBankAccount
+);
+
+// Flutterwave withdrawal webhook (no auth required)
+router.post(
+  "/withdraw-webhook",
+  express.json(), // Make sure to parse JSON for webhook
+  flutterwaveWithdrawWebhook
+);
+
+/* ===============================
+   WITHDRAWAL MANAGEMENT - LEGACY
+================================ */
+// Submit withdrawal request (legacy)
 router.post("/withdraw", protect, withdrawFunds);
 
 // Get user's withdrawal history
@@ -58,6 +87,9 @@ router.get("/withdraw-history", protect, getWithdrawalHistory);
 ================================ */
 // Get user's deposit history
 router.get("/deposit-history", protect, getDepositHistory);
+
+// Get deposit statistics
+router.get("/deposit-stats", protect, getDepositStats);
 
 /* ===============================
    BALANCE & WALLET INFO
