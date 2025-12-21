@@ -267,11 +267,11 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
 };
 
 /* =====================================================
-   VERIFY BANK ACCOUNT (FOR FRONTEND)
+   VERIFY BANK ACCOUNT (FOR FRONTEND) - UPDATED FOR OPAY
 ===================================================== */
 export const verifyBankAccount = async (req, res) => {
   try {
-    const { account_number, bank_code } = req.body;
+    const { account_number, bank_code, is_fintech, bank_name } = req.body;
 
     if (!account_number || !bank_code) {
       return res.status(400).json({
@@ -280,45 +280,91 @@ export const verifyBankAccount = async (req, res) => {
       });
     }
 
-    const response = await axios.post(
-      "https://api.flutterwave.com/v3/accounts/resolve",
-      {
-        account_number,
-        account_bank: bank_code,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 10000,
-      }
-    );
+    // Map bank codes for fintechs that need special handling
+    let flutterwaveBankCode = bank_code;
+    let bankNameForVerification = bank_name || "";
+    
+    // Special handling for OPay and other fintechs
+    if (is_fintech || bank_name?.toLowerCase().includes("opay")) {
+      // For OPay, we need to use the correct Flutterwave bank code
+      flutterwaveBankCode = "099"; // OPay's Flutterwave code
+      
+      // Note: Flutterwave might not support account verification for all fintechs
+      // We'll try but also provide fallback
+      console.log(`Attempting OPay verification with code: ${flutterwaveBankCode}`);
+    }
 
-    if (response.data.status === "success") {
-      return res.json({
-        success: true,
-        account_name: response.data.data.account_name,
-        account_number: response.data.data.account_number,
-      });
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: "Account verification failed",
-        error: response.data.message,
-      });
+    try {
+      const response = await axios.post(
+        "https://api.flutterwave.com/v3/accounts/resolve",
+        {
+          account_number,
+          account_bank: flutterwaveBankCode,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 10000,
+        }
+      );
+
+      if (response.data.status === "success") {
+        return res.json({
+          success: true,
+          account_name: response.data.data.account_name,
+          account_number: response.data.data.account_number,
+          is_verified: true,
+        });
+      } else {
+        // For fintechs, we might get an error but can still proceed
+        if (is_fintech) {
+          return res.json({
+            success: true,
+            account_name: "Fintech Account Holder",
+            account_number: account_number,
+            is_verified: false,
+            message: "Account verification limited for this fintech. Please ensure details are correct.",
+          });
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: "Account verification failed",
+          error: response.data.message,
+        });
+      }
+    } catch (flutterwaveError) {
+      console.error("Flutterwave verification error:", flutterwaveError.response?.data || flutterwaveError.message);
+      
+      // Special handling for OPay/Fintech errors
+      if (is_fintech || bank_name?.toLowerCase().includes("opay")) {
+        // For fintechs, we allow proceeding with manual verification
+        return res.json({
+          success: true,
+          account_name: "OPay Account Holder",
+          account_number: account_number,
+          is_verified: false,
+          message: "Proceed with manual verification. Ensure account details are correct.",
+          requires_manual_check: true,
+        });
+      }
+      
+      // For traditional banks, return the error
+      if (flutterwaveError.response) {
+        const errorMessage = flutterwaveError.response.data?.message || "Invalid account details";
+        return res.status(400).json({
+          success: false,
+          message: errorMessage,
+          error: flutterwaveError.response.data,
+        });
+      }
+      
+      throw flutterwaveError;
     }
   } catch (err) {
     console.error("Account verification error:", err);
-    
-    // Check for specific Flutterwave errors
-    if (err.response) {
-      const errorMessage = err.response.data?.message || "Invalid account details";
-      return res.status(400).json({
-        success: false,
-        message: errorMessage,
-      });
-    }
     
     res.status(500).json({
       success: false,
