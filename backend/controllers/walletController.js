@@ -1,4 +1,4 @@
-// backend/controllers/walletController.js - UPDATED WITH ENHANCED ERROR HANDLING
+// backend/controllers/walletController.js - UPDATED WITH CLOUDFLARE WORKER PROXY
 import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
 import Deposit from "../models/Deposit.js";
@@ -40,7 +40,7 @@ export const getUserBalance = async (req, res) => {
 };
 
 /* =====================================================
-   FLUTTERWAVE WITHDRAWAL (TRANSFER API) - IMPROVED ERROR HANDLING
+   FLUTTERWAVE WITHDRAWAL (TRANSFER API) - UPDATED FOR CLOUDFLARE WORKER PROXY
 ===================================================== */
 export const flutterwaveWithdrawal = async (req, res) => {
   const session = await mongoose.startSession();
@@ -126,32 +126,56 @@ export const flutterwaveWithdrawal = async (req, res) => {
       narration
     });
 
-    // Call Flutterwave transfer API with enhanced error handling
+    // IMPORTANT CHANGE: Use Cloudflare Worker URL or direct Flutterwave API
+    // The Worker URL should be set in your .env file as FLUTTERWAVE_API_URL
+    const FLUTTERWAVE_API_URL = process.env.FLUTTERWAVE_API_URL || 
+      "https://api.flutterwave.com/v3/transfers";
+    
+    const isUsingProxy = FLUTTERWAVE_API_URL.includes('workers.dev') || 
+                         FLUTTERWAVE_API_URL.includes('cloudflare');
+    
+    console.log(`🌐 Using ${isUsingProxy ? 'Cloudflare Worker Proxy' : 'Direct Flutterwave API'}: ${FLUTTERWAVE_API_URL}`);
+
+    // Call Flutterwave transfer API via Cloudflare Worker or directly
     let flutterwaveResponse;
     try {
+      // Prepare the request payload
+      const requestPayload = {
+        account_bank,
+        account_number,
+        amount: numericAmount,
+        narration: narration || `Withdrawal from Biggi Data`,
+        currency,
+        reference: tx_ref,
+        beneficiary_name,
+        callback_url: `${process.env.BASE_URL || "http://localhost:5000"}/api/v1/wallet/withdraw-webhook`,
+      };
+
+      // Prepare headers
+      const requestHeaders = {
+        "Content-Type": "application/json",
+      };
+
+      // Only add Authorization header if NOT using the proxy
+      // The Cloudflare Worker will add its own Authorization header
+      if (!isUsingProxy) {
+        requestHeaders.Authorization = `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`;
+      }
+
       flutterwaveResponse = await axios.post(
-        "https://api.flutterwave.com/v3/transfers",
+        FLUTTERWAVE_API_URL, // This is the key change
+        requestPayload,
         {
-          account_bank,
-          account_number,
-          amount: numericAmount,
-          narration: narration || `Withdrawal from Biggi Data`,
-          currency,
-          reference: tx_ref,
-          beneficiary_name,
-          callback_url: `${process.env.BASE_URL || "http://localhost:5000"}/api/v1/wallet/withdraw-webhook`,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
+          headers: requestHeaders,
           timeout: 30000,
         }
       );
+
     } catch (axiosError) {
-      // Log detailed axios error
-      console.error("❌ AXIOS ERROR DETAILS:", {
+      // Enhanced error logging for proxy/direct calls
+      console.error("❌ API CALL ERROR DETAILS:", {
+        using_proxy: isUsingProxy,
+        target_url: FLUTTERWAVE_API_URL,
         message: axiosError.message,
         code: axiosError.code,
         response: axiosError.response ? {
@@ -160,7 +184,16 @@ export const flutterwaveWithdrawal = async (req, res) => {
         } : null,
         request: axiosError.request ? "Request made but no response" : null
       });
-      throw axiosError; // Re-throw to be caught by outer catch block
+      
+      // Provide more specific error messages for proxy setup
+      if (isUsingProxy && axiosError.response?.status === 404) {
+        throw new Error("Cloudflare Worker returned 404. Please check your Worker URL and deployment.");
+      }
+      if (isUsingProxy && axiosError.code === 'ECONNREFUSED') {
+        throw new Error("Cannot connect to Cloudflare Worker. Check if the Worker is deployed and URL is correct.");
+      }
+      
+      throw axiosError;
     }
 
     const transferData = flutterwaveResponse.data.data;
@@ -178,7 +211,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     }
 
     // Log successful Flutterwave response
-    console.log(`✅ Flutterwave transfer initiated:`, {
+    console.log(`✅ Flutterwave transfer initiated ${isUsingProxy ? 'via Proxy' : 'directly'}:`, {
       transferId: transferData.id,
       status: transferData.status,
       reference: transferData.reference
@@ -202,6 +235,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       meta: {
         bank_code: account_bank,
         full_response: transferData,
+        via_proxy: isUsingProxy, // Track if this was via proxy
       },
     }], { session });
 
@@ -219,7 +253,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Withdrawal initiated via Flutterwave",
+      message: `Withdrawal initiated ${isUsingProxy ? 'via Cloudflare Proxy' : 'via Flutterwave'}`,
       withdrawal: {
         id: newWithdraw[0]._id,
         amount: newWithdraw[0].amount,
@@ -239,70 +273,93 @@ export const flutterwaveWithdrawal = async (req, res) => {
   } catch (err) {
     await session.abortTransaction();
     
-    // ENHANCED ERROR HANDLING WITH DETAILED LOGGING
-    console.error("❌ FLUTTERWAVE WITHDRAWAL ERROR:", err.message);
+    // ENHANCED ERROR HANDLING FOR PROXY SETUP
+    console.error("❌ WITHDRAWAL ERROR:", err.message);
     
     if (err.response) {
       // The request was made and the server responded with an error
-      console.error("📡 Flutterwave API Error Status:", err.response.status);
-      console.error("📦 Flutterwave Error Headers:", err.response.headers);
-      console.error("📝 Flutterwave Error Response:", JSON.stringify(err.response.data, null, 2));
+      console.error("📡 API Error Status:", err.response.status);
+      console.error("📦 Error Headers:", err.response.headers);
+      console.error("📝 Error Response:", JSON.stringify(err.response.data, null, 2));
       
-      // Extract Flutterwave's specific error message
-      const fwError = err.response.data;
-      const errorMsg = fwError?.message || fwError?.error?.message || "Unknown Flutterwave error";
-      const errorCode = fwError?.error?.code || fwError?.code || "NO_CODE";
+      // Extract error message
+      const apiError = err.response.data;
+      const errorMsg = apiError?.message || apiError?.error?.message || "Unknown API error";
+      const errorCode = apiError?.error?.code || apiError?.code || "NO_CODE";
       
-      // Map common Flutterwave error codes to user-friendly messages
+      // Map common error codes to user-friendly messages
       let userFriendlyMessage = errorMsg;
       let actionRequired = "Please try again later.";
+      let isProxyError = false;
       
-      switch(errorCode) {
-        case "10401":
-          userFriendlyMessage = "Invalid Flutterwave API key";
-          actionRequired = "Check your FLUTTERWAVE_SECRET_KEY in .env file";
-          break;
-        case "10400":
-          userFriendlyMessage = "Invalid withdrawal request parameters";
-          actionRequired = "Check account details and try again";
-          break;
-        case "10403":
-          userFriendlyMessage = "Insufficient permissions for transfers";
-          actionRequired = "Contact Flutterwave support to enable transfers";
-          break;
-        case "1130400":
-          userFriendlyMessage = "Amount below minimum transfer limit";
-          actionRequired = "Increase withdrawal amount";
-          break;
-        case "10500":
-          userFriendlyMessage = "Flutterwave server error";
-          actionRequired = "Try again in a few minutes";
-          break;
+      // Check if it's a proxy configuration error
+      if (err.response.status === 404 && process.env.FLUTTERWAVE_API_URL?.includes('workers.dev')) {
+        userFriendlyMessage = "Cloudflare Worker not found (404)";
+        actionRequired = "Check your Worker URL in .env and ensure the Worker is deployed.";
+        isProxyError = true;
+      } else if (err.response.status === 403 && process.env.FLUTTERWAVE_API_URL?.includes('workers.dev')) {
+        userFriendlyMessage = "Access denied to Cloudflare Worker";
+        actionRequired = "Check your Worker's security settings and CORS configuration.";
+        isProxyError = true;
+      } else {
+        // Original Flutterwave error mapping
+        switch(errorCode) {
+          case "10401":
+            userFriendlyMessage = "Invalid Flutterwave API key";
+            actionRequired = process.env.FLUTTERWAVE_API_URL?.includes('workers.dev') 
+              ? "Check the FLUTTERWAVE_SECRET_KEY in your Cloudflare Worker settings."
+              : "Check your FLUTTERWAVE_SECRET_KEY in .env file";
+            break;
+          case "10400":
+            userFriendlyMessage = "Invalid withdrawal request parameters";
+            actionRequired = "Check account details and try again";
+            break;
+          case "10403":
+            userFriendlyMessage = "Insufficient permissions for transfers";
+            actionRequired = "Contact Flutterwave support to enable transfers";
+            break;
+          case "1130400":
+            userFriendlyMessage = "Amount below minimum transfer limit";
+            actionRequired = "Increase withdrawal amount";
+            break;
+          case "10500":
+            userFriendlyMessage = "Flutterwave server error";
+            actionRequired = "Try again in a few minutes";
+            break;
+        }
       }
       
       return res.status(err.response.status || 500).json({
         success: false,
-        message: `Flutterwave API Error: ${userFriendlyMessage}`,
+        message: `${isProxyError ? 'Cloudflare Proxy Error' : 'Flutterwave API Error'}: ${userFriendlyMessage}`,
         errorCode: errorCode,
-        errorDetails: fwError?.error || fwError,
-        actionRequired: actionRequired
+        errorDetails: apiError?.error || apiError,
+        actionRequired: actionRequired,
+        isProxyError: isProxyError
       });
       
     } else if (err.request) {
       // The request was made but no response was received
-      console.error("📡 No response received from Flutterwave API");
+      console.error("📡 No response received from API");
       console.error("Request details:", err.request);
+      
+      const isProxyUnreachable = process.env.FLUTTERWAVE_API_URL?.includes('workers.dev') && 
+                                 (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND');
       
       return res.status(504).json({
         success: false,
-        message: "Network timeout - Flutterwave servers not responding",
+        message: isProxyUnreachable 
+          ? "Cannot reach Cloudflare Worker - check your Worker URL" 
+          : "Network timeout - API servers not responding",
         error: "NETWORK_TIMEOUT",
-        actionRequired: "Check your internet connection and try again"
+        actionRequired: isProxyUnreachable 
+          ? "Verify your FLUTTERWAVE_API_URL in .env and ensure the Worker is deployed."
+          : "Check your internet connection and try again"
       });
       
     } else {
       // Something else happened in setting up the request
-      console.error("🔥 Flutterwave Request Setup Error:", err.message);
+      console.error("🔥 Request Setup Error:", err.message);
       console.error("Stack trace:", err.stack);
       
       return res.status(500).json({
@@ -403,7 +460,10 @@ export const verifyBankAccount = async (req, res) => {
       });
     }
 
-    // Map bank codes for fintechs that need special handling
+    // IMPORTANT: This function still calls Flutterwave directly
+    // You may want to update this to also use the proxy if needed
+    // For now, keeping it direct for simplicity
+    
     let flutterwaveBankCode = bank_code;
     let bankNameForVerification = bank_name || "";
     
