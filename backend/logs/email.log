@@ -17,3 +17,5 @@
 [2025-12-17T16:08:16.283Z] ✅ Email sent to testuser@examplee.com | Subject: New Verification Code - Biggi Data | Message ID: <862cce12-f2e0-42c3-a44d-7173fe152ef3@gmail.com>
 [2025-12-17T16:11:35.097Z] ✅ Email sent to baduntobi2024@gmail.com | Subject: Verify Your Account - Biggi Data | Message ID: <28f07914-e9e9-5d8c-d2ac-e5e6d4ddcd67@gmail.com>
 [2025-12-18T17:54:27.076Z] ✅ Email sent to baduntobi2024@gmail.com | Subject: Verify Your Account - Biggi Data | Message ID: <294efb23-ba31-3b94-a9c5-3fb1d8ae2c13@gmail.com>
+[2025-12-22T14:04:40.391Z] ❌ Email error for baduntobi2024@gmail.com: Connection timeout
+[2025-12-22T14:18:13.572Z] ✅ Email sent to baduntobi2024@gmail.com | Subject: New Verification Code - Biggi Data | Message ID: <d54334df-e432-e6a4-7f8c-4d877cff801b@gmail.com>

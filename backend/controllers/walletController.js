@@ -1,4 +1,4 @@
-// backend/controllers/walletController.js
+// backend/controllers/walletController.js - UPDATED WITH ENHANCED ERROR HANDLING
 import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
 import Deposit from "../models/Deposit.js";
@@ -40,7 +40,7 @@ export const getUserBalance = async (req, res) => {
 };
 
 /* =====================================================
-   FLUTTERWAVE WITHDRAWAL (TRANSFER API)
+   FLUTTERWAVE WITHDRAWAL (TRANSFER API) - IMPROVED ERROR HANDLING
 ===================================================== */
 export const flutterwaveWithdrawal = async (req, res) => {
   const session = await mongoose.startSession();
@@ -58,10 +58,12 @@ export const flutterwaveWithdrawal = async (req, res) => {
       currency = "NGN"
     } = req.body;
 
+    // Enhanced validation
     if (!tx_ref || !amount || !account_bank || !account_number || !beneficiary_name) {
       return res.status(400).json({
         success: false,
         message: "All required fields must be provided",
+        required_fields: ["tx_ref", "amount", "account_bank", "account_number", "beneficiary_name"]
       });
     }
 
@@ -70,6 +72,16 @@ export const flutterwaveWithdrawal = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Minimum withdrawal amount is ₦100",
+        provided_amount: amount
+      });
+    }
+
+    // Check if amount exceeds Flutterwave maximum (usually 5,000,000 NGN)
+    if (numericAmount > 5000000) {
+      return res.status(400).json({
+        success: false,
+        message: "Maximum withdrawal amount is ₦5,000,000",
+        provided_amount: numericAmount
       });
     }
 
@@ -87,6 +99,8 @@ export const flutterwaveWithdrawal = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Insufficient balance",
+        user_balance: user.mainBalance,
+        withdrawal_amount: numericAmount
       });
     }
 
@@ -97,41 +111,78 @@ export const flutterwaveWithdrawal = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Duplicate transaction reference",
+        reference: tx_ref
       });
     }
 
-    // Call Flutterwave transfer API
-    const flutterwaveResponse = await axios.post(
-      "https://api.flutterwave.com/v3/transfers",
-      {
-        account_bank,
-        account_number,
-        amount: numericAmount,
-        narration: narration || `Withdrawal from Biggi Data`,
-        currency,
-        reference: tx_ref,
-        beneficiary_name,
-        callback_url: `${process.env.BASE_URL || "http://localhost:5000"}/api/v1/wallet/withdraw-webhook`,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
-          "Content-Type": "application/json",
+    // Log request for debugging
+    console.log(`🚀 Flutterwave withdrawal request:`, {
+      userId,
+      amount: numericAmount,
+      account_bank,
+      account_number: `${account_number.substring(0, 3)}...`,
+      beneficiary_name,
+      reference: tx_ref,
+      narration
+    });
+
+    // Call Flutterwave transfer API with enhanced error handling
+    let flutterwaveResponse;
+    try {
+      flutterwaveResponse = await axios.post(
+        "https://api.flutterwave.com/v3/transfers",
+        {
+          account_bank,
+          account_number,
+          amount: numericAmount,
+          narration: narration || `Withdrawal from Biggi Data`,
+          currency,
+          reference: tx_ref,
+          beneficiary_name,
+          callback_url: `${process.env.BASE_URL || "http://localhost:5000"}/api/v1/wallet/withdraw-webhook`,
         },
-        timeout: 30000,
-      }
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000,
+        }
+      );
+    } catch (axiosError) {
+      // Log detailed axios error
+      console.error("❌ AXIOS ERROR DETAILS:", {
+        message: axiosError.message,
+        code: axiosError.code,
+        response: axiosError.response ? {
+          status: axiosError.response.status,
+          data: axiosError.response.data
+        } : null,
+        request: axiosError.request ? "Request made but no response" : null
+      });
+      throw axiosError; // Re-throw to be caught by outer catch block
+    }
 
     const transferData = flutterwaveResponse.data.data;
 
     if (flutterwaveResponse.data.status !== "success") {
       await session.abortTransaction();
+      console.error("❌ Flutterwave transfer failed:", flutterwaveResponse.data);
+      
       return res.status(400).json({
         success: false,
         message: "Flutterwave transfer failed",
         error: flutterwaveResponse.data.message,
+        full_response: flutterwaveResponse.data
       });
     }
+
+    // Log successful Flutterwave response
+    console.log(`✅ Flutterwave transfer initiated:`, {
+      transferId: transferData.id,
+      status: transferData.status,
+      reference: transferData.reference
+    });
 
     // Deduct from user's balance
     user.mainBalance -= numericAmount;
@@ -164,6 +215,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     );
 
     await session.commitTransaction();
+    console.log(`✅ Withdrawal transaction committed for user ${userId}, amount: ₦${numericAmount}`);
 
     res.status(200).json({
       success: true,
@@ -179,28 +231,87 @@ export const flutterwaveWithdrawal = async (req, res) => {
         id: transferData.id,
         status: transferData.status,
         reference: transferData.reference,
+        flutterwave_reference: transferData.flw_ref,
       },
       balance: user.mainBalance,
     });
+
   } catch (err) {
     await session.abortTransaction();
-    console.error("Flutterwave withdrawal error:", err);
     
-    // Check if it's an axios error
+    // ENHANCED ERROR HANDLING WITH DETAILED LOGGING
+    console.error("❌ FLUTTERWAVE WITHDRAWAL ERROR:", err.message);
+    
     if (err.response) {
-      console.error("Flutterwave API response:", err.response.data);
+      // The request was made and the server responded with an error
+      console.error("📡 Flutterwave API Error Status:", err.response.status);
+      console.error("📦 Flutterwave Error Headers:", err.response.headers);
+      console.error("📝 Flutterwave Error Response:", JSON.stringify(err.response.data, null, 2));
+      
+      // Extract Flutterwave's specific error message
+      const fwError = err.response.data;
+      const errorMsg = fwError?.message || fwError?.error?.message || "Unknown Flutterwave error";
+      const errorCode = fwError?.error?.code || fwError?.code || "NO_CODE";
+      
+      // Map common Flutterwave error codes to user-friendly messages
+      let userFriendlyMessage = errorMsg;
+      let actionRequired = "Please try again later.";
+      
+      switch(errorCode) {
+        case "10401":
+          userFriendlyMessage = "Invalid Flutterwave API key";
+          actionRequired = "Check your FLUTTERWAVE_SECRET_KEY in .env file";
+          break;
+        case "10400":
+          userFriendlyMessage = "Invalid withdrawal request parameters";
+          actionRequired = "Check account details and try again";
+          break;
+        case "10403":
+          userFriendlyMessage = "Insufficient permissions for transfers";
+          actionRequired = "Contact Flutterwave support to enable transfers";
+          break;
+        case "1130400":
+          userFriendlyMessage = "Amount below minimum transfer limit";
+          actionRequired = "Increase withdrawal amount";
+          break;
+        case "10500":
+          userFriendlyMessage = "Flutterwave server error";
+          actionRequired = "Try again in a few minutes";
+          break;
+      }
+      
       return res.status(err.response.status || 500).json({
         success: false,
-        message: "Flutterwave API error",
-        error: err.response.data?.message || err.response.data,
+        message: `Flutterwave API Error: ${userFriendlyMessage}`,
+        errorCode: errorCode,
+        errorDetails: fwError?.error || fwError,
+        actionRequired: actionRequired
+      });
+      
+    } else if (err.request) {
+      // The request was made but no response was received
+      console.error("📡 No response received from Flutterwave API");
+      console.error("Request details:", err.request);
+      
+      return res.status(504).json({
+        success: false,
+        message: "Network timeout - Flutterwave servers not responding",
+        error: "NETWORK_TIMEOUT",
+        actionRequired: "Check your internet connection and try again"
+      });
+      
+    } else {
+      // Something else happened in setting up the request
+      console.error("🔥 Flutterwave Request Setup Error:", err.message);
+      console.error("Stack trace:", err.stack);
+      
+      return res.status(500).json({
+        success: false,
+        message: "Failed to setup withdrawal request",
+        error: err.message,
+        actionRequired: "Check server logs and try again"
       });
     }
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to process withdrawal via Flutterwave",
-      error: err.message,
-    });
   } finally {
     session.endSession();
   }
@@ -214,12 +325,18 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
     const signature = req.headers["verif-hash"];
     
     if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
-      console.error("Invalid webhook signature");
+      console.error("❌ Invalid webhook signature received");
       return res.sendStatus(401);
     }
 
     const payload = req.body;
     const { event, data } = payload;
+    
+    console.log(`🔔 Flutterwave webhook received: ${event}`, {
+      id: data?.id,
+      reference: data?.reference,
+      status: data?.status
+    });
 
     if (event === "transfer.completed") {
       const { id, status, reference } = data;
@@ -233,7 +350,10 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
       });
 
       if (withdrawal) {
+        console.log(`📝 Updating withdrawal ${withdrawal._id} to status: ${status}`);
+        
         // Update withdrawal status
+        const oldStatus = withdrawal.status;
         withdrawal.status = status === "SUCCESSFUL" ? "approved" : "rejected";
         await withdrawal.save();
 
@@ -243,6 +363,7 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           if (user) {
             user.mainBalance += withdrawal.amount;
             await user.save();
+            console.log(`💰 Refunded ₦${withdrawal.amount} to user ${withdrawal.user}`);
           }
         }
 
@@ -255,13 +376,15 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           status === "SUCCESSFUL" ? "success" : "failed"
         );
 
-        console.log(`Withdrawal ${withdrawal._id} updated to status: ${status}`);
+        console.log(`✅ Withdrawal ${withdrawal._id} updated from ${oldStatus} to ${withdrawal.status}`);
+      } else {
+        console.warn(`⚠️ Withdrawal not found for webhook:`, { id, reference });
       }
     }
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("Withdrawal webhook error:", err);
+    console.error("❌ Withdrawal webhook processing error:", err);
     return res.sendStatus(200); // Always return 200 to prevent retries
   }
 };
@@ -286,12 +409,8 @@ export const verifyBankAccount = async (req, res) => {
     
     // Special handling for OPay and other fintechs
     if (is_fintech || bank_name?.toLowerCase().includes("opay")) {
-      // For OPay, we need to use the correct Flutterwave bank code
       flutterwaveBankCode = "099"; // OPay's Flutterwave code
-      
-      // Note: Flutterwave might not support account verification for all fintechs
-      // We'll try but also provide fallback
-      console.log(`Attempting OPay verification with code: ${flutterwaveBankCode}`);
+      console.log(`🔍 Attempting OPay verification with code: ${flutterwaveBankCode}`);
     }
 
     try {
@@ -311,6 +430,7 @@ export const verifyBankAccount = async (req, res) => {
       );
 
       if (response.data.status === "success") {
+        console.log(`✅ Account verified: ${response.data.data.account_name}`);
         return res.json({
           success: true,
           account_name: response.data.data.account_name,
@@ -336,11 +456,10 @@ export const verifyBankAccount = async (req, res) => {
         });
       }
     } catch (flutterwaveError) {
-      console.error("Flutterwave verification error:", flutterwaveError.response?.data || flutterwaveError.message);
+      console.error("❌ Flutterwave verification error:", flutterwaveError.response?.data || flutterwaveError.message);
       
       // Special handling for OPay/Fintech errors
       if (is_fintech || bank_name?.toLowerCase().includes("opay")) {
-        // For fintechs, we allow proceeding with manual verification
         return res.json({
           success: true,
           account_name: "OPay Account Holder",
@@ -364,7 +483,7 @@ export const verifyBankAccount = async (req, res) => {
       throw flutterwaveError;
     }
   } catch (err) {
-    console.error("Account verification error:", err);
+    console.error("❌ Account verification error:", err);
     
     res.status(500).json({
       success: false,
@@ -453,7 +572,7 @@ export const withdrawFunds = async (req, res) => {
       balance: user.mainBalance,
     });
   } catch (err) {
-    console.error("WithdrawFunds Error:", err);
+    console.error("❌ WithdrawFunds Error:", err);
     res.status(500).json({
       success: false,
       message: "Server error while processing withdrawal",
@@ -479,7 +598,7 @@ export const getWithdrawalHistory = async (req, res) => {
       count: withdrawals.length,
     });
   } catch (err) {
-    console.error("GetWithdrawalHistory Error:", err);
+    console.error("❌ GetWithdrawalHistory Error:", err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch withdrawal history",
@@ -505,7 +624,7 @@ export const getDepositHistory = async (req, res) => {
       count: deposits.length,
     });
   } catch (err) {
-    console.error("GetDepositHistory Error:", err);
+    console.error("❌ GetDepositHistory Error:", err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch deposit history",
@@ -543,7 +662,7 @@ export const getDepositStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get deposit stats error:", error);
+    console.error("❌ Get deposit stats error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch deposit statistics",

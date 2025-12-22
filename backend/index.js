@@ -1,4 +1,4 @@
-// backend/index.js
+// backend/index.js - UPDATED WITH ENHANCED DEBUGGING
 import express from "express";
 import mongoose from "mongoose";
 import helmet from "helmet";
@@ -18,11 +18,11 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
-import monthlyGameRoutes from "./routes/monthlyGameRoutes.js"; // NEW
+import monthlyGameRoutes from "./routes/monthlyGameRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
-import gameStatsRoutes from "./routes/gameStatsRoutes.js"; // NEW
+import gameStatsRoutes from "./routes/gameStatsRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
@@ -95,7 +95,7 @@ app.post(
 ---------------------------------------- */
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: false, // Disable CSP for simplicity
+  contentSecurityPolicy: false,
 }));
 
 app.use(hpp());
@@ -115,7 +115,6 @@ const allowedOrigins = [
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // Allow requests with no origin or from allowed origins
   if (!origin || 
       origin.startsWith("exp://") ||
       origin.includes("localhost") ||
@@ -131,7 +130,6 @@ app.use((req, res, next) => {
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Max-Age", "86400");
     
-    // Handle preflight requests
     if (req.method === "OPTIONS") {
       return res.status(200).end();
     }
@@ -171,7 +169,7 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Biggi Data API is running...",
-    version: "2.0.0", // Updated version
+    version: "2.0.0",
     environment: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -179,7 +177,7 @@ app.get("/", (req, res) => {
       authentication: true,
       wallet: true,
       daily_games: true,
-      monthly_games: true, // NEW
+      monthly_games: true,
       data_purchase: true,
       flutterwave_payments: true,
     }
@@ -198,7 +196,6 @@ app.get("/api/v1/auth/ping", (req, res) => {
 
 app.get("/health", async (req, res) => {
   try {
-    // Check MongoDB
     await mongoose.connection.db.admin().ping();
     
     res.json({
@@ -237,16 +234,103 @@ if (process.env.NODE_ENV !== "production") {
     }
   });
   
+  // UPDATED: Enhanced environment debug endpoint
   app.get("/debug/env", (req, res) => {
     const safeEnv = {
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
-      MONGO_URI: process.env.MONGO_URI ? "Set" : "Not set",
-      FLUTTERWAVE_SECRET_KEY: process.env.FLUTTERWAVE_SECRET_KEY ? "Set" : "Not set",
-      FLUTTERWAVE_WEBHOOK_SECRET: process.env.FLUTTERWAVE_WEBHOOK_SECRET ? "Set" : "Not set",
-      JWT_SECRET: process.env.JWT_SECRET ? "Set" : "Not set",
+      MONGO_URI: process.env.MONGO_URI ? "✅ Set" : "❌ Not set",
+      BASE_URL: process.env.BASE_URL || "Not set (using localhost:5000)",
+      FLUTTERWAVE_SECRET_KEY: process.env.FLUTTERWAVE_SECRET_KEY 
+        ? `✅ Set (${process.env.FLUTTERWAVE_SECRET_KEY.substring(0, 8)}...)` 
+        : "❌ Not set",
+      FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY 
+        ? `✅ Set (${process.env.FLUTTERWAVE_PUBLIC_KEY.substring(0, 8)}...)` 
+        : "❌ Not set",
+      FLUTTERWAVE_WEBHOOK_SECRET: process.env.FLUTTERWAVE_WEBHOOK_SECRET 
+        ? "✅ Set" 
+        : "❌ Not set",
+      JWT_SECRET: process.env.JWT_SECRET ? "✅ Set" : "❌ Not set",
+      FLUTTERWAVE_ENCRYPTION_KEY: process.env.FLUTTERWAVE_ENCRYPTION_KEY 
+        ? "✅ Set" 
+        : "❌ Not set",
     };
-    res.json({ success: true, environment: safeEnv });
+    
+    // Check if Flutterwave keys look valid
+    const flutterwaveKeyStatus = process.env.FLUTTERWAVE_SECRET_KEY 
+      ? (process.env.FLUTTERWAVE_SECRET_KEY.startsWith('FLWSECK_TEST') 
+         ? "⚠️ TEST MODE" 
+         : process.env.FLUTTERWAVE_SECRET_KEY.startsWith('FLWSECK-')
+           ? "✅ LIVE MODE" 
+           : "❓ UNKNOWN FORMAT")
+      : "❌ MISSING";
+    
+    res.json({ 
+      success: true, 
+      environment: safeEnv,
+      flutterwave_status: flutterwaveKeyStatus,
+      note: "Visit /debug/flutterwave-test to test Flutterwave connection"
+    });
+  });
+  
+  // NEW: Flutterwave connection test endpoint
+  app.get("/debug/flutterwave-test", async (req, res) => {
+    try {
+      if (!process.env.FLUTTERWAVE_SECRET_KEY) {
+        return res.status(400).json({
+          success: false,
+          message: "FLUTTERWAVE_SECRET_KEY not set in environment",
+          action: "Add FLUTTERWAVE_SECRET_KEY to your .env file"
+        });
+      }
+      
+      // Test Flutterwave connection by making a simple API call
+      const axios = require('axios');
+      const response = await axios.get('https://api.flutterwave.com/v3/banks/NG', {
+        headers: {
+          'Authorization': `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+      
+      res.json({
+        success: true,
+        message: "✅ Flutterwave API connection successful",
+        status: response.status,
+        bank_count: response.data.data ? response.data.data.length : 0,
+        mode: process.env.FLUTTERWAVE_SECRET_KEY.startsWith('FLWSECK_TEST') 
+          ? "TEST MODE" 
+          : "LIVE MODE",
+        note: "If this fails, check your FLUTTERWAVE_SECRET_KEY"
+      });
+      
+    } catch (error) {
+      console.error("Flutterwave test error:", error.message);
+      
+      if (error.response) {
+        res.status(500).json({
+          success: false,
+          message: "❌ Flutterwave API test failed",
+          status: error.response.status,
+          error: error.response.data?.message || error.response.data,
+          action: "Check your FLUTTERWAVE_SECRET_KEY and ensure it's valid"
+        });
+      } else if (error.request) {
+        res.status(500).json({
+          success: false,
+          message: "❌ Cannot reach Flutterwave servers",
+          error: error.message,
+          action: "Check your internet connection and firewall settings"
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "❌ Flutterwave test setup error",
+          error: error.message
+        });
+      }
+    }
   });
   
   app.get("/debug/routes", (req, res) => {
@@ -256,8 +340,8 @@ if (process.env.NODE_ENV !== "production") {
       { path: "/api/v1/user", description: "User profile" },
       { path: "/api/v1/wallet", description: "Wallet & payments" },
       { path: "/api/v1/daily-game", description: "Daily games" },
-      { path: "/api/v1/monthly-game", description: "Monthly games (NEW)" },
-      { path: "/api/v1/game-stats", description: "Game statistics (NEW)" },
+      { path: "/api/v1/monthly-game", description: "Monthly games" },
+      { path: "/api/v1/game-stats", description: "Game statistics" },
       { path: "/api/v1/plans", description: "Data plans" },
       { path: "/api/v1/data", description: "Data purchase" },
     ];
@@ -273,8 +357,8 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/user", profileRoutes);
 app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
-app.use("/api/v1/monthly-game", monthlyGameRoutes); // NEW: Monthly game routes
-app.use("/api/v1/game-stats", gameStatsRoutes); // NEW: Game statistics routes
+app.use("/api/v1/monthly-game", monthlyGameRoutes);
+app.use("/api/v1/game-stats", gameStatsRoutes);
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
 
@@ -383,7 +467,6 @@ if (process.env.NODE_ENV !== "production") {
   // Test monthly game endpoint
   app.get("/test/monthly-eligibility", async (req, res) => {
     try {
-      // Simulate monthly eligibility check
       const mockData = {
         success: true,
         eligibility: {
@@ -446,12 +529,12 @@ const server = app.listen(PORT, HOST, () => {
   ✅ MongoDB: ${mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"}
   ✅ Webhook: http://${HOST}:${PORT}/api/v1/wallet/flutterwave-webhook
   ✅ Health: http://${HOST}:${PORT}/health
-  ✅ Version: 2.0.0
-  ✅ New Features: Monthly Games ✓ Game Statistics ✓
+  ✅ Debug: http://${HOST}:${PORT}/debug/env
+  ✅ Flutterwave Test: http://${HOST}:${PORT}/debug/flutterwave-test
+  ✅ Version: 2.0.1
   ✅ Time: ${new Date().toISOString()}
   `);
   
-  // Start cron job if exists
   if (job) {
     console.log("✅ Cron job initialized");
   }
@@ -464,12 +547,10 @@ const shutdown = async (signal) => {
   console.log(`\n⚠️  Received ${signal}. Starting graceful shutdown...`);
   
   try {
-    // Close server
     server.close(() => {
       console.log("✅ HTTP server closed");
     });
     
-    // Close MongoDB connection
     await mongoose.connection.close();
     console.log("✅ MongoDB connection closed");
     
@@ -481,7 +562,6 @@ const shutdown = async (signal) => {
   }
 };
 
-// Handle termination signals
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
@@ -490,7 +570,6 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 ---------------------------------------- */
 process.on("unhandledRejection", (reason, promise) => {
   console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
-  // Don't exit in production, just log
   if (process.env.NODE_ENV === "production") {
     console.error("Continuing despite unhandled rejection");
   }
@@ -498,14 +577,12 @@ process.on("unhandledRejection", (reason, promise) => {
 
 process.on("uncaughtException", (error) => {
   console.error("❌ Uncaught Exception:", error);
-  // In production, we might want to restart the process
   if (process.env.NODE_ENV === "production") {
     console.error("Restarting due to uncaught exception");
     process.exit(1);
   }
 });
 
-// Keep-alive headers for load balancers
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
