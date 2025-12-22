@@ -1,4 +1,4 @@
-//backend/models/User.js
+// backend/models/User.js - Add monthly game tracking
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -18,17 +18,26 @@ const DailyGameSchema = new mongoose.Schema({
   },
   result: { type: [Number], default: [] },
   isWinner: { type: Boolean, default: false },
+  prizeAmount: { type: Number, default: 2000 },
+  claimed: { type: Boolean, default: false },
+  claimedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 
 /* -------------------------------------------
-   WEEKLY GAME SCHEMA
+   MONTHLY DRAW SCHEMA
 ------------------------------------------- */
-const WeeklyGameSchema = new mongoose.Schema({
-  numbers: { type: [Number], default: [] },
-  result: { type: [Number], default: [] },
+const MonthlyDrawSchema = new mongoose.Schema({
+  month: { type: String, required: true }, // Format: "YYYY-MM"
+  purchasesCount: { type: Number, default: 0 },
+  isEligible: { type: Boolean, default: false },
   isWinner: { type: Boolean, default: false },
+  prizeAmount: { type: Number, default: 5000 },
+  claimed: { type: Boolean, default: false },
+  claimedAt: { type: Date, default: null },
+  lastPurchaseDate: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 /* -------------------------------------------
@@ -95,8 +104,16 @@ const UserSchema = new mongoose.Schema(
     /* ---------------- GAMES ---------------- */
     dailyNumberDraw: [DailyGameSchema],
     lastDailyGame: { type: Date, default: null },
-    weeklyNumberDraw: [WeeklyGameSchema],
-
+    
+    monthlyDraws: [MonthlyDrawSchema],
+    currentMonthPurchases: { type: Number, default: 0 },
+    currentMonthEligible: { type: Boolean, default: false },
+    
+    /* ---------------- STATISTICS ---------------- */
+    totalWins: { type: Number, default: 0 },
+    totalPrizeWon: { type: Number, default: 0 },
+    lastWinDate: { type: Date, default: null },
+    
     /* ---------------- SECURITY ---------------- */
     securityPin: String,
     securityPinExpires: Date,
@@ -113,8 +130,127 @@ const UserSchema = new mongoose.Schema(
     /* ---------------- TESTING ---------------- */
     testRef: { type: String, unique: true, sparse: true },
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+/* ==========================================
+   VIRTUAL: CURRENT MONTH ELIGIBILITY
+========================================== */
+UserSchema.virtual('currentMonthProgress').get(function() {
+  const purchases = this.currentMonthPurchases || 0;
+  const required = 5;
+  return {
+    purchases,
+    required,
+    progress: Math.min(100, (purchases / required) * 100),
+    isEligible: purchases >= required
+  };
+});
+
+/* ==========================================
+   VIRTUAL: UNCLAIMED REWARDS
+========================================== */
+UserSchema.virtual('unclaimedRewards').get(function() {
+  const dailyUnclaimed = this.dailyNumberDraw
+    .filter(game => game.isWinner && !game.claimed)
+    .reduce((sum, game) => sum + game.prizeAmount, 0);
+    
+  const monthlyUnclaimed = this.monthlyDraws
+    .filter(draw => draw.isWinner && !draw.claimed)
+    .reduce((sum, draw) => sum + draw.prizeAmount, 0);
+    
+  return dailyUnclaimed + monthlyUnclaimed;
+});
+
+/* ==========================================
+   VIRTUAL: TOTAL WINS COUNT
+========================================== */
+UserSchema.virtual('winsCount').get(function() {
+  const dailyWins = this.dailyNumberDraw.filter(game => game.isWinner).length;
+  const monthlyWins = this.monthlyDraws.filter(draw => draw.isWinner).length;
+  return dailyWins + monthlyWins;
+});
+
+/* ==========================================
+   METHOD: GET CURRENT MONTH STRING
+========================================== */
+UserSchema.methods.getCurrentMonthString = function() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+/* ==========================================
+   METHOD: UPDATE MONTHLY PURCHASE
+========================================== */
+UserSchema.methods.updateMonthlyPurchase = function() {
+  const currentMonth = this.getCurrentMonthString();
+  let monthlyDraw = this.monthlyDraws.find(d => d.month === currentMonth);
+  
+  if (!monthlyDraw) {
+    monthlyDraw = {
+      month: currentMonth,
+      purchasesCount: 1,
+      isEligible: false,
+      isWinner: false,
+      prizeAmount: 5000,
+      claimed: false
+    };
+    this.monthlyDraws.push(monthlyDraw);
+  } else {
+    monthlyDraw.purchasesCount += 1;
+    monthlyDraw.lastPurchaseDate = new Date();
+    monthlyDraw.updatedAt = new Date();
+  }
+  
+  // Update current month purchases
+  this.currentMonthPurchases = monthlyDraw.purchasesCount;
+  this.currentMonthEligible = monthlyDraw.purchasesCount >= 5;
+  monthlyDraw.isEligible = this.currentMonthEligible;
+  
+  // Update data bundle count
+  this.dataBundleCount += 1;
+  
+  return this.save();
+};
+
+/* ==========================================
+   METHOD: CLAIM DAILY REWARD
+========================================== */
+UserSchema.methods.claimDailyReward = function(gameId) {
+  const game = this.dailyNumberDraw.id(gameId);
+  if (!game || !game.isWinner || game.claimed) {
+    return false;
+  }
+  
+  game.claimed = true;
+  game.claimedAt = new Date();
+  this.rewardBalance += game.prizeAmount;
+  this.totalPrizeWon += game.prizeAmount;
+  
+  return this.save();
+};
+
+/* ==========================================
+   METHOD: CLAIM MONTHLY REWARD
+========================================== */
+UserSchema.methods.claimMonthlyReward = function(month) {
+  const monthlyDraw = this.monthlyDraws.find(d => d.month === month);
+  if (!monthlyDraw || !monthlyDraw.isWinner || monthlyDraw.claimed) {
+    return false;
+  }
+  
+  monthlyDraw.claimed = true;
+  monthlyDraw.claimedAt = new Date();
+  this.rewardBalance += monthlyDraw.prizeAmount;
+  this.totalPrizeWon += monthlyDraw.prizeAmount;
+  this.totalWins += 1;
+  
+  return this.save();
+};
 
 /* ==========================================
    PASSWORD HASHING

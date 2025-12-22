@@ -18,9 +18,11 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
+import monthlyGameRoutes from "./routes/monthlyGameRoutes.js"; // NEW
 import profileRoutes from "./routes/profileRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
+import gameStatsRoutes from "./routes/gameStatsRoutes.js"; // NEW
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
@@ -169,10 +171,18 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Biggi Data API is running...",
-    version: "1.0.0",
+    version: "2.0.0", // Updated version
     environment: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    features: {
+      authentication: true,
+      wallet: true,
+      daily_games: true,
+      monthly_games: true, // NEW
+      data_purchase: true,
+      flutterwave_payments: true,
+    }
   });
 });
 
@@ -182,6 +192,7 @@ app.get("/api/v1/auth/ping", (req, res) => {
     message: "Backend alive",
     time: new Date().toISOString(),
     mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    version: "2.0.0",
   });
 });
 
@@ -197,9 +208,11 @@ app.get("/health", async (req, res) => {
       services: {
         mongodb: "connected",
         server: "running",
+        cron_job: job ? "active" : "inactive",
       },
       environment: process.env.NODE_ENV,
       memory: process.memoryUsage(),
+      version: "2.0.0",
     });
   } catch (error) {
     console.error("Health check failed:", error);
@@ -235,6 +248,21 @@ if (process.env.NODE_ENV !== "production") {
     };
     res.json({ success: true, environment: safeEnv });
   });
+  
+  app.get("/debug/routes", (req, res) => {
+    const routes = [
+      { path: "/api/v1/auth", description: "Authentication routes" },
+      { path: "/api/v1/users", description: "User management" },
+      { path: "/api/v1/user", description: "User profile" },
+      { path: "/api/v1/wallet", description: "Wallet & payments" },
+      { path: "/api/v1/daily-game", description: "Daily games" },
+      { path: "/api/v1/monthly-game", description: "Monthly games (NEW)" },
+      { path: "/api/v1/game-stats", description: "Game statistics (NEW)" },
+      { path: "/api/v1/plans", description: "Data plans" },
+      { path: "/api/v1/data", description: "Data purchase" },
+    ];
+    res.json({ success: true, routes });
+  });
 }
 
 /* ----------------------------------------
@@ -245,8 +273,90 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/user", profileRoutes);
 app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
+app.use("/api/v1/monthly-game", monthlyGameRoutes); // NEW: Monthly game routes
+app.use("/api/v1/game-stats", gameStatsRoutes); // NEW: Game statistics routes
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
+
+/* ----------------------------------------
+   GAME RULES AND INFORMATION ROUTES
+---------------------------------------- */
+app.get("/api/v1/game/rules/daily", (req, res) => {
+  res.json({
+    success: true,
+    rules: {
+      title: "Daily Draw Rules",
+      prize: "₦2,000",
+      draw_time: "7:30 PM daily",
+      ticket_requirement: "1 ticket per play",
+      ticket_source: "Free with data purchase",
+      number_selection: "Select 5 numbers from 1-70",
+      win_condition: "Match all 5 numbers",
+      max_plays_per_day: "Unlimited (with tickets)",
+      claim_period: "24 hours after draw",
+    }
+  });
+});
+
+app.get("/api/v1/game/rules/monthly", (req, res) => {
+  res.json({
+    success: true,
+    rules: {
+      title: "Monthly Draw Rules",
+      prize: "₦5,000",
+      draw_time: "End of month (23:59)",
+      eligibility: "5+ data purchases in the month",
+      qualification: "Automatic with eligibility",
+      selection: "Random draw from eligible players",
+      win_condition: "Random selection",
+      claim_period: "7 days after draw",
+      monthly_reset: "Purchases reset every month",
+    }
+  });
+});
+
+app.get("/api/v1/game/schedules", (req, res) => {
+  res.json({
+    success: true,
+    schedules: {
+      daily: {
+        time: "19:30",
+        timezone: "WAT",
+        recurring: "daily",
+        prize: "₦2,000",
+        next_draw: new Date(new Date().setHours(19, 30, 0, 0)).toISOString(),
+      },
+      monthly: {
+        time: "23:59",
+        timezone: "WAT",
+        recurring: "monthly",
+        prize: "₦5,000",
+        next_draw: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 0, 0).toISOString(),
+      },
+    }
+  });
+});
+
+app.get("/api/v1/game/prizes/daily", (req, res) => {
+  res.json({
+    success: true,
+    prizes: [
+      { match: "5 numbers", prize: "₦2,000", winners: "1 per day" },
+      { match: "4 numbers", prize: "₦500", winners: "5 per day" },
+      { match: "3 numbers", prize: "₦200", winners: "10 per day" },
+    ]
+  });
+});
+
+app.get("/api/v1/game/prizes/monthly", (req, res) => {
+  res.json({
+    success: true,
+    prizes: [
+      { type: "Grand Prize", prize: "₦5,000", winners: "1 per month" },
+      { type: "Consolation", prize: "₦1,000", winners: "5 per month" },
+    ]
+  });
+});
 
 /* ----------------------------------------
    WEBHOOK TESTING ENDPOINT (DEVELOPMENT ONLY)
@@ -269,6 +379,31 @@ if (process.env.NODE_ENV !== "production") {
       res.status(500).json({ success: false, error: error.message });
     }
   });
+  
+  // Test monthly game endpoint
+  app.get("/test/monthly-eligibility", async (req, res) => {
+    try {
+      // Simulate monthly eligibility check
+      const mockData = {
+        success: true,
+        eligibility: {
+          purchases: Math.floor(Math.random() * 10),
+          required: 5,
+          progress: Math.floor(Math.random() * 100),
+          isEligible: Math.random() > 0.5,
+          isWinner: Math.random() > 0.7,
+          prizeAmount: 5000,
+          claimed: false,
+          month: "2024-12",
+          daysLeft: Math.floor(Math.random() * 30),
+          drawDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 0, 0).toISOString(),
+        }
+      };
+      res.json(mockData);
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 }
 
 /* ----------------------------------------
@@ -280,6 +415,16 @@ app.use((req, res) => {
     success: false,
     error: `Route not found: ${req.method} ${req.originalUrl}`,
     timestamp: new Date().toISOString(),
+    available_routes: [
+      "/api/v1/auth/*",
+      "/api/v1/wallet/*",
+      "/api/v1/daily-game/*",
+      "/api/v1/monthly-game/*",
+      "/api/v1/game-stats/*",
+      "/api/v1/plans/*",
+      "/api/v1/data/*",
+      "/health",
+    ]
   });
 });
 
@@ -301,6 +446,8 @@ const server = app.listen(PORT, HOST, () => {
   ✅ MongoDB: ${mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"}
   ✅ Webhook: http://${HOST}:${PORT}/api/v1/wallet/flutterwave-webhook
   ✅ Health: http://${HOST}:${PORT}/health
+  ✅ Version: 2.0.0
+  ✅ New Features: Monthly Games ✓ Game Statistics ✓
   ✅ Time: ${new Date().toISOString()}
   `);
   
