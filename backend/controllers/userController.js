@@ -1,5 +1,4 @@
-// controllers/userController.js
-
+// backend/controllers/userController.js
 import User from '../models/User.js';
 import APIFeatures from '../utils/APIFeatures.js';
 

@@ -1,4 +1,4 @@
-// routes/userRoutes.js
+// backend/routes/userRoutes.js
 
 import { Router } from "express";
 
