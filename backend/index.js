@@ -1,4 +1,4 @@
-// backend/index.js - UPDATED WITH ENHANCED DEBUGGING
+// backend/index.js - UPDATED WITH ENHANCED DEBUGGING & RESEND
 import express from "express";
 import mongoose from "mongoose";
 import helmet from "helmet";
@@ -234,7 +234,7 @@ if (process.env.NODE_ENV !== "production") {
     }
   });
   
-  // UPDATED: Enhanced environment debug endpoint
+  // UPDATED: Enhanced environment debug endpoint with Resend
   app.get("/debug/env", (req, res) => {
     const safeEnv = {
       NODE_ENV: process.env.NODE_ENV,
@@ -254,6 +254,12 @@ if (process.env.NODE_ENV !== "production") {
       FLUTTERWAVE_ENCRYPTION_KEY: process.env.FLUTTERWAVE_ENCRYPTION_KEY 
         ? "✅ Set" 
         : "❌ Not set",
+      // Resend configuration
+      RESEND_API_KEY: process.env.RESEND_API_KEY 
+        ? `✅ Set (${process.env.RESEND_API_KEY.substring(0, 8)}...)` 
+        : "❌ Not set",
+      RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || "Not set",
+      RESEND_DOMAIN: process.env.RESEND_DOMAIN || "Not set",
     };
     
     // Check if Flutterwave keys look valid
@@ -265,15 +271,80 @@ if (process.env.NODE_ENV !== "production") {
            : "❓ UNKNOWN FORMAT")
       : "❌ MISSING";
     
+    // Check if Resend key looks valid
+    const resendKeyStatus = process.env.RESEND_API_KEY 
+      ? (process.env.RESEND_API_KEY.startsWith('re_')
+         ? "✅ VALID FORMAT" 
+         : "❓ UNKNOWN FORMAT")
+      : "❌ MISSING";
+    
     res.json({ 
       success: true, 
       environment: safeEnv,
-      flutterwave_status: flutterwaveKeyStatus,
-      note: "Visit /debug/flutterwave-test to test Flutterwave connection"
+      status: {
+        flutterwave: flutterwaveKeyStatus,
+        resend: resendKeyStatus,
+      },
+      note: "Visit /debug/flutterwave-test to test Flutterwave connection or /debug/resend-test to test Resend"
     });
   });
   
-  // NEW: Flutterwave connection test endpoint
+  // NEW: Resend connection test endpoint
+  app.get("/debug/resend-test", async (req, res) => {
+    try {
+      if (!process.env.RESEND_API_KEY) {
+        return res.status(400).json({
+          success: false,
+          message: "RESEND_API_KEY not set in environment",
+          action: "Add RESEND_API_KEY to your .env file"
+        });
+      }
+      
+      const { Resend } = await import('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      
+      // Test Resend API by checking API key validity (without actually sending)
+      const domains = await resend.domains.list();
+      
+      res.json({
+        success: true,
+        message: "✅ Resend API connection successful",
+        status: "API key is valid",
+        verified_domains: domains.data ? domains.data.length : 0,
+        note: domains.data && domains.data.length > 0 
+          ? `Verified domains: ${domains.data.map(d => d.name).join(', ')}`
+          : "No verified domains. Add and verify a domain in Resend dashboard."
+      });
+      
+    } catch (error) {
+      console.error("Resend test error:", error.message);
+      
+      if (error.message.includes('Unauthorized') || error.message.includes('Invalid API key')) {
+        res.status(401).json({
+          success: false,
+          message: "❌ Resend API key is invalid",
+          error: error.message,
+          action: "Check your RESEND_API_KEY in Resend dashboard"
+        });
+      } else if (error.message.includes('rate limit')) {
+        res.status(429).json({
+          success: false,
+          message: "❌ Resend rate limit exceeded",
+          error: error.message,
+          action: "Wait a few minutes and try again"
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "❌ Resend test failed",
+          error: error.message,
+          action: "Check your internet connection and Resend API key"
+        });
+      }
+    }
+  });
+  
+  // Flutterwave connection test endpoint
   app.get("/debug/flutterwave-test", async (req, res) => {
     try {
       if (!process.env.FLUTTERWAVE_SECRET_KEY) {
@@ -285,8 +356,8 @@ if (process.env.NODE_ENV !== "production") {
       }
       
       // Test Flutterwave connection by making a simple API call
-      const axios = require('axios');
-      const response = await axios.get('https://api.flutterwave.com/v3/banks/NG', {
+      const axios = await import('axios');
+      const response = await axios.default.get('https://api.flutterwave.com/v3/banks/NG', {
         headers: {
           'Authorization': `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
           'Content-Type': 'application/json'
@@ -507,6 +578,9 @@ app.use((req, res) => {
       "/api/v1/plans/*",
       "/api/v1/data/*",
       "/health",
+      "/debug/env",
+      "/debug/resend-test",
+      "/debug/flutterwave-test"
     ]
   });
 });
@@ -527,16 +601,24 @@ const server = app.listen(PORT, HOST, () => {
   ✅ Host: ${HOST}
   ✅ Port: ${PORT}
   ✅ MongoDB: ${mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"}
+  ✅ Email Service: ${process.env.RESEND_API_KEY ? "Resend API ✅" : "Not configured ❌"}
   ✅ Webhook: http://${HOST}:${PORT}/api/v1/wallet/flutterwave-webhook
   ✅ Health: http://${HOST}:${PORT}/health
   ✅ Debug: http://${HOST}:${PORT}/debug/env
+  ✅ Resend Test: http://${HOST}:${PORT}/debug/resend-test
   ✅ Flutterwave Test: http://${HOST}:${PORT}/debug/flutterwave-test
-  ✅ Version: 2.0.1
+  ✅ Version: 2.0.2
   ✅ Time: ${new Date().toISOString()}
   `);
   
   if (job) {
     console.log("✅ Cron job initialized");
+  }
+  
+  // Warn about missing Resend API key
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("⚠️  RESEND_API_KEY is not configured. Email sending will fail!");
+    console.log("💡 Set up Resend: https://resend.com");
   }
 });
 

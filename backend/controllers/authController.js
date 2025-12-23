@@ -1,4 +1,4 @@
-// backend/controllers/authController.js
+// backend/controllers/authController.js - UPDATED FOR RESEND
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
@@ -50,7 +50,7 @@ const formatPinEmail = (username, pin, isResend = false) => {
 };
 
 // =====================================================
-// REGISTER + AUTO OTP (UPDATED FOR PROMAILER)
+// REGISTER + AUTO OTP (UPDATED FOR RESEND)
 // =====================================================
 export const register = async (req, res) => {
   try {
@@ -97,24 +97,24 @@ export const register = async (req, res) => {
     // Format email content
     const emailContent = formatPinEmail(user.username, pin, false);
 
-    // Send verification email via Promailer HTTP API
+    // Send verification email via Resend API
     try {
-      logAuthEmail(email, "REGISTRATION", "SENDING", "Sending verification email");
+      logAuthEmail(email, "REGISTRATION", "SENDING", "Sending verification email via Resend");
       
       await sendEmail({
         email: user.email,
         subject: emailContent.subject,
         message: emailContent.text,
-        html: emailContent.html,
         username: user.username,
         pin: pin
       });
       
-      logAuthEmail(email, "REGISTRATION", "SENT", "Verification email sent successfully");
+      logAuthEmail(email, "REGISTRATION", "SENT", "Verification email sent successfully via Resend");
       
       res.status(201).json({
         success: true,
         message: "User registered successfully. Verification code sent to email.",
+        requiresVerification: true, // Added to indicate verification is needed
         user: {
           id: user._id,
           username: user.username,
@@ -125,13 +125,14 @@ export const register = async (req, res) => {
       });
       
     } catch (emailError) {
-      logAuthEmail(email, "REGISTRATION", "FAILED", `Email error: ${emailError.message}`);
+      logAuthEmail(email, "REGISTRATION", "FAILED", `Resend email error: ${emailError.message}`);
       
       // User created but email failed - still return success
       res.status(201).json({
         success: true,
         message: "User registered successfully. However, we couldn't send the verification email. Please use the resend PIN feature.",
         warning: "Email service temporarily unavailable",
+        requiresVerification: true,
         user: {
           id: user._id,
           username: user.username,
@@ -202,14 +203,15 @@ export const login = async (req, res) => {
           success: false,
           error: "Please verify your account first",
           code: "VERIFICATION_REQUIRED",
-          canResend: true
+          canResend: true,
+          requiresVerification: true
         });
       } else {
         // Generate new PIN if expired
         const newPin = user.generateSecurityPin();
         await user.save({ validateBeforeSave: false });
 
-        // Try to resend PIN via Promailer
+        // Try to resend PIN via Resend
         try {
           const emailContent = formatPinEmail(user.username, newPin, true);
           
@@ -217,22 +219,22 @@ export const login = async (req, res) => {
             email: user.email,
             subject: emailContent.subject,
             message: emailContent.text,
-            html: emailContent.html,
             username: user.username,
             pin: newPin
           });
           
-          logAuthEmail(email, "LOGIN_RESEND", "SENT", "New verification code sent");
+          logAuthEmail(email, "LOGIN_RESEND", "SENT", "New verification code sent via Resend");
           
         } catch (emailError) {
-          logAuthEmail(email, "LOGIN_RESEND", "FAILED", `Failed to send: ${emailError.message}`);
+          logAuthEmail(email, "LOGIN_RESEND", "FAILED", `Failed to send via Resend: ${emailError.message}`);
         }
 
         return res.status(403).json({
           success: false,
           error: "Account not verified. A new verification code has been sent to your email.",
           code: "VERIFICATION_REQUIRED",
-          canResend: false
+          canResend: false,
+          requiresVerification: true
         });
       }
     }
@@ -448,7 +450,7 @@ export const verifySecurityPin = async (req, res) => {
 };
 
 // =====================================================
-// RESEND SECURITY PIN (UPDATED FOR PROMAILER)
+// RESEND SECURITY PIN (UPDATED FOR RESEND)
 // =====================================================
 export const resendSecurityPin = async (req, res) => {
   try {
@@ -485,20 +487,19 @@ export const resendSecurityPin = async (req, res) => {
     // Format email content
     const emailContent = formatPinEmail(user.username, pin, true);
 
-    // Send email via Promailer HTTP API
+    // Send email via Resend API
     try {
-      logAuthEmail(email, "RESEND_PIN", "SENDING", "Resending verification PIN");
+      logAuthEmail(email, "RESEND_PIN", "SENDING", "Resending verification PIN via Resend");
       
       await sendEmail({
         email: user.email,
         subject: emailContent.subject,
         message: emailContent.text,
-        html: emailContent.html,
         username: user.username,
         pin: pin
       });
       
-      logAuthEmail(email, "RESEND_PIN", "SENT", "New verification code sent");
+      logAuthEmail(email, "RESEND_PIN", "SENT", "New verification code sent via Resend");
       
       res.status(200).json({
         success: true,
@@ -506,7 +507,7 @@ export const resendSecurityPin = async (req, res) => {
       });
       
     } catch (emailError) {
-      logAuthEmail(email, "RESEND_PIN", "FAILED", `Email error: ${emailError.message}`);
+      logAuthEmail(email, "RESEND_PIN", "FAILED", `Resend email error: ${emailError.message}`);
       
       // Return partial success - PIN generated but email failed
       res.status(200).json({
@@ -526,7 +527,7 @@ export const resendSecurityPin = async (req, res) => {
 };
 
 // =====================================================
-// FORGOT PASSWORD
+// FORGOT PASSWORD (UPDATED FOR RESEND)
 // =====================================================
 export const forgotPassword = async (req, res) => {
   try {
@@ -586,8 +587,7 @@ export const forgotPassword = async (req, res) => {
       await sendEmail({
         email: user.email,
         subject: "Password Reset Request - Biggi Data",
-        message: textMessage,
-        html: htmlMessage
+        message: textMessage
       });
       
       res.status(200).json({

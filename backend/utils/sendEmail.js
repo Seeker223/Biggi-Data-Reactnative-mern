@@ -1,7 +1,8 @@
-import nodemailer from "nodemailer";
-import fs from "fs";
-import path from "path";
-import chalk from "chalk";
+// backend/utils/sendEmail.js - UPDATED FOR RESEND API
+import { Resend } from 'resend';
+import fs from 'fs';
+import path from 'path';
+import chalk from 'chalk';
 
 // --- Ensure logs directory exists ---
 const logsDir = path.resolve("./logs");
@@ -15,10 +16,22 @@ function logToFile(content) {
   console.log(chalk.blue(`📧 Email Log: ${content}`));
 }
 
+// Initialize Resend client
+let resend;
+try {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn(chalk.yellow("⚠️ RESEND_API_KEY not found in environment variables"));
+  } else {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+} catch (error) {
+  console.error(chalk.red("❌ Failed to initialize Resend client:"), error);
+}
+
 const sendEmail = async (options) => {
-  // Validate environment variables
-  if (!process.env.SMTP_HOST || !process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
-    const errorMsg = "❌ SMTP environment variables are not configured";
+  // Validate Resend API key
+  if (!process.env.RESEND_API_KEY || !resend) {
+    const errorMsg = "❌ Resend API key not configured";
     console.error(chalk.red(errorMsg));
     logToFile(errorMsg);
     
@@ -28,47 +41,11 @@ const sendEmail = async (options) => {
       return { success: true, message: "OTP logged to console (development mode)" };
     }
     
-    throw new Error("Email service configuration missing");
+    throw new Error("Email service configuration missing - Resend API key required");
   }
 
   try {
-    // 1️⃣ Configure transporter with multiple options
-    const transporterConfig = {
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT) || 465,
-      secure: process.env.SMTP_PORT == 465, // true for SSL
-      auth: {
-        user: process.env.SMTP_EMAIL,
-        pass: process.env.SMTP_PASSWORD,
-      },
-      // Increase timeout for free tier services
-      connectionTimeout: 30000, // 30 seconds
-      greetingTimeout: 30000,
-      socketTimeout: 30000,
-      // Add TLS options for better compatibility
-      tls: {
-        rejectUnauthorized: false, // Accept self-signed certificates
-        minVersion: "TLSv1.2"
-      },
-      // Pool configuration for better performance
-      pool: true,
-      maxConnections: 1,
-      maxMessages: 10,
-    };
-
-    // For port 587 (TLS), use different configuration
-    if (process.env.SMTP_PORT == 587) {
-      transporterConfig.secure = false;
-      transporterConfig.requireTLS = true;
-    }
-
-    const transporter = nodemailer.createTransport(transporterConfig);
-
-    // Verify connection before sending
-    await transporter.verify();
-    console.log(chalk.green("✅ SMTP Connection verified"));
-
-    // 2️⃣ Create HTML email template
+    // Create HTML email template
     const html = `
       <!DOCTYPE html>
       <html>
@@ -141,48 +118,66 @@ const sendEmail = async (options) => {
       </html>
     `;
 
-    // 3️⃣ Mail options
-    const mailOptions = {
-      from: `"${process.env.FROM_NAME || 'Biggi Data'}" <${process.env.SMTP_EMAIL}>`,
-      to: options.email,
+    // Get from email from environment or use default verified domain
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 
+                     process.env.SMTP_EMAIL || 
+                     `no-reply@${process.env.RESEND_DOMAIN || 'resend.dev'}`;
+    
+    const fromName = process.env.FROM_NAME || 'Biggi Data';
+
+    // Send email using Resend
+    const { data, error } = await resend.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [options.email],
       subject: options.subject,
-      text: options.message.replace(/<[^>]*>/g, ''), // Plain text version
       html: html,
-      // Add headers for better deliverability
+      text: options.message.replace(/<[^>]*>/g, ''), // Plain text version
       headers: {
         'X-Priority': '1',
         'X-MSMail-Priority': 'High',
-        'Importance': 'high'
-      }
-    };
+        'Importance': 'high',
+        'X-Entity-Ref': `biggi-data-${Date.now()}`
+      },
+      tags: [
+        {
+          name: 'category',
+          value: options.pin ? 'verification' : 'notification'
+        }
+      ]
+    });
 
-    // 4️⃣ Send email
-    const info = await transporter.sendMail(mailOptions);
+    if (error) {
+      throw new Error(`Resend API error: ${error.message}`);
+    }
 
     // ✅ Success log
-    const successMsg = `✅ Email sent to ${options.email} | Subject: ${options.subject} | Message ID: ${info.messageId}`;
+    const successMsg = `✅ Email sent to ${options.email} via Resend | Subject: ${options.subject} | Message ID: ${data.id}`;
     console.log(chalk.green(successMsg));
-    logToFile(`SUCCESS: ${successMsg}`);
+    logToFile(`RESEND_SUCCESS: ${successMsg}`);
     
-    return { success: true, messageId: info.messageId };
+    return { 
+      success: true, 
+      messageId: data.id,
+      provider: 'resend'
+    };
 
   } catch (error) {
     // ❌ Error handling with detailed logging
-    const errorMsg = `❌ Email error for ${options.email}: ${error.message}`;
+    const errorMsg = `❌ Resend email error for ${options.email}: ${error.message}`;
     console.error(chalk.red(errorMsg));
     console.error(chalk.red('Full error:', error));
     
     // Log detailed error information
-    logToFile(`ERROR: ${errorMsg}`);
+    logToFile(`RESEND_ERROR: ${errorMsg}`);
     logToFile(`Stack: ${error.stack}`);
     
-    // Check for specific SMTP errors
-    if (error.code === 'ECONNREFUSED') {
-      throw new Error('SMTP connection refused. Check your SMTP host and port.');
-    } else if (error.code === 'EAUTH') {
-      throw new Error('SMTP authentication failed. Check your email and password.');
-    } else if (error.code === 'EENVELOPE') {
-      throw new Error('Invalid email address.');
+    // Check for specific Resend errors
+    if (error.message.includes('API key')) {
+      throw new Error('Resend API key is invalid or missing');
+    } else if (error.message.includes('domain')) {
+      throw new Error('Resend domain not verified. Please verify your domain in Resend dashboard.');
+    } else if (error.message.includes('rate limit')) {
+      throw new Error('Rate limit exceeded. Please try again later.');
     }
     
     throw new Error(`Email could not be sent: ${error.message}`);
