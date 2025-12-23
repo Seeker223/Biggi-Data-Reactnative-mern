@@ -1,4 +1,4 @@
-// backend/models/User.js - Add monthly game tracking
+// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -88,7 +88,12 @@ const UserSchema = new mongoose.Schema(
       default: "user",
     },
 
-    isVerified: { type: Boolean, default: false },
+    isVerified: { 
+      type: Boolean, 
+      default: true  // Changed from false to true for MVP
+    },
+
+    verifiedAt: { type: Date, default: null },
 
     photo: { type: String, default: null },
 
@@ -115,9 +120,8 @@ const UserSchema = new mongoose.Schema(
     lastWinDate: { type: Date, default: null },
     
     /* ---------------- SECURITY ---------------- */
-    securityPin: String,
-    securityPinExpires: Date,
-
+    // REMOVED: securityPin, securityPinExpires
+    
     resetPasswordToken: String,
     resetPasswordExpire: Date,
 
@@ -127,8 +131,9 @@ const UserSchema = new mongoose.Schema(
       select: false,
     },
 
-    /* ---------------- TESTING ---------------- */
-    testRef: { type: String, unique: true, sparse: true },
+    /* ---------------- TIMESTAMPS ---------------- */
+    lastLogin: { type: Date, default: null },
+    lastLogout: { type: Date, default: null },
   },
   { 
     timestamps: true,
@@ -173,6 +178,25 @@ UserSchema.virtual('winsCount').get(function() {
   const dailyWins = this.dailyNumberDraw.filter(game => game.isWinner).length;
   const monthlyWins = this.monthlyDraws.filter(draw => draw.isWinner).length;
   return dailyWins + monthlyWins;
+});
+
+/* ==========================================
+   VIRTUAL: AGE
+========================================== */
+UserSchema.virtual("age").get(function () {
+  if (!this.birthDate) return null;
+
+  const today = new Date();
+  const birth = new Date(this.birthDate);
+
+  let age = today.getFullYear() - birth.getFullYear();
+  const month = today.getMonth() - birth.getMonth();
+
+  if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+
+  return age;
 });
 
 /* ==========================================
@@ -304,14 +328,8 @@ UserSchema.methods.getRefreshToken = function () {
 };
 
 /* ==========================================
-   GENERATE OTP / SECURITY PIN
+   REMOVED: generateSecurityPin method
 ========================================== */
-UserSchema.methods.generateSecurityPin = function () {
-  const pin = Math.floor(100000 + Math.random() * 900000).toString();
-  this.securityPin = pin;
-  this.securityPinExpires = Date.now() + 10 * 60 * 1000;
-  return pin;
-};
 
 /* ==========================================
    RESET PASSWORD TOKEN
@@ -328,24 +346,5 @@ UserSchema.methods.getResetPasswordToken = function () {
 
   return resetToken;
 };
-
-/* ==========================================
-   AGE (VIRTUAL)
-========================================== */
-UserSchema.virtual("age").get(function () {
-  if (!this.birthDate) return null;
-
-  const today = new Date();
-  const birth = new Date(this.birthDate);
-
-  let age = today.getFullYear() - birth.getFullYear();
-  const month = today.getMonth() - birth.getMonth();
-
-  if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) {
-    age--;
-  }
-
-  return age;
-});
 
 export default mongoose.model("User", UserSchema);
