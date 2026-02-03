@@ -10,7 +10,7 @@ export const FEATURE_FLAGS = {
   //   - Withdrawals return a safe message
   //   - Daily game winning numbers are still generated but no prizes awarded
   //   - Redeem rewards returns a safe message
-  DISABLE_GAME_AND_REDEEM: process.env.DISABLE_GAME_AND_REDEEM === "true" || true,
+  DISABLE_GAME_AND_REDEEM: process.env.DISABLE_GAME_AND_REDEEM === "true" || false,
 };
 
 export default FEATURE_FLAGS;
