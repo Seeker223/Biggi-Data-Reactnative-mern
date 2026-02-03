@@ -5,6 +5,7 @@ import Deposit from "../models/Deposit.js";
 import axios from "axios";
 import mongoose from "mongoose";
 import { logWalletTransaction } from "../utils/wallet.js";
+import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
 /* =====================================================
    GET USER BALANCE
@@ -43,6 +44,14 @@ export const getUserBalance = async (req, res) => {
    FLUTTERWAVE WITHDRAWAL (TRANSFER API) - IMPROVED ERROR HANDLING
 ===================================================== */
 export const flutterwaveWithdrawal = async (req, res) => {
+  // 🚩 Feature flag: Disable withdrawals during Play Store review
+  if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
+    return res.status(403).json({
+      success: false,
+      message: "Withdrawals are temporarily disabled for review.",
+    });
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
   
@@ -497,6 +506,14 @@ export const verifyBankAccount = async (req, res) => {
    WITHDRAW FUNDS (LEGACY - FOR BACKWARD COMPATIBILITY)
 ===================================================== */
 export const withdrawFunds = async (req, res) => {
+  // 🚩 Feature flag: Disable withdrawals during Play Store review
+  if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
+    return res.status(403).json({
+      success: false,
+      message: "Withdrawals are temporarily disabled for review.",
+    });
+  }
+
   try {
     const userId = req.user.id;
     const { method, bank, accountNumber, accountName, amount } = req.body;

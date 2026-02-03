@@ -1,6 +1,7 @@
 // backend/controllers/monthlyGameController.js
 import User from "../models/User.js";
 import mongoose from "mongoose";
+import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
 /* =====================================================
    GET MONTHLY ELIGIBILITY
@@ -106,6 +107,14 @@ export const getMonthlyWinners = async (req, res) => {
    CLAIM MONTHLY REWARD
 ===================================================== */
 export const claimMonthlyReward = async (req, res) => {
+  // 🚩 Feature flag: Disable claiming rewards during Play Store review
+  if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
+    return res.status(403).json({
+      success: false,
+      message: "Monthly rewards are temporarily disabled for review.",
+    });
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 

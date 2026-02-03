@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
 // ---------------------------------------------------
 // 🎮 PLAY DAILY GAME (User selects 5 numbers)
@@ -82,8 +83,8 @@ export const generateDailyWinningNumbers = async () => {
 
           entry.isWinner = isWinner;
 
-          // Reward only if ALL 5 numbers match
-          if (isWinner) {
+          // 🚩 Feature flag: Do not award rewards during Play Store review
+          if (isWinner && !FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
             user.rewardBalance += 5000; // You can set reward amount
           }
 
