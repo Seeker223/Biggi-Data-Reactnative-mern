@@ -111,6 +111,10 @@ const allowedOrigins = [
   "https://biggi-data-frontend.vercel.app",
 ];
 
+const isPrivateLanOrigin = (origin = "") => {
+  return /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(origin);
+};
+
 // Custom CORS middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -119,6 +123,7 @@ app.use((req, res, next) => {
       origin.startsWith("exp://") ||
       origin.includes("localhost") ||
       origin.includes("127.0.0.1") ||
+      isPrivateLanOrigin(origin) ||
       allowedOrigins.includes(origin) ||
       origin.endsWith(".vercel.app")) {
     

@@ -2,15 +2,20 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // =====================================================
 // REGISTER (NO OTP, NO EMAIL VERIFICATION)
 // =====================================================
 export const register = async (req, res) => {
   try {
     const { username, email, password, phoneNumber, birthDate } = req.body;
+    const normalizedUsername = username?.trim();
+    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedPhone = phoneNumber?.trim();
 
     // Validate required fields
-    if (!username || !email || !password) {
+    if (!normalizedUsername || !normalizedEmail || !password) {
       return res.status(400).json({ 
         success: false, 
         error: "Username, email, and password are required" 
@@ -18,15 +23,15 @@ export const register = async (req, res) => {
     }
 
     // Check for duplicates
-    const duplicateQuery = [{ email }, { username }];
-    if (phoneNumber?.trim()) duplicateQuery.push({ phoneNumber });
+    const duplicateQuery = [{ email: normalizedEmail }, { username: normalizedUsername }];
+    if (normalizedPhone) duplicateQuery.push({ phoneNumber: normalizedPhone });
 
     const existingUser = await User.findOne({ $or: duplicateQuery });
     if (existingUser) {
       let duplicateField = "User";
-      if (existingUser.email === email) duplicateField = "Email";
-      else if (phoneNumber && existingUser.phoneNumber === phoneNumber) duplicateField = "Phone number";
-      else if (existingUser.username === username) duplicateField = "Username";
+      if (existingUser.email === normalizedEmail) duplicateField = "Email";
+      else if (normalizedPhone && existingUser.phoneNumber === normalizedPhone) duplicateField = "Phone number";
+      else if (existingUser.username === normalizedUsername) duplicateField = "Username";
 
       return res.status(400).json({ 
         success: false, 
@@ -36,10 +41,10 @@ export const register = async (req, res) => {
 
     // Create user - automatically mark as verified
     const user = await User.create({ 
-      username, 
-      email, 
+      username: normalizedUsername, 
+      email: normalizedEmail, 
       password, 
-      phoneNumber: phoneNumber || undefined, 
+      phoneNumber: normalizedPhone || undefined, 
       birthDate,
       isVerified: true,  // Auto-verify for MVP
       verifiedAt: new Date()  // Set verification timestamp
@@ -101,15 +106,22 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const identifier = String(email || "").trim();
+    const normalizedEmail = identifier.toLowerCase();
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({
         success: false,
         error: "Please provide email and password"
       });
     }
 
-    const user = await User.findOne({ email }).select("+password +refreshToken");
+    const user = await User.findOne({
+      $or: [
+        { email: normalizedEmail },
+        { username: { $regex: `^${escapeRegex(identifier)}$`, $options: "i" } },
+      ],
+    }).select("+password +refreshToken");
 
     if (!user) {
       return res.status(400).json({
