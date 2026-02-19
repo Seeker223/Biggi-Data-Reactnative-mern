@@ -4,6 +4,21 @@ import Wallet from "../models/Wallet.js";
 import { zenipointPost, generateReference } from "../utils/zenipoint.js";
 import { logWalletTransaction, syncWalletBalance } from "../utils/wallet.js";
 
+const mapZenipointPlanCode = (plan) => {
+  const rawCode = String(plan?.zenipoint_code || plan?.plan_id || "").trim();
+  const network = String(plan?.network || "").toLowerCase();
+
+  if (network !== "airtel") return rawCode;
+
+  // Airtel compatibility mapping for stale/internal ids vs provider ids.
+  const airtelCodeMap = {
+    airtel_750: "airtel_500",
+    airtel_15: "airtel_1",
+  };
+
+  return airtelCodeMap[rawCode] || rawCode;
+};
+
 /**
  * Buy data bundle (production-ready)
  * - Uses plan.zenipoint_code
@@ -33,7 +48,8 @@ export const buyData = async (req, res) => {
 
     // Create reference and prepare payload
     const reference = generateReference();
-    const payload = { mobile_no, plan_id: plan.zenipoint_code, reference };
+    const providerPlanCode = mapZenipointPlanCode(plan);
+    const payload = { mobile_no, plan_id: providerPlanCode, reference };
 
     // Deduct user balance (optimistic)
     user.mainBalance -= amount;
