@@ -414,12 +414,20 @@ export const verifyBankAccount = async (req, res) => {
 
     // Map bank codes for fintechs that need special handling
     let flutterwaveBankCode = bank_code;
-    let bankNameForVerification = bank_name || "";
-    
-    // Special handling for OPay and other fintechs
-    if (is_fintech || bank_name?.toLowerCase().includes("opay")) {
-      flutterwaveBankCode = "099"; // OPay's Flutterwave code
-      console.log(`🔍 Attempting OPay verification with code: ${flutterwaveBankCode}`);
+    const normalizedBankName = (bank_name || "").toLowerCase();
+    const isOpay = normalizedBankName.includes("opay");
+    const isPalmpay = normalizedBankName.includes("palmpay");
+
+    // Special handling for known fintech banks
+    if (is_fintech || isOpay || isPalmpay) {
+      if (isOpay) {
+        flutterwaveBankCode = "099"; // OPay code
+      } else if (isPalmpay) {
+        flutterwaveBankCode = "100"; // PalmPay code
+      }
+      console.log(
+        `Attempting fintech verification for ${bank_name || "unknown"} with code: ${flutterwaveBankCode}`
+      );
     }
 
     try {
@@ -467,11 +475,12 @@ export const verifyBankAccount = async (req, res) => {
     } catch (flutterwaveError) {
       console.error("❌ Flutterwave verification error:", flutterwaveError.response?.data || flutterwaveError.message);
       
-      // Special handling for OPay/Fintech errors
-      if (is_fintech || bank_name?.toLowerCase().includes("opay")) {
+      // Special handling for fintech errors
+      if (is_fintech || isOpay || isPalmpay) {
+        const fallbackName = bank_name ? `${bank_name} Account Holder` : "Fintech Account Holder";
         return res.json({
           success: true,
-          account_name: "OPay Account Holder",
+          account_name: fallbackName,
           account_number: account_number,
           is_verified: false,
           message: "Proceed with manual verification. Ensure account details are correct.",
