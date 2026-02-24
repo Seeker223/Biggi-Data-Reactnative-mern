@@ -445,15 +445,15 @@ app.get("/api/v1/game/rules/daily", (req, res) => {
   res.json({
     success: true,
     rules: {
-      title: "Daily Draw Rules",
+      title: "Weekly Draw Rules",
       prize: "₦2,000",
-      draw_time: "7:30 PM daily",
+      draw_time: "Results are released 7 days after each play",
       ticket_requirement: "1 ticket per play",
       ticket_source: "Free with data purchase",
       number_selection: "Select 5 letters from A-Z then a-z (52 total)",
       win_condition: "Match all 5 numbers",
-      max_plays_per_day: "Unlimited (with tickets)",
-      claim_period: "24 hours after draw",
+      max_plays_per_day: "Unlimited entries (with tickets)",
+      claim_period: "After weekly results are released",
     }
   });
 });
@@ -480,11 +480,11 @@ app.get("/api/v1/game/schedules", (req, res) => {
     success: true,
     schedules: {
       daily: {
-        time: "19:30",
+        time: "00:01",
         timezone: "WAT",
-        recurring: "daily",
+        recurring: "weekly",
         prize: "₦2,000",
-        next_draw: new Date(new Date().setHours(19, 30, 0, 0)).toISOString(),
+        next_draw: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       },
       monthly: {
         time: "23:59",
@@ -501,9 +501,9 @@ app.get("/api/v1/game/prizes/daily", (req, res) => {
   res.json({
     success: true,
     prizes: [
-      { match: "5 numbers", prize: "₦2,000", winners: "1 per day" },
-      { match: "4 numbers", prize: "₦500", winners: "5 per day" },
-      { match: "3 numbers", prize: "₦200", winners: "10 per day" },
+      { match: "5 numbers", prize: "₦2,000", winners: "1 per week" },
+      { match: "4 numbers", prize: "₦500", winners: "5 per week" },
+      { match: "3 numbers", prize: "₦200", winners: "10 per week" },
     ]
   });
 });

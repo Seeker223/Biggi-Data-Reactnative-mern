@@ -36,10 +36,12 @@ const keepAliveJob = new CronJob("*/14 * * * *", () => {
 });
 
 /* ---------------------------------------------------------
-   2. DAILY GAME DRAW (Runs every day at 00:01 AM)
+   2. WEEKLY RESULT SETTLEMENT (Checks every day at 00:01 AM)
 --------------------------------------------------------- */
 
-// Generate 5 unique winning numbers between 1–70
+const WEEKLY_RESULT_WAIT_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Generate 5 unique winning numbers between 1 and 52
 function generateWinningNumbers() {
   const nums = new Set();
   while (nums.size < 5) {
@@ -52,12 +54,12 @@ const dailyGameJob = new CronJob(
   "1 0 * * *", // Run at 00:01 AM daily
   async () => {
     try {
-      console.log("🎯 [CRON] Running Daily Game Draw...");
+      console.log("🎯 [CRON] Running Weekly Result Settlement...");
 
       const winningNumbers = generateWinningNumbers();
-      console.log("🎉 Today’s Winning Numbers:", winningNumbers);
+      console.log("🎉 Weekly Winning Numbers:", winningNumbers);
 
-      // Find all users who played within last 24 hours
+      // Find users with plays and settle only entries that are at least 7 days old.
       const users = await User.find();
 
       for (const user of users) {
@@ -68,8 +70,8 @@ const dailyGameJob = new CronJob(
         user.dailyNumberDraw.forEach((entry) => {
           const diff = Date.now() - new Date(entry.createdAt).getTime();
 
-          // Ignore entries older than 24 hours
-          if (diff > 24 * 60 * 60 * 1000) return;
+          if (Array.isArray(entry.result) && entry.result.length > 0) return;
+          if (diff < WEEKLY_RESULT_WAIT_MS) return;
 
           entry.result = winningNumbers;
 
@@ -93,9 +95,9 @@ const dailyGameJob = new CronJob(
         }
       }
 
-      console.log("✅ Daily game draw completed successfully.");
+      console.log("✅ Weekly result settlement completed successfully.");
     } catch (err) {
-      console.error("❌ Daily Game Cron Error:", err);
+      console.error("❌ Weekly Result Settlement Cron Error:", err);
     }
   },
   null,

@@ -1,6 +1,8 @@
 import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
+const WEEKLY_RESULT_WAIT_MS = 7 * 24 * 60 * 60 * 1000;
+
 // ---------------------------------------------------
 // 🎮 PLAY DAILY GAME (User selects 5 numbers)
 // ---------------------------------------------------
@@ -39,16 +41,16 @@ export const playDailyGame = async (req, res) => {
     });
 
     user.addNotification({
-      type: "Daily Draw",
+      type: "Weekly Draw",
       status: "success",
-      message: "Daily draw entry submitted successfully.",
+      message: "Weekly draw entry submitted successfully. Results are released after 7 days.",
     });
 
     await user.save();
 
     return res.status(200).json({
       success: true,
-      message: "Your numbers were submitted successfully",
+      message: "Your letters were submitted successfully. Results are released after 7 days.",
       tickets: user.tickets,
     });
   } catch (error) {
@@ -145,9 +147,9 @@ export const generateDailyWinningNumbers = async () => {
       if (!winningNumbers.includes(num)) winningNumbers.push(num);
     }
 
-    console.log("🎯 Today's Winning Numbers:", winningNumbers);
+    console.log("🎯 Weekly winning numbers:", winningNumbers);
 
-    // Fetch all users who played today
+    // Fetch users with unsettled entries.
     const users = await User.find({ "dailyNumberDraw.result": { $size: 0 } });
 
     for (const user of users) {
@@ -155,6 +157,10 @@ export const generateDailyWinningNumbers = async () => {
 
       user.dailyNumberDraw.forEach((entry) => {
         if (entry.result.length === 0) {
+          const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now()).getTime();
+          const diff = Date.now() - playedAt;
+          if (diff < WEEKLY_RESULT_WAIT_MS) return;
+
           // Not yet evaluated
           entry.result = winningNumbers;
 
