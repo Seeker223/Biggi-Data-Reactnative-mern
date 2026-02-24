@@ -41,6 +41,84 @@ export const getUserBalance = async (req, res) => {
 };
 
 /* =====================================================
+   REDEEM REWARDS (MOVE rewardBalance -> mainBalance)
+===================================================== */
+export const redeemRewards = async (req, res) => {
+  // Feature flag: disable redeem during review window
+  if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
+    return res.status(403).json({
+      success: false,
+      message: "Reward redemption is temporarily disabled for review.",
+    });
+  }
+
+  try {
+    const userId = req.user.id;
+    const requestedAmount = Number(req.body?.amount || 0);
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const rewardBalance = Number(user.rewardBalance || 0);
+    if (rewardBalance <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No reward balance available to redeem",
+      });
+    }
+
+    // If amount is passed, redeem that amount; otherwise redeem full reward balance.
+    const amountToRedeem = requestedAmount > 0 ? requestedAmount : rewardBalance;
+
+    if (amountToRedeem < 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Minimum redeem amount is ₦100",
+      });
+    }
+
+    if (amountToRedeem > rewardBalance) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient reward balance",
+      });
+    }
+
+    user.rewardBalance = rewardBalance - amountToRedeem;
+    user.mainBalance = Number(user.mainBalance || 0) + amountToRedeem;
+    await user.save();
+
+    await logWalletTransaction(
+      userId,
+      "redeem",
+      amountToRedeem,
+      `redeem_${userId}_${Date.now()}`,
+      "success"
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Rewards redeemed successfully",
+      amountRedeemed: amountToRedeem,
+      amountCredited: amountToRedeem,
+      rewardBalance: user.rewardBalance,
+      mainBalance: user.mainBalance,
+    });
+  } catch (error) {
+    console.error("Redeem rewards error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to redeem rewards",
+    });
+  }
+};
+
+/* =====================================================
    FLUTTERWAVE WITHDRAWAL (TRANSFER API) - IMPROVED ERROR HANDLING
 ===================================================== */
 export const flutterwaveWithdrawal = async (req, res) => {

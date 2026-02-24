@@ -13,6 +13,7 @@ import {
   flutterwaveWithdrawal,
   flutterwaveWithdrawWebhook,
   verifyBankAccount,
+  redeemRewards,
   withdrawFunds,
   getDepositHistory,
   getWithdrawalHistory,
@@ -96,6 +97,9 @@ router.get("/deposit-stats", protect, getDepositStats);
 ================================ */
 // Get user's current balance
 router.get("/balance", protect, getUserBalance);
+
+// Redeem reward balance into main balance
+router.post("/redeem", protect, paymentLimiter, redeemRewards);
 
 /* ===============================
    TRANSACTION MANAGEMENT
