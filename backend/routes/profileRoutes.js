@@ -1,7 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
 import { protect } from "../middleware/auth.js";
-import { updateProfile, updateAvatar } from "../controllers/profileController.js";
+import {
+  updateProfile,
+  updateAvatar,
+  getNotifications,
+  markNotificationsAsRead,
+} from "../controllers/profileController.js";
 
 const router = Router();
 
@@ -10,10 +15,17 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.put("/update-profile", protect, updateProfile);
 
+router.get("/notifications", protect, getNotifications);
+router.post("/notifications/read", protect, markNotificationsAsRead);
+
 router.put(
   "/update-avatar",
   protect,
-  upload.single("avatar"),
+  upload.fields([{ name: "avatar", maxCount: 1 }, { name: "photo", maxCount: 1 }]),
+  (req, _res, next) => {
+    req.file = req.files?.avatar?.[0] || req.files?.photo?.[0] || null;
+    next();
+  },
   updateAvatar
 );
 

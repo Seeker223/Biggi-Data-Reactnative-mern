@@ -44,11 +44,71 @@ export const updateAvatar = async (req, res) => {
       { new: true }
     ).select("-password");
 
+    if (user) {
+      user.addNotification({
+        type: "Profile",
+        status: "success",
+        message: "Profile photo updated successfully.",
+      });
+      await user.save();
+    }
+
     return res.json({ success: true, user });
   } catch (err) {
     return res.status(500).json({
       success: false,
       msg: err.message,
+    });
+  }
+};
+
+// -----------------------------------------------
+// GET USER NOTIFICATIONS
+// -----------------------------------------------
+export const getNotifications = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("notificationItems notifications");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.json({
+      success: true,
+      notifications: user.notificationItems || [],
+      unread: Number(user.notifications || 0),
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch notifications",
+    });
+  }
+};
+
+// -----------------------------------------------
+// MARK USER NOTIFICATIONS AS READ
+// -----------------------------------------------
+export const markNotificationsAsRead = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    (user.notificationItems || []).forEach((item) => {
+      item.seen = true;
+    });
+    user.notifications = 0;
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Notifications marked as read",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to mark notifications as read",
     });
   }
 };

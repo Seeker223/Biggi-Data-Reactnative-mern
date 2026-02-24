@@ -91,6 +91,12 @@ export const redeemRewards = async (req, res) => {
 
     user.rewardBalance = rewardBalance - amountToRedeem;
     user.mainBalance = Number(user.mainBalance || 0) + amountToRedeem;
+    user.addNotification({
+      type: "Redeem",
+      status: "success",
+      amount: amountToRedeem,
+      message: `Redeemed ₦${amountToRedeem.toLocaleString()} to main balance.`,
+    });
     await user.save();
 
     await logWalletTransaction(

@@ -50,6 +50,12 @@ export const register = async (req, res) => {
       verifiedAt: new Date()  // Set verification timestamp
     });
 
+    user.addNotification({
+      type: "Welcome",
+      status: "success",
+      message: `Welcome to Biggi Data, ${user.username}!`,
+    });
+
     // Generate tokens immediately
     const accessToken = user.getSignedJwtToken();
     const refreshToken = user.getRefreshToken();
@@ -70,6 +76,7 @@ export const register = async (req, res) => {
         phoneNumber: user.phoneNumber,
         age: user.age,
         isVerified: true,
+        notifications: user.notifications || 0,
       }
     });
 
@@ -146,6 +153,11 @@ export const login = async (req, res) => {
     // Save refresh token and update last login
     user.refreshToken = refreshToken;
     user.lastLogin = new Date();
+    user.addNotification({
+      type: "Welcome",
+      status: "success",
+      message: `Welcome back, ${user.username}!`,
+    });
     await user.save({ validateBeforeSave: false });
 
     res.status(200).json({
@@ -162,6 +174,7 @@ export const login = async (req, res) => {
         role: user.role,
         mainBalance: user.mainBalance,
         rewardBalance: user.rewardBalance,
+        notifications: user.notifications || 0,
       },
     });
   } catch (error) {
@@ -307,10 +320,17 @@ export const logout = async (req, res) => {
     const userId = req.user?.id || req.user?._id;
 
     if (userId) {
-      await User.findByIdAndUpdate(userId, {
-        refreshToken: null,
-        lastLogout: new Date()
-      });
+      const user = await User.findById(userId);
+      if (user) {
+        user.refreshToken = null;
+        user.lastLogout = new Date();
+        user.addNotification({
+          type: "Signout",
+          status: "info",
+          message: `Last sign out: ${new Date().toLocaleString()}`,
+        });
+        await user.save({ validateBeforeSave: false });
+      }
     }
 
     res.status(200).json({

@@ -41,6 +41,21 @@ const MonthlyDrawSchema = new mongoose.Schema({
 });
 
 /* -------------------------------------------
+   USER NOTIFICATION SCHEMA
+------------------------------------------- */
+const UserNotificationSchema = new mongoose.Schema(
+  {
+    type: { type: String, default: "Notification" },
+    message: { type: String, required: true },
+    amount: { type: Number, default: null },
+    status: { type: String, default: "info" },
+    seen: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
+/* -------------------------------------------
    USER SCHEMA
 ------------------------------------------- */
 const UserSchema = new mongoose.Schema(
@@ -105,6 +120,7 @@ const UserSchema = new mongoose.Schema(
 
     tickets: { type: Number, default: 0 },
     notifications: { type: Number, default: 0 },
+    notificationItems: [UserNotificationSchema],
 
     /* ---------------- GAMES ---------------- */
     dailyNumberDraw: [DailyGameSchema],
@@ -274,6 +290,24 @@ UserSchema.methods.claimMonthlyReward = function(month) {
   this.totalWins += 1;
   
   return this.save();
+};
+
+/* ==========================================
+   METHOD: ADD NOTIFICATION
+========================================== */
+UserSchema.methods.addNotification = function(payload = {}) {
+  const item = {
+    type: payload.type || "Notification",
+    message: payload.message || "New notification",
+    amount: payload.amount ?? null,
+    status: payload.status || "info",
+    seen: false,
+    createdAt: new Date(),
+  };
+
+  this.notificationItems = [item, ...(this.notificationItems || [])].slice(0, 100);
+  this.notifications = Number(this.notifications || 0) + 1;
+  return this;
 };
 
 /* ==========================================
