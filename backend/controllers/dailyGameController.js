@@ -38,6 +38,12 @@ export const playDailyGame = async (req, res) => {
       playedAt: new Date(),
     });
 
+    user.addNotification({
+      type: "Daily Draw",
+      status: "success",
+      message: "Daily draw entry submitted successfully.",
+    });
+
     await user.save();
 
     return res.status(200).json({
