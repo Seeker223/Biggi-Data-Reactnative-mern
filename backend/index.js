@@ -450,7 +450,7 @@ app.get("/api/v1/game/rules/daily", (req, res) => {
       draw_time: "7:30 PM daily",
       ticket_requirement: "1 ticket per play",
       ticket_source: "Free with data purchase",
-      number_selection: "Select 5 numbers from 1-70",
+      number_selection: "Select 5 letters from A-Z then a-z (52 total)",
       win_condition: "Match all 5 numbers",
       max_plays_per_day: "Unlimited (with tickets)",
       claim_period: "24 hours after draw",

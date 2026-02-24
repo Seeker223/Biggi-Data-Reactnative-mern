@@ -12,7 +12,7 @@ export const playDailyGame = async (req, res) => {
     if (!numbers || !Array.isArray(numbers) || numbers.length !== 5) {
       return res.status(400).json({
         success: false,
-        message: "You must select exactly 5 numbers",
+        message: "You must select exactly 5 letters",
       });
     }
 
@@ -135,7 +135,7 @@ export const generateDailyWinningNumbers = async () => {
     // Generate 5 unique winning numbers between 1–70
     const winningNumbers = [];
     while (winningNumbers.length < 5) {
-      const num = Math.floor(Math.random() * 70) + 1;
+      const num = Math.floor(Math.random() * 52) + 1;
       if (!winningNumbers.includes(num)) winningNumbers.push(num);
     }
 

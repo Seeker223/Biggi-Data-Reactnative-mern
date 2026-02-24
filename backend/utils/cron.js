@@ -43,7 +43,7 @@ const keepAliveJob = new CronJob("*/14 * * * *", () => {
 function generateWinningNumbers() {
   const nums = new Set();
   while (nums.size < 5) {
-    nums.add(Math.floor(Math.random() * 70) + 1);
+    nums.add(Math.floor(Math.random() * 52) + 1);
   }
   return [...nums];
 }
