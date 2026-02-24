@@ -19,6 +19,7 @@ import userRoutes from "./routes/userRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import dailyGameRoutes from "./routes/dailyGameRoutes.js";
 import monthlyGameRoutes from "./routes/monthlyGameRoutes.js";
+import topRandomMonthlyRoutes from "./routes/topRandomMonthlyRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
@@ -417,6 +418,7 @@ if (process.env.NODE_ENV !== "production") {
       { path: "/api/v1/wallet", description: "Wallet & payments" },
       { path: "/api/v1/daily-game", description: "Daily games" },
       { path: "/api/v1/monthly-game", description: "Monthly games" },
+      { path: "/api/v1/top-random-monthly", description: "Top random monthly picks" },
       { path: "/api/v1/game-stats", description: "Game statistics" },
       { path: "/api/v1/plans", description: "Data plans" },
       { path: "/api/v1/data", description: "Data purchase" },
@@ -434,6 +436,7 @@ app.use("/api/v1/user", profileRoutes);
 app.use("/api/v1/wallet", walletRoutes);
 app.use("/api/v1/daily-game", dailyGameRoutes);
 app.use("/api/v1/monthly-game", monthlyGameRoutes);
+app.use("/api/v1/top-random-monthly", topRandomMonthlyRoutes);
 app.use("/api/v1/game-stats", gameStatsRoutes);
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
@@ -579,6 +582,7 @@ app.use((req, res) => {
       "/api/v1/wallet/*",
       "/api/v1/daily-game/*",
       "/api/v1/monthly-game/*",
+      "/api/v1/top-random-monthly/*",
       "/api/v1/game-stats/*",
       "/api/v1/plans/*",
       "/api/v1/data/*",

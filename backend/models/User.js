@@ -41,6 +41,18 @@ const MonthlyDrawSchema = new mongoose.Schema({
 });
 
 /* -------------------------------------------
+   TOP RANDOM MONTHLY PICKS SCHEMA
+------------------------------------------- */
+const TopRandomMonthlyPickSchema = new mongoose.Schema({
+  month: { type: String, required: true }, // Format: "YYYY-MM"
+  isWinner: { type: Boolean, default: false },
+  prizeAmount: { type: Number, default: 2000 },
+  claimed: { type: Boolean, default: false },
+  claimedAt: { type: Date, default: null },
+  selectedAt: { type: Date, default: Date.now },
+});
+
+/* -------------------------------------------
    USER NOTIFICATION SCHEMA
 ------------------------------------------- */
 const UserNotificationSchema = new mongoose.Schema(
@@ -127,6 +139,7 @@ const UserSchema = new mongoose.Schema(
     lastDailyGame: { type: Date, default: null },
     
     monthlyDraws: [MonthlyDrawSchema],
+    topRandomMonthlyPicks: [TopRandomMonthlyPickSchema],
     currentMonthPurchases: { type: Number, default: 0 },
     currentMonthEligible: { type: Boolean, default: false },
     
@@ -183,8 +196,12 @@ UserSchema.virtual('unclaimedRewards').get(function() {
   const monthlyUnclaimed = this.monthlyDraws
     .filter(draw => draw.isWinner && !draw.claimed)
     .reduce((sum, draw) => sum + draw.prizeAmount, 0);
+
+  const topRandomUnclaimed = this.topRandomMonthlyPicks
+    .filter(pick => pick.isWinner && !pick.claimed)
+    .reduce((sum, pick) => sum + pick.prizeAmount, 0);
     
-  return dailyUnclaimed + monthlyUnclaimed;
+  return dailyUnclaimed + monthlyUnclaimed + topRandomUnclaimed;
 });
 
 /* ==========================================
@@ -193,7 +210,8 @@ UserSchema.virtual('unclaimedRewards').get(function() {
 UserSchema.virtual('winsCount').get(function() {
   const dailyWins = this.dailyNumberDraw.filter(game => game.isWinner).length;
   const monthlyWins = this.monthlyDraws.filter(draw => draw.isWinner).length;
-  return dailyWins + monthlyWins;
+  const topRandomWins = this.topRandomMonthlyPicks.filter(pick => pick.isWinner).length;
+  return dailyWins + monthlyWins + topRandomWins;
 });
 
 /* ==========================================
