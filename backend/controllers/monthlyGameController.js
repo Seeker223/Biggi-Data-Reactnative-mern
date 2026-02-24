@@ -3,6 +3,22 @@ import User from "../models/User.js";
 import mongoose from "mongoose";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
+const MONTHLY_TOP_WINNERS = 3;
+const MONTHLY_MAX_RANKS = 100;
+const MONTHLY_WIN_PRIZE = 5000;
+
+const getCurrentMonthString = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const getMonthEnd = (month) => {
+  const [year, mon] = String(month).split("-").map(Number);
+  return new Date(year, mon, 0, 23, 59, 59, 999);
+};
+
+const isMonthClosed = (month) => Date.now() > getMonthEnd(month).getTime();
+
 /* =====================================================
    GET MONTHLY ELIGIBILITY
 ===================================================== */
@@ -60,39 +76,92 @@ export const getMonthlyEligibility = async (req, res) => {
 ===================================================== */
 export const getMonthlyWinners = async (req, res) => {
   try {
-    const { month } = req.query;
-    
-    let query = {};
-    if (month) {
-      query = { "monthlyDraws.month": month, "monthlyDraws.isWinner": true };
-    } else {
-      query = { "monthlyDraws.isWinner": true };
+    const month = String(req.query.month || getCurrentMonthString());
+
+    const users = await User.find({ "monthlyDraws.month": month })
+      .select("username photo monthlyDraws")
+      .sort({ username: 1 });
+
+    const ranked = users
+      .map((user) => {
+        const draw = user.monthlyDraws.find((d) => d.month === month);
+        if (!draw || Number(draw.purchasesCount || 0) <= 0) return null;
+        return {
+          userId: user._id,
+          username: user.username,
+          photo: user.photo || null,
+          purchasesCount: Number(draw.purchasesCount || 0),
+          claimed: Boolean(draw.claimed),
+          claimedAt: draw.claimedAt || null,
+          prizeAmount: Number(draw.prizeAmount || MONTHLY_WIN_PRIZE),
+          updatedAt: new Date(draw.updatedAt || draw.lastPurchaseDate || draw.createdAt || Date.now()).getTime(),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b.purchasesCount !== a.purchasesCount) return b.purchasesCount - a.purchasesCount;
+        if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt;
+        return a.username.localeCompare(b.username);
+      });
+
+    const rankings = ranked.slice(0, MONTHLY_MAX_RANKS).map((item, idx) => ({
+      rank: idx + 1,
+      userId: item.userId,
+      username: item.username,
+      photo: item.photo,
+      purchasesCount: item.purchasesCount,
+      isWinner: idx < MONTHLY_TOP_WINNERS,
+      amount: item.prizeAmount,
+      claimed: item.claimed,
+      claimedAt: item.claimedAt,
+      month,
+    }));
+
+    const winnerIdSet = new Set(
+      ranked.slice(0, MONTHLY_TOP_WINNERS).map((item) => String(item.userId))
+    );
+    const monthClosed = isMonthClosed(month);
+    const shouldPersistWinners = monthClosed;
+
+    if (shouldPersistWinners) {
+      for (const user of users) {
+        const draw = user.monthlyDraws.find((d) => d.month === month);
+        if (!draw) continue;
+
+        const shouldWin = winnerIdSet.has(String(user._id));
+        let changed = false;
+
+        if (Boolean(draw.isWinner) !== shouldWin) {
+          draw.isWinner = shouldWin;
+          changed = true;
+        }
+        if (shouldWin && Number(draw.prizeAmount || 0) !== MONTHLY_WIN_PRIZE) {
+          draw.prizeAmount = MONTHLY_WIN_PRIZE;
+          changed = true;
+        }
+
+        if (changed) {
+          await user.save();
+        }
+      }
     }
 
-    const winners = await User.find(query)
-      .select("username email monthlyDraws")
-      .lean();
-
-    const formattedWinners = winners.flatMap(user => 
-      user.monthlyDraws
-        .filter(draw => draw.isWinner)
-        .map(draw => ({
-          name: user.username,
-          userId: user._id,
-          month: draw.month,
-          amount: draw.prizeAmount,
-          claimed: draw.claimed,
-          claimedAt: draw.claimedAt,
-        }))
-    );
-
-    // Sort by month descending
-    formattedWinners.sort((a, b) => b.month.localeCompare(a.month));
+    const winners = rankings
+      .filter((entry) => entry.rank <= MONTHLY_TOP_WINNERS)
+      .map((entry) => ({
+        ...entry,
+        name: entry.username,
+      }));
 
     res.json({
       success: true,
-      winners: formattedWinners,
-      count: formattedWinners.length,
+      month,
+      monthClosed,
+      winners,
+      count: winners.length,
+      rankings,
+      maxRanks: MONTHLY_MAX_RANKS,
+      topWinnersCount: MONTHLY_TOP_WINNERS,
     });
   } catch (error) {
     console.error("Get monthly winners error:", error);
@@ -129,6 +198,14 @@ export const claimMonthlyReward = async (req, res) => {
       });
     }
 
+    if (!isMonthClosed(month)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "Monthly rewards can be claimed only after month-end draw.",
+      });
+    }
+
     const user = await User.findById(userId).session(session);
     if (!user) {
       await session.abortTransaction();
@@ -147,13 +224,39 @@ export const claimMonthlyReward = async (req, res) => {
       });
     }
 
-    if (!monthlyDraw.isWinner) {
+    const boardUsers = await User.find({ "monthlyDraws.month": month })
+      .select("_id monthlyDraws")
+      .session(session);
+
+    const winnerIds = boardUsers
+      .map((u) => {
+        const draw = u.monthlyDraws.find((d) => d.month === month);
+        if (!draw || Number(draw.purchasesCount || 0) <= 0) return null;
+        return {
+          id: String(u._id),
+          purchasesCount: Number(draw.purchasesCount || 0),
+          updatedAt: new Date(draw.updatedAt || draw.lastPurchaseDate || draw.createdAt || Date.now()).getTime(),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b.purchasesCount !== a.purchasesCount) return b.purchasesCount - a.purchasesCount;
+        return b.updatedAt - a.updatedAt;
+      })
+      .slice(0, MONTHLY_TOP_WINNERS)
+      .map((x) => x.id);
+
+    const isTopWinner = winnerIds.includes(String(userId));
+    if (!isTopWinner) {
       await session.abortTransaction();
       return res.status(400).json({
         success: false,
-        message: "You are not a winner for this month",
+        message: "Only top 3 buyers can claim monthly rewards.",
       });
     }
+
+    monthlyDraw.isWinner = true;
+    monthlyDraw.prizeAmount = Number(monthlyDraw.prizeAmount || MONTHLY_WIN_PRIZE);
 
     if (monthlyDraw.claimed) {
       await session.abortTransaction();
