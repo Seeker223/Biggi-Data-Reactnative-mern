@@ -52,6 +52,82 @@ export const playDailyGame = async (req, res) => {
 };
 
 // ---------------------------------------------------
+// CLAIM DAILY REWARD (moves won amount to reward balance)
+// ---------------------------------------------------
+export const claimDailyReward = async (req, res) => {
+  if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
+    return res.status(403).json({
+      success: false,
+      message: "Daily reward claiming is temporarily disabled for review.",
+    });
+  }
+
+  try {
+    const userId = req.user.id;
+    const { gameId } = req.body;
+
+    if (!gameId) {
+      return res.status(400).json({
+        success: false,
+        message: "gameId is required",
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const game = user.dailyNumberDraw.id(gameId);
+    if (!game) {
+      return res.status(404).json({
+        success: false,
+        message: "Daily game record not found",
+      });
+    }
+
+    if (!game.isWinner) {
+      return res.status(400).json({
+        success: false,
+        message: "This ticket is not a winning ticket",
+      });
+    }
+
+    if (game.claimed) {
+      return res.status(400).json({
+        success: false,
+        message: "Reward already claimed",
+      });
+    }
+
+    const prize = Number(game.prizeAmount || 2000);
+    game.claimed = true;
+    game.claimedAt = new Date();
+    user.rewardBalance += prize;
+    user.totalPrizeWon += prize;
+    user.totalWins = Number(user.totalWins || 0) + 1;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Daily reward claimed successfully",
+      claimedAmount: prize,
+      rewardBalance: user.rewardBalance,
+      mainBalance: user.mainBalance,
+      gameId: game._id,
+      claimedAt: game.claimedAt,
+    });
+  } catch (error) {
+    console.log("Daily reward claim error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to claim daily reward",
+    });
+  }
+};
+
+// ---------------------------------------------------
 // 🎯 GENERATE WINNING NUMBERS & EVALUATE WINNERS
 // ---------------------------------------------------
 export const generateDailyWinningNumbers = async () => {
