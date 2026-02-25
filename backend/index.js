@@ -450,13 +450,13 @@ app.get("/api/v1/game/rules/daily", (req, res) => {
     rules: {
       title: "Weekly Draw Rules",
       prize: "₦2,000",
-      draw_time: "Results are released 7 days after each play",
+      draw_time: "Results are released at month end",
       ticket_requirement: "1 ticket per play",
       ticket_source: "Free with data purchase",
       number_selection: "Select 5 letters from A-Z then a-z (52 total)",
       win_condition: "Match all 5 numbers",
       max_plays_per_day: "Unlimited entries (with tickets)",
-      claim_period: "After weekly results are released",
+      claim_period: "After month-end results are released",
     }
   });
 });
@@ -485,9 +485,9 @@ app.get("/api/v1/game/schedules", (req, res) => {
       daily: {
         time: "00:01",
         timezone: "WAT",
-        recurring: "weekly",
+        recurring: "monthly",
         prize: "₦2,000",
-        next_draw: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        next_draw: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 0, 0).toISOString(),
       },
       monthly: {
         time: "23:59",

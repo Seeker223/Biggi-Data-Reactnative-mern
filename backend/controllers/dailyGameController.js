@@ -1,7 +1,10 @@
 import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
-const WEEKLY_RESULT_WAIT_MS = 7 * 24 * 60 * 60 * 1000;
+const getMonthEnd = (date) => {
+  const ref = date instanceof Date ? date : new Date(date);
+  return new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999);
+};
 
 // ---------------------------------------------------
 // 🎮 PLAY DAILY GAME (User selects 5 numbers)
@@ -43,14 +46,14 @@ export const playDailyGame = async (req, res) => {
     user.addNotification({
       type: "Weekly Draw",
       status: "success",
-      message: "Weekly draw entry submitted successfully. Results are released after 7 days.",
+      message: "Weekly draw entry submitted successfully. Results are released at month end.",
     });
 
     await user.save();
 
     return res.status(200).json({
       success: true,
-      message: "Your letters were submitted successfully. Results are released after 7 days.",
+      message: "Your letters were submitted successfully. Results are released at month end.",
       tickets: user.tickets,
     });
   } catch (error) {
@@ -157,9 +160,9 @@ export const generateDailyWinningNumbers = async () => {
 
       user.dailyNumberDraw.forEach((entry) => {
         if (entry.result.length === 0) {
-          const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now()).getTime();
-          const diff = Date.now() - playedAt;
-          if (diff < WEEKLY_RESULT_WAIT_MS) return;
+          const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now());
+          const monthEnd = getMonthEnd(playedAt);
+          if (Date.now() < monthEnd.getTime()) return;
 
           // Not yet evaluated
           entry.result = winningNumbers;
