@@ -77,6 +77,7 @@ export const register = async (req, res) => {
         age: user.age,
         isVerified: true,
         notifications: user.notifications || 0,
+        userRole: user.userRole || null,
       }
     });
 
@@ -172,6 +173,7 @@ export const login = async (req, res) => {
         age: user.age,
         isVerified: true,
         role: user.role,
+        userRole: user.userRole || null,
         mainBalance: user.mainBalance,
         rewardBalance: user.rewardBalance,
         notifications: user.notifications || 0,

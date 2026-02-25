@@ -115,6 +115,12 @@ const UserSchema = new mongoose.Schema(
       default: "user",
     },
 
+    userRole: {
+      type: String,
+      enum: ["private", "merchant"],
+      default: null,
+    },
+
     isVerified: { 
       type: Boolean, 
       default: true  // Changed from false to true for MVP

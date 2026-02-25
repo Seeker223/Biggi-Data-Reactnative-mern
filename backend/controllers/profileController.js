@@ -10,6 +10,15 @@ export const updateProfile = async (req, res) => {
     // prevent user from changing restricted fields
     delete updates.role;
     delete updates.password;
+
+    if (updates.userRole) {
+      const normalizedRole = String(updates.userRole).toLowerCase().trim();
+      if (!["private", "merchant"].includes(normalizedRole)) {
+        delete updates.userRole;
+      } else {
+        updates.userRole = normalizedRole;
+      }
+    }
     delete updates.email; // (frontend doesn’t update email)
 
     const user = await User.findByIdAndUpdate(req.user.id, updates, {

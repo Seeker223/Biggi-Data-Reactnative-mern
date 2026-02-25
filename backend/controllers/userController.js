@@ -107,6 +107,14 @@ export const updateUser = async (req, res) => {
         const updateData = { ...req.body };
         delete updateData.password;
         delete updateData.role;
+        if (updateData.userRole) {
+            const normalizedRole = String(updateData.userRole).toLowerCase().trim();
+            if (!["private", "merchant"].includes(normalizedRole)) {
+                delete updateData.userRole;
+            } else {
+                updateData.userRole = normalizedRole;
+            }
+        }
 
         const user = await User.findByIdAndUpdate(req.params.id, updateData, {
             new: true,
