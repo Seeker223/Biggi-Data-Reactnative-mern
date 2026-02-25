@@ -111,6 +111,23 @@ export const claimDailyReward = async (req, res) => {
       });
     }
 
+    // Allow only one weekly reward per calendar month
+    const gameDate = new Date(game.createdAt || game.playedAt || Date.now());
+    const monthKey = `${gameDate.getFullYear()}-${String(gameDate.getMonth() + 1).padStart(2, "0")}`;
+    const alreadyClaimedThisMonth = (user.dailyNumberDraw || []).some((entry) => {
+      if (!entry?.claimed) return false;
+      const entryDate = new Date(entry.createdAt || entry.playedAt || Date.now());
+      const entryKey = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, "0")}`;
+      return entryKey === monthKey;
+    });
+
+    if (alreadyClaimedThisMonth) {
+      return res.status(400).json({
+        success: false,
+        message: "You can claim only one weekly reward per month",
+      });
+    }
+
     const prize = Number(game.prizeAmount || 2000);
     game.claimed = true;
     game.claimedAt = new Date();
@@ -174,10 +191,7 @@ export const generateDailyWinningNumbers = async () => {
 
           entry.isWinner = isWinner;
 
-          // 🚩 Feature flag: Do not award rewards during Play Store review
-          if (isWinner && !FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
-            user.rewardBalance += 5000; // You can set reward amount
-          }
+          // Do not auto-credit here; reward is claimed manually (one per month enforced on claim)
 
           updated = true;
         }
