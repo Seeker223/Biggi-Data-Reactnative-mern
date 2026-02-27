@@ -11,7 +11,18 @@ export const updateProfile = async (req, res) => {
     delete updates.role;
     delete updates.password;
 
+    const currentUser = await User.findById(req.user.id).select("referredByCode");
+    if (!currentUser) {
+      return res.status(404).json({ success: false, msg: "User not found" });
+    }
+
     if (updates.referredByCode) {
+      if (currentUser.referredByCode) {
+        return res.status(400).json({
+          success: false,
+          msg: "Referral code can only be set once",
+        });
+      }
       updates.referredByCode = String(updates.referredByCode).trim().toUpperCase();
       if (!updates.referredByCode) {
         delete updates.referredByCode;
