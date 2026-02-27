@@ -6,6 +6,7 @@ import {
   updateAvatar,
   getNotifications,
   markNotificationsAsRead,
+  getReferrals,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -17,6 +18,7 @@ router.put("/update-profile", protect, updateProfile);
 
 router.get("/notifications", protect, getNotifications);
 router.post("/notifications/read", protect, markNotificationsAsRead);
+router.get("/referrals", protect, getReferrals);
 
 router.put(
   "/update-avatar",

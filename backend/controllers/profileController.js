@@ -147,3 +147,33 @@ export const markNotificationsAsRead = async (req, res) => {
     });
   }
 };
+
+// -----------------------------------------------
+// GET USER REFERRALS
+// -----------------------------------------------
+export const getReferrals = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("referralCode");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!user.referralCode) {
+      return res.json({ success: true, count: 0, referrals: [] });
+    }
+
+    const referrals = await User.find({ referredByCode: user.referralCode })
+      .select("username photo state createdAt");
+
+    return res.json({
+      success: true,
+      count: referrals.length,
+      referrals,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch referrals",
+    });
+  }
+};
