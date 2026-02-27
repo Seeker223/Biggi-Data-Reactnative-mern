@@ -56,6 +56,15 @@ export const register = async (req, res) => {
     // Create user - automatically mark as verified
     const uniqueReferralCode = await buildUniqueReferralCode();
     const normalizedReferralCode = referralCode?.trim().toUpperCase() || null;
+    if (normalizedReferralCode) {
+      const referrer = await User.findOne({ referralCode: normalizedReferralCode }).select("_id");
+      if (!referrer) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid referral code",
+        });
+      }
+    }
 
     const user = await User.create({ 
       username: normalizedUsername, 

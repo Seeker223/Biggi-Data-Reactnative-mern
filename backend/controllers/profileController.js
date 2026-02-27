@@ -13,7 +13,17 @@ export const updateProfile = async (req, res) => {
 
     if (updates.referredByCode) {
       updates.referredByCode = String(updates.referredByCode).trim().toUpperCase();
-      if (!updates.referredByCode) delete updates.referredByCode;
+      if (!updates.referredByCode) {
+        delete updates.referredByCode;
+      } else {
+        const referrer = await User.findOne({ referralCode: updates.referredByCode }).select("_id");
+        if (!referrer) {
+          return res.status(400).json({
+            success: false,
+            msg: "Invalid referral code",
+          });
+        }
+      }
     }
 
     if (updates.userRole) {
