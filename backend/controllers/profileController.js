@@ -11,6 +11,11 @@ export const updateProfile = async (req, res) => {
     delete updates.role;
     delete updates.password;
 
+    if (updates.referredByCode) {
+      updates.referredByCode = String(updates.referredByCode).trim().toUpperCase();
+      if (!updates.referredByCode) delete updates.referredByCode;
+    }
+
     if (updates.userRole) {
       const normalizedRole = String(updates.userRole).toLowerCase().trim();
       if (!["private", "merchant"].includes(normalizedRole)) {

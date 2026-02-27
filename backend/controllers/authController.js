@@ -3,13 +3,26 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const generateReferralCode = () =>
+  Math.random().toString(36).slice(2, 8).toUpperCase() +
+  Math.random().toString(36).slice(2, 6).toUpperCase();
+
+const buildUniqueReferralCode = async () => {
+  for (let i = 0; i < 8; i += 1) {
+    const code = generateReferralCode();
+    const exists = await User.findOne({ referralCode: code }).select("_id");
+    if (!exists) return code;
+  }
+  // Fallback in the rare case of repeated collision
+  return `${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 4).toUpperCase()}`;
+};
 
 // =====================================================
 // REGISTER (NO OTP, NO EMAIL VERIFICATION)
 // =====================================================
 export const register = async (req, res) => {
   try {
-    const { username, email, password, phoneNumber, birthDate, state } = req.body;
+    const { username, email, password, phoneNumber, birthDate, state, referralCode } = req.body;
     const normalizedUsername = username?.trim();
     const normalizedEmail = email?.trim().toLowerCase();
     const normalizedPhone = phoneNumber?.trim();
@@ -41,6 +54,9 @@ export const register = async (req, res) => {
     }
 
     // Create user - automatically mark as verified
+    const uniqueReferralCode = await buildUniqueReferralCode();
+    const normalizedReferralCode = referralCode?.trim().toUpperCase() || null;
+
     const user = await User.create({ 
       username: normalizedUsername, 
       email: normalizedEmail, 
@@ -48,6 +64,8 @@ export const register = async (req, res) => {
       phoneNumber: normalizedPhone || undefined, 
       birthDate,
       state: normalizedState,
+      referralCode: uniqueReferralCode,
+      referredByCode: normalizedReferralCode,
       isVerified: true,  // Auto-verify for MVP
       verifiedAt: new Date()  // Set verification timestamp
     });
@@ -80,6 +98,8 @@ export const register = async (req, res) => {
         isVerified: true,
         notifications: user.notifications || 0,
         state: user.state,
+        referralCode: user.referralCode,
+        referredByCode: user.referredByCode,
         userRole: user.userRole || null,
       }
     });
@@ -178,6 +198,8 @@ export const login = async (req, res) => {
         role: user.role,
         userRole: user.userRole || null,
         state: user.state,
+        referralCode: user.referralCode,
+        referredByCode: user.referredByCode,
         mainBalance: user.mainBalance,
         rewardBalance: user.rewardBalance,
         notifications: user.notifications || 0,

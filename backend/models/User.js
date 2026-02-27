@@ -153,6 +153,17 @@ const UserSchema = new mongoose.Schema(
       ],
     },
 
+    referralCode: {
+      type: String,
+      unique: true,
+      index: true,
+    },
+
+    referredByCode: {
+      type: String,
+      default: null,
+    },
+
     role: {
       type: String,
       enum: ["user", "admin"],
