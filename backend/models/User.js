@@ -148,6 +148,7 @@ const UserSchema = new mongoose.Schema(
         "Sokoto",
         "Taraba",
         "Yobe",
+        "Abuja",
         "Zamfara",
       ],
     },
