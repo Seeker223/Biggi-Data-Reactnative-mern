@@ -9,16 +9,17 @@ const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 // =====================================================
 export const register = async (req, res) => {
   try {
-    const { username, email, password, phoneNumber, birthDate } = req.body;
+    const { username, email, password, phoneNumber, birthDate, state } = req.body;
     const normalizedUsername = username?.trim();
     const normalizedEmail = email?.trim().toLowerCase();
     const normalizedPhone = phoneNumber?.trim();
+    const normalizedState = state?.trim();
 
     // Validate required fields
-    if (!normalizedUsername || !normalizedEmail || !password) {
+    if (!normalizedUsername || !normalizedEmail || !password || !normalizedState) {
       return res.status(400).json({ 
         success: false, 
-        error: "Username, email, and password are required" 
+        error: "Username, email, password, and state are required" 
       });
     }
 
@@ -46,6 +47,7 @@ export const register = async (req, res) => {
       password, 
       phoneNumber: normalizedPhone || undefined, 
       birthDate,
+      state: normalizedState,
       isVerified: true,  // Auto-verify for MVP
       verifiedAt: new Date()  // Set verification timestamp
     });
@@ -77,6 +79,7 @@ export const register = async (req, res) => {
         age: user.age,
         isVerified: true,
         notifications: user.notifications || 0,
+        state: user.state,
         userRole: user.userRole || null,
       }
     });
@@ -174,6 +177,7 @@ export const login = async (req, res) => {
         isVerified: true,
         role: user.role,
         userRole: user.userRole || null,
+        state: user.state,
         mainBalance: user.mainBalance,
         rewardBalance: user.rewardBalance,
         notifications: user.notifications || 0,
