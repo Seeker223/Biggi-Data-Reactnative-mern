@@ -17,6 +17,12 @@ const buildUniqueReferralCode = async () => {
   return `${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 4).toUpperCase()}`;
 };
 
+const ensureReferralCode = async (user) => {
+  if (!user || user.referralCode) return user;
+  user.referralCode = await buildUniqueReferralCode();
+  return user;
+};
+
 // =====================================================
 // REGISTER (NO OTP, NO EMAIL VERIFICATION)
 // =====================================================
@@ -186,6 +192,7 @@ export const login = async (req, res) => {
     // Save refresh token and update last login
     user.refreshToken = refreshToken;
     user.lastLogin = new Date();
+    await ensureReferralCode(user);
     user.addNotification({
       type: "Welcome",
       status: "success",
@@ -291,6 +298,11 @@ export const getMe = async (req, res) => {
         success: false,
         error: "User not found"
       });
+    }
+
+    if (!user.referralCode) {
+      await ensureReferralCode(user);
+      await user.save({ validateBeforeSave: false });
     }
 
     res.status(200).json({
