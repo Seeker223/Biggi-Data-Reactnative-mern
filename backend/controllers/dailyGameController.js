@@ -6,6 +6,41 @@ const getMonthEnd = (date) => {
   return new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999);
 };
 
+const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
+  const referralCode = winner?.referredByCode;
+  if (!referralCode) return null;
+
+  const referrer = await User.findOne({ referralCode }).select(
+    "_id username rewardBalance totalPrizeWon referralRewardedUsers notificationItems notifications"
+  );
+  if (!referrer) return null;
+  if (String(referrer._id) === String(winner._id)) return null;
+
+  const alreadyRewarded = (referrer.referralRewardedUsers || []).some(
+    (id) => String(id) === String(winner._id)
+  );
+  if (alreadyRewarded) return null;
+
+  const bonus = Math.floor(Number(prizeAmount || 0) * 0.2);
+  if (bonus <= 0) return null;
+
+  referrer.rewardBalance = Number(referrer.rewardBalance || 0) + bonus;
+  referrer.totalPrizeWon = Number(referrer.totalPrizeWon || 0) + bonus;
+  referrer.referralRewardedUsers = [
+    ...(referrer.referralRewardedUsers || []),
+    winner._id,
+  ];
+  referrer.addNotification({
+    type: "Referral Reward",
+    status: "success",
+    amount: bonus,
+    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned ₦${bonus.toLocaleString()}.`,
+  });
+
+  await referrer.save();
+  return bonus;
+};
+
 // ---------------------------------------------------
 // 🎮 PLAY DAILY GAME (User selects 5 numbers)
 // ---------------------------------------------------
@@ -50,6 +85,11 @@ export const playDailyGame = async (req, res) => {
     });
 
     await user.save();
+    await awardReferralReward({
+      winner: user,
+      prizeAmount: prize,
+      gameLabel: "Weekly Draw",
+    });
 
     return res.status(200).json({
       success: true,

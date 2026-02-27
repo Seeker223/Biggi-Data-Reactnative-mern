@@ -164,6 +164,13 @@ const UserSchema = new mongoose.Schema(
       default: null,
     },
 
+    referralRewardedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
     role: {
       type: String,
       enum: ["user", "admin"],
