@@ -1,8 +1,8 @@
-import User from "../models/User.js";
+﻿import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
 const TOP_RANDOM_MAX_WINNERS = 10;
-const TOP_RANDOM_PRIZE = 2000;
+const TOP_RANDOM_PRIZE = 10000;
 
 const getCurrentMonthString = () => {
   const now = new Date();
@@ -53,7 +53,7 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
     type: "Referral Reward",
     status: "success",
     amount: bonus,
-    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned ₦${bonus.toLocaleString()}.`,
+    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned â‚¦${bonus.toLocaleString()}.`,
   });
 
   await referrer.save();
@@ -127,13 +127,13 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
       type: "Top Random Monthly Picks",
       status: "success",
       amount: TOP_RANDOM_PRIZE,
-      message: `You were selected in Top Random Monthly Picks for ${month}. Claim ₦${TOP_RANDOM_PRIZE.toLocaleString()} reward.`,
+      message: `You were selected in Top Random Monthly Picks for ${month}. Claim â‚¦${TOP_RANDOM_PRIZE.toLocaleString()} reward.`,
     });
 
     await user.save();
     await awardReferralReward({
       winner: user,
-      prizeAmount: amount,
+      prizeAmount: TOP_RANDOM_PRIZE,
       gameLabel: "Top Random Monthly Picks",
     });
   }
@@ -313,7 +313,7 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
       type: "Top Random Monthly Picks",
       status: "success",
       amount,
-      message: `Top Random Monthly reward of ₦${amount.toLocaleString()} claimed for ${month}.`,
+      message: `Top Random Monthly reward of â‚¦${amount.toLocaleString()} claimed for ${month}.`,
     });
 
     await user.save();
@@ -335,3 +335,5 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
     });
   }
 };
+
+

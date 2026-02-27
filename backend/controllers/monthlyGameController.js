@@ -1,11 +1,11 @@
-// backend/controllers/monthlyGameController.js
+﻿// backend/controllers/monthlyGameController.js
 import User from "../models/User.js";
 import mongoose from "mongoose";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
 const MONTHLY_TOP_WINNERS = 3;
 const MONTHLY_MAX_RANKS = 100;
-const MONTHLY_WIN_PRIZE = 5000;
+const MONTHLY_WIN_PRIZE = 10000;
 
 const getCurrentMonthString = () => {
   const now = new Date();
@@ -47,7 +47,7 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
     type: "Referral Reward",
     status: "success",
     amount: bonus,
-    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned ₦${bonus.toLocaleString()}.`,
+    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned â‚¦${bonus.toLocaleString()}.`,
   });
 
   await referrer.save();
@@ -74,7 +74,7 @@ export const getMonthlyEligibility = async (req, res) => {
       purchasesCount: 0,
       isEligible: false,
       isWinner: false,
-      prizeAmount: 5000,
+      prizeAmount: 10000,
       claimed: false
     };
 
@@ -211,7 +211,7 @@ export const getMonthlyWinners = async (req, res) => {
    CLAIM MONTHLY REWARD
 ===================================================== */
 export const claimMonthlyReward = async (req, res) => {
-  // 🚩 Feature flag: Disable claiming rewards during Play Store review
+  // ðŸš© Feature flag: Disable claiming rewards during Play Store review
   if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
     return res.status(403).json({
       success: false,
@@ -381,3 +381,4 @@ export default {
   claimMonthlyReward,
   updateMonthlyPurchase,
 };
+

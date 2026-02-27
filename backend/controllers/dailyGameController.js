@@ -1,4 +1,4 @@
-import User from "../models/User.js";
+﻿import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
 const getMonthEnd = (date) => {
@@ -34,7 +34,7 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
     type: "Referral Reward",
     status: "success",
     amount: bonus,
-    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned ₦${bonus.toLocaleString()}.`,
+    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned â‚¦${bonus.toLocaleString()}.`,
   });
 
   await referrer.save();
@@ -42,7 +42,7 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
 };
 
 // ---------------------------------------------------
-// 🎮 PLAY DAILY GAME (User selects 5 numbers)
+// ðŸŽ® PLAY DAILY GAME (User selects 5 numbers)
 // ---------------------------------------------------
 export const playDailyGame = async (req, res) => {
   try {
@@ -85,11 +85,7 @@ export const playDailyGame = async (req, res) => {
     });
 
     await user.save();
-    await awardReferralReward({
-      winner: user,
-      prizeAmount: prize,
-      gameLabel: "Weekly Draw",
-    });
+
 
     return res.status(200).json({
       success: true,
@@ -168,7 +164,7 @@ export const claimDailyReward = async (req, res) => {
       });
     }
 
-    const prize = Number(game.prizeAmount || 2000);
+    const prize = Number(game.prizeAmount || 10000);
     game.claimed = true;
     game.claimedAt = new Date();
     user.rewardBalance += prize;
@@ -176,6 +172,12 @@ export const claimDailyReward = async (req, res) => {
     user.totalWins = Number(user.totalWins || 0) + 1;
 
     await user.save();
+
+    await awardReferralReward({
+      winner: user,
+      prizeAmount: prize,
+      gameLabel: "Weekly Draw",
+    });
 
     return res.status(200).json({
       success: true,
@@ -196,18 +198,18 @@ export const claimDailyReward = async (req, res) => {
 };
 
 // ---------------------------------------------------
-// 🎯 GENERATE WINNING NUMBERS & EVALUATE WINNERS
+// ðŸŽ¯ GENERATE WINNING NUMBERS & EVALUATE WINNERS
 // ---------------------------------------------------
 export const generateDailyWinningNumbers = async () => {
   try {
-    // Generate 5 unique winning numbers between 1–70
+    // Generate 5 unique winning numbers between 1â€“70
     const winningNumbers = [];
     while (winningNumbers.length < 5) {
       const num = Math.floor(Math.random() * 52) + 1;
       if (!winningNumbers.includes(num)) winningNumbers.push(num);
     }
 
-    console.log("🎯 Weekly winning numbers:", winningNumbers);
+    console.log("ðŸŽ¯ Weekly winning numbers:", winningNumbers);
 
     // Fetch users with unsettled entries.
     const users = await User.find({ "dailyNumberDraw.result": { $size: 0 } });
@@ -245,3 +247,5 @@ export const generateDailyWinningNumbers = async () => {
     console.log("Daily Game Result Error:", error);
   }
 };
+
+

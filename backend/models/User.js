@@ -1,4 +1,4 @@
-// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
+﻿// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -18,7 +18,7 @@ const DailyGameSchema = new mongoose.Schema({
   },
   result: { type: [Number], default: [] },
   isWinner: { type: Boolean, default: false },
-  prizeAmount: { type: Number, default: 2000 },
+  prizeAmount: { type: Number, default: 10000 },
   claimed: { type: Boolean, default: false },
   claimedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
@@ -32,7 +32,7 @@ const MonthlyDrawSchema = new mongoose.Schema({
   purchasesCount: { type: Number, default: 0 },
   isEligible: { type: Boolean, default: false },
   isWinner: { type: Boolean, default: false },
-  prizeAmount: { type: Number, default: 5000 },
+  prizeAmount: { type: Number, default: 10000 },
   claimed: { type: Boolean, default: false },
   claimedAt: { type: Date, default: null },
   lastPurchaseDate: { type: Date, default: null },
@@ -46,7 +46,7 @@ const MonthlyDrawSchema = new mongoose.Schema({
 const TopRandomMonthlyPickSchema = new mongoose.Schema({
   month: { type: String, required: true }, // Format: "YYYY-MM"
   isWinner: { type: Boolean, default: false },
-  prizeAmount: { type: Number, default: 2000 },
+  prizeAmount: { type: Number, default: 10000 },
   claimed: { type: Boolean, default: false },
   claimedAt: { type: Date, default: null },
   selectedAt: { type: Date, default: Date.now },
@@ -322,7 +322,7 @@ UserSchema.methods.updateMonthlyPurchase = function() {
       purchasesCount: 1,
       isEligible: false,
       isWinner: false,
-      prizeAmount: 5000,
+      prizeAmount: 10000,
       claimed: false
     };
     this.monthlyDraws.push(monthlyDraw);
@@ -468,3 +468,4 @@ UserSchema.methods.getResetPasswordToken = function () {
 };
 
 export default mongoose.model("User", UserSchema);
+
