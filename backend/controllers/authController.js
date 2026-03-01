@@ -259,9 +259,13 @@ export const refreshTokenController = async (req, res) => {
     }
 
     const newAccessToken = user.getSignedJwtToken();
+    const newRefreshToken = user.getRefreshToken();
+    user.refreshToken = newRefreshToken;
+    await user.save({ validateBeforeSave: false });
     res.status(200).json({
       success: true,
-      accessToken: newAccessToken
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
     });
   } catch (err) {
     console.error("Refresh Token Error:", err);
@@ -295,7 +299,7 @@ export const getMe = async (req, res) => {
     }
 
     const user = await User.findById(userId)
-      .select("-password -refreshToken +transactionPinHash");
+      .select("-password +refreshToken +transactionPinHash");
 
     if (!user) {
       return res.status(404).json({
@@ -306,8 +310,9 @@ export const getMe = async (req, res) => {
 
     if (!user.referralCode) {
       await ensureReferralCode(user);
-      await user.save({ validateBeforeSave: false });
     }
+    const newRefreshToken = user.getRefreshToken();
+    await user.save({ validateBeforeSave: false });
 
     const safeUser = user.toObject();
     const credsCount = Array.isArray(safeUser?.biometricAuth?.credentials)
@@ -321,7 +326,8 @@ export const getMe = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      user: safeUser
+      user: safeUser,
+      refreshToken: newRefreshToken,
     });
   } catch (err) {
     console.error("GET /auth/me error:", err);
