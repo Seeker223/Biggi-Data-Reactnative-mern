@@ -196,8 +196,10 @@ export const beginBiometricRegistration = async (req, res) => {
       timeout: 60000,
       attestationType: "none",
       authenticatorSelection: {
-        residentKey: "preferred",
-        userVerification: "preferred",
+        authenticatorAttachment: "platform",
+        residentKey: "discouraged",
+        requireResidentKey: false,
+        userVerification: "required",
       },
       excludeCredentials: credentials.map((cred) => ({
         id: normalizeBase64Url(cred.credentialID),
@@ -321,7 +323,7 @@ export const beginBiometricLogin = async (req, res) => {
     const options = await generateAuthenticationOptions({
       rpID,
       timeout: 60000,
-      userVerification: "preferred",
+      userVerification: "required",
       allowCredentials: (user.biometricAuth.credentials || []).map((cred) => ({
         id: normalizeBase64Url(cred.credentialID),
         type: "public-key",
@@ -432,7 +434,7 @@ export const beginBiometricTransaction = async (req, res) => {
     const options = await generateAuthenticationOptions({
       rpID,
       timeout: 60000,
-      userVerification: "preferred",
+      userVerification: "required",
       allowCredentials: (user.biometricAuth.credentials || []).map((cred) => ({
         id: normalizeBase64Url(cred.credentialID),
         type: "public-key",
