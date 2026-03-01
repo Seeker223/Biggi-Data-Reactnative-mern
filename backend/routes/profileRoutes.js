@@ -10,6 +10,7 @@ import {
   getTransactionSecurityStatus,
   setTransactionPin,
   disableTransactionPin,
+  verifyTransactionPin,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -24,6 +25,7 @@ router.post("/notifications/read", protect, markNotificationsAsRead);
 router.get("/referrals", protect, getReferrals);
 router.get("/transaction-security", protect, getTransactionSecurityStatus);
 router.post("/transaction-pin", protect, setTransactionPin);
+router.post("/transaction-pin/verify", protect, verifyTransactionPin);
 router.delete("/transaction-pin", protect, disableTransactionPin);
 
 router.put(

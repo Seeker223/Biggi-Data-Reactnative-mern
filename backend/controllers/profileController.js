@@ -310,3 +310,49 @@ export const disableTransactionPin = async (req, res) => {
     });
   }
 };
+
+// -----------------------------------------------
+// VERIFY TRANSACTION PIN (WITHOUT CHANGING IT)
+// -----------------------------------------------
+export const verifyTransactionPin = async (req, res) => {
+  try {
+    const pin = String(req.body?.pin || "").trim();
+
+    if (!/^\d{4}$/.test(pin)) {
+      return res.status(400).json({
+        success: false,
+        message: "PIN must be exactly 4 digits",
+      });
+    }
+
+    const user = await User.findById(req.user.id).select("+transactionPinHash");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!user.transactionPinHash) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction PIN is not enabled for this account",
+      });
+    }
+
+    const isValid = await user.matchTransactionPin(pin);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid transaction PIN",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "PIN verified",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Failed to verify transaction PIN",
+    });
+  }
+};
