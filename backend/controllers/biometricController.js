@@ -200,7 +200,7 @@ export const beginBiometricRegistration = async (req, res) => {
         userVerification: "preferred",
       },
       excludeCredentials: credentials.map((cred) => ({
-        id: base64urlToBuffer(cred.credentialID),
+        id: normalizeBase64Url(cred.credentialID),
         type: "public-key",
         transports: cred.transports || [],
       })),
@@ -323,7 +323,7 @@ export const beginBiometricLogin = async (req, res) => {
       timeout: 60000,
       userVerification: "preferred",
       allowCredentials: (user.biometricAuth.credentials || []).map((cred) => ({
-        id: base64urlToBuffer(cred.credentialID),
+        id: normalizeBase64Url(cred.credentialID),
         type: "public-key",
         transports: cred.transports || [],
       })),
@@ -434,7 +434,7 @@ export const beginBiometricTransaction = async (req, res) => {
       timeout: 60000,
       userVerification: "preferred",
       allowCredentials: (user.biometricAuth.credentials || []).map((cred) => ({
-        id: base64urlToBuffer(cred.credentialID),
+        id: normalizeBase64Url(cred.credentialID),
         type: "public-key",
         transports: cred.transports || [],
       })),
