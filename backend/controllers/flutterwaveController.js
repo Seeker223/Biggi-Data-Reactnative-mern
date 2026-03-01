@@ -5,6 +5,39 @@ import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 
+const consumeBiometricProof = (user, token, expectedAction, expectedAmount = 0) => {
+  const biometric = user?.biometricAuth || {};
+  if (!biometric.enabled) return { ok: true };
+  if (!token) {
+    return { ok: false, message: "Biometric verification is required for this transaction" };
+  }
+
+  const proofs = Array.isArray(biometric.transactionProofs) ? biometric.transactionProofs : [];
+  const now = Date.now();
+  const proof = proofs.find((item) => item.token === token);
+  if (!proof) {
+    return { ok: false, message: "Invalid biometric proof. Please verify again." };
+  }
+  if (proof.usedAt) {
+    return { ok: false, message: "Biometric proof already used. Verify again." };
+  }
+  if (!proof.expiresAt || new Date(proof.expiresAt).getTime() < now) {
+    return { ok: false, message: "Biometric proof expired. Verify again." };
+  }
+  if (expectedAction && proof.action && proof.action !== expectedAction) {
+    return { ok: false, message: "Biometric proof action mismatch. Verify again." };
+  }
+  const reqAmount = Number(expectedAmount || 0);
+  const proofAmount = Number(proof.amount || 0);
+  if (reqAmount > 0 && proofAmount > 0 && reqAmount !== proofAmount) {
+    return { ok: false, message: "Biometric proof amount mismatch. Verify again." };
+  }
+
+  proof.usedAt = new Date();
+  user.biometricAuth.transactionProofs = proofs.slice(0, 20);
+  return { ok: true };
+};
+
 /* =====================================================
    VERIFY FLUTTERWAVE PAYMENT (SDK → BACKEND)
 ===================================================== */
@@ -12,8 +45,9 @@ export const verifyFlutterwavePayment = async (req, res) => {
   let tx_ref; // Declare here for catch block access
   
   try {
-    const { tx_ref: txRefFromBody } = req.body;
+    const { tx_ref: txRefFromBody, biometricProof: biometricProofFromBody } = req.body;
     tx_ref = txRefFromBody;
+    const biometricProof = String(biometricProofFromBody || "").trim();
     const userId = req.user.id;
 
     if (!tx_ref) {
@@ -55,6 +89,19 @@ export const verifyFlutterwavePayment = async (req, res) => {
       
       if (!user) {
         return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      const biometricCheck = consumeBiometricProof(
+        user,
+        biometricProof,
+        "deposit",
+        Number(payment.amount || 0)
+      );
+      if (!biometricCheck.ok) {
+        return res.status(401).json({
+          success: false,
+          message: biometricCheck.message,
+        });
       }
 
       let deposit;
@@ -431,7 +478,8 @@ export const getDepositStatus = async (req, res) => {
 ===================================================== */
 export const reconcilePayment = async (req, res) => {
   try {
-    const { tx_ref } = req.body;
+    const { tx_ref, biometricProof: biometricProofFromBody } = req.body;
+    const biometricProof = String(biometricProofFromBody || "").trim();
     const userId = req.user.id;
 
     if (!tx_ref) {
@@ -481,6 +529,19 @@ export const reconcilePayment = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const biometricCheck = consumeBiometricProof(
+      user,
+      biometricProof,
+      "deposit",
+      Number(payment.amount || 0)
+    );
+    if (!biometricCheck.ok) {
+      return res.status(401).json({
+        success: false,
+        message: biometricCheck.message,
+      });
     }
 
     const session = await mongoose.startSession();
