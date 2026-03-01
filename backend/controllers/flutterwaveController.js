@@ -41,7 +41,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       });
     }
 
-    const existingDeposit = await Deposit.findOne({ reference: tx_ref });
+    const existingDeposit = await Deposit.findOne({ reference: tx_ref, user: userId });
     
     if (existingDeposit && existingDeposit.status === "successful") {
       return res.json({
@@ -256,7 +256,7 @@ export const flutterwaveWebhook = async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Create deposit record
+      // Store payment event only; crediting is handled by verify/reconcile endpoint
       await Deposit.findOneAndUpdate(
         { reference: tx_ref },
         {
@@ -264,7 +264,7 @@ export const flutterwaveWebhook = async (req, res) => {
           amount,
           currency: currency || "NGN",
           reference: tx_ref,
-          status: status === "successful" ? "successful" : "failed",
+          status: status === "successful" ? "pending" : "failed",
           channel: "flutterwave",
           flutterwaveTransactionId: id,
           gatewayResponse: data,
@@ -272,32 +272,11 @@ export const flutterwaveWebhook = async (req, res) => {
         { upsert: true, new: true, session }
       );
 
-      // Credit wallet only for successful payments
       if (status === "successful") {
-        const previousBalance = user.mainBalance;
-        user.mainBalance += Number(amount);
-        user.totalDeposits += Number(amount);
-        await user.save({ session });
-
-        // Log wallet transaction
-        try {
-          await logWalletTransaction(
-            userId,
-            "deposit",
-            amount,
-            tx_ref,
-            "success"
-          );
-        } catch (logError) {
-          console.error("Wallet log error (non-critical):", logError);
-        }
-
-        console.log("✅ Wallet credited via webhook:", {
+        console.log("ℹ️ Deposit marked pending auth via webhook:", {
           tx_ref,
           amount,
           currency,
-          previousBalance,
-          newBalance: user.mainBalance,
           userId,
         });
       } else {
@@ -353,7 +332,7 @@ export const getDepositStatus = async (req, res) => {
       });
     }
 
-    // If no deposit record exists, check with Flutterwave
+    // If no deposit record exists, check with Flutterwave for display only (no auto-credit)
     try {
       const response = await axios.get(
         `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${tx_ref}`,
@@ -368,54 +347,27 @@ export const getDepositStatus = async (req, res) => {
       const payment = response.data?.data;
       
       if (payment && payment.status === "successful") {
-        const user = await User.findById(userId);
-        if (user) {
-          const session = await mongoose.startSession();
-          session.startTransaction();
+        await Deposit.findOneAndUpdate(
+          { reference: tx_ref },
+          {
+            user: userId,
+            amount: payment.amount,
+            reference: tx_ref,
+            status: "pending",
+            channel: "flutterwave",
+            flutterwaveTransactionId: payment.id,
+            gatewayResponse: payment,
+          },
+          { upsert: true, new: true }
+        );
 
-          try {
-            await Deposit.create([{
-              user: userId,
-              amount: payment.amount,
-              reference: tx_ref,
-              status: "successful",
-              channel: "flutterwave",
-              flutterwaveTransactionId: payment.id,
-              gatewayResponse: payment,
-            }], { session });
-
-            user.mainBalance += Number(payment.amount);
-            user.totalDeposits += Number(payment.amount);
-            await user.save({ session });
-
-            await session.commitTransaction();
-
-            // Log transaction
-            try {
-              await logWalletTransaction(
-                userId,
-                "deposit",
-                payment.amount,
-                tx_ref,
-                "success"
-              );
-            } catch (logError) {
-              console.error("Wallet log error:", logError);
-            }
-
-            return res.json({ 
-              success: true,
-              status: "successful",
-              amount: payment.amount,
-              balance: user.mainBalance 
-            });
-          } catch (txError) {
-            await session.abortTransaction();
-            throw txError;
-          } finally {
-            session.endSession();
-          }
-        }
+        return res.json({
+          success: true,
+          status: "pending",
+          amount: payment.amount,
+          message: "Payment received. Authorization required to credit wallet.",
+          balance: 0,
+        });
       } else if (payment) {
         return res.json({ 
           success: true,
