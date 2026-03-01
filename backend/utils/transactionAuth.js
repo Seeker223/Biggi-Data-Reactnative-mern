@@ -43,8 +43,32 @@ export const verifyTransactionAuthorization = async ({
   const pin = String(transactionPin || "").trim();
   const proof = String(biometricProof || "").trim();
 
+  // If caller supplied a PIN but account has no PIN configured, reject.
+  // This prevents false-positive "success" when users think PIN is being validated.
+  if (pin && !hasPin) {
+    return {
+      ok: false,
+      message: "Transaction PIN is not enabled for this account.",
+    };
+  }
+
+  // If caller supplied biometric proof but biometric is not enabled, reject.
+  if (proof && !biometricEnabled) {
+    return {
+      ok: false,
+      message: "Biometric authentication is not enabled for this account.",
+    };
+  }
+
   if (!hasPin && !biometricEnabled) {
-    return { ok: true, method: "none" };
+    // Allow no-auth mode only when no security credential was supplied.
+    if (!pin && !proof) {
+      return { ok: true, method: "none" };
+    }
+    return {
+      ok: false,
+      message: "Transaction security is not configured on this account.",
+    };
   }
 
   if (pin) {
