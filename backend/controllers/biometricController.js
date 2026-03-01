@@ -33,6 +33,12 @@ const getHostFromOrigin = (origin = "") => {
 };
 
 const base64urlToBuffer = (value = "") => {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (Array.isArray(value)) return Buffer.from(value);
+  if (value && typeof value === "object" && Array.isArray(value.data)) {
+    return Buffer.from(value.data);
+  }
   const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
   const pad = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
   return Buffer.from(`${normalized}${pad}`, "base64");
@@ -46,6 +52,40 @@ const bufferToBase64url = (value) => {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
+};
+
+const normalizeBase64Url = (value) => {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (Buffer.isBuffer(value) || value instanceof Uint8Array || Array.isArray(value)) {
+    return bufferToBase64url(value);
+  }
+  if (value && typeof value === "object" && Array.isArray(value.data)) {
+    return bufferToBase64url(Buffer.from(value.data));
+  }
+  return String(value);
+};
+
+const normalizeCredentialPayload = (payload = {}) => {
+  const response = payload?.response || {};
+  return {
+    ...payload,
+    id: normalizeBase64Url(payload?.id || payload?.rawId),
+    rawId: normalizeBase64Url(payload?.rawId || payload?.id),
+    response: {
+      ...response,
+      clientDataJSON: normalizeBase64Url(response?.clientDataJSON),
+      attestationObject: response?.attestationObject
+        ? normalizeBase64Url(response.attestationObject)
+        : undefined,
+      authenticatorData: response?.authenticatorData
+        ? normalizeBase64Url(response.authenticatorData)
+        : undefined,
+      signature: response?.signature ? normalizeBase64Url(response.signature) : undefined,
+      userHandle:
+        response?.userHandle == null ? null : normalizeBase64Url(response.userHandle),
+    },
+  };
 };
 
 const getWebAuthnConfig = (req) => {
@@ -194,8 +234,9 @@ export const verifyBiometricRegistration = async (req, res) => {
     }
 
     const { rpID, expectedOrigins } = getWebAuthnConfig(req);
+    const normalizedResponse = normalizeCredentialPayload(req.body);
     const verification = await verifyRegistrationResponse({
-      response: req.body,
+      response: normalizedResponse,
       expectedChallenge: challenge,
       expectedOrigin: expectedOrigins,
       expectedRPID: rpID,
@@ -315,7 +356,8 @@ export const verifyBiometricLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: "Authentication challenge expired. Try again." });
     }
 
-    const credentialID = req.body?.id;
+    const normalizedResponse = normalizeCredentialPayload(req.body);
+    const credentialID = normalizedResponse?.id;
     const authenticator = (user.biometricAuth?.credentials || []).find(
       (cred) => cred.credentialID === credentialID
     );
@@ -325,7 +367,7 @@ export const verifyBiometricLogin = async (req, res) => {
 
     const { rpID, expectedOrigins } = getWebAuthnConfig(req);
     const verification = await verifyAuthenticationResponse({
-      response: req.body,
+      response: normalizedResponse,
       expectedChallenge: challenge,
       expectedOrigin: expectedOrigins,
       expectedRPID: rpID,
@@ -428,7 +470,8 @@ export const verifyBiometricTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: "Transaction challenge expired. Try again." });
     }
 
-    const credentialID = req.body?.id;
+    const normalizedResponse = normalizeCredentialPayload(req.body);
+    const credentialID = normalizedResponse?.id;
     const authenticator = (user.biometricAuth?.credentials || []).find(
       (cred) => cred.credentialID === credentialID
     );
@@ -438,7 +481,7 @@ export const verifyBiometricTransaction = async (req, res) => {
 
     const { rpID, expectedOrigins } = getWebAuthnConfig(req);
     const verification = await verifyAuthenticationResponse({
-      response: req.body,
+      response: normalizedResponse,
       expectedChallenge: challenge,
       expectedOrigin: expectedOrigins,
       expectedRPID: rpID,
