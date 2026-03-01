@@ -5,6 +5,7 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
+import { isoUint8Array } from "@simplewebauthn/server/helpers";
 import User from "../models/User.js";
 
 const DEFAULT_ORIGINS = [
@@ -13,6 +14,23 @@ const DEFAULT_ORIGINS = [
   "https://biggidata.com.ng",
   "https://www.biggidata.com.ng",
 ];
+
+const sanitizeHost = (value = "") =>
+  String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split("/")[0]
+    .split(":")[0]
+    .toLowerCase();
+
+const getHostFromOrigin = (origin = "") => {
+  try {
+    return sanitizeHost(new URL(origin).hostname);
+  } catch {
+    return "";
+  }
+};
 
 const base64urlToBuffer = (value = "") => {
   const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
@@ -31,18 +49,37 @@ const bufferToBase64url = (value) => {
 };
 
 const getWebAuthnConfig = (req) => {
-  const rpID = (process.env.WEBAUTHN_RP_ID || req.hostname || "localhost")
-    .replace(/^www\./i, "")
-    .split(":")[0];
   const expectedOrigins = (process.env.WEBAUTHN_ORIGINS || "")
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
+  const resolvedOrigins = expectedOrigins.length > 0 ? expectedOrigins : DEFAULT_ORIGINS;
+
+  const configuredRpID = sanitizeHost(process.env.WEBAUTHN_RP_ID || "");
+  const originHost = getHostFromOrigin(req.headers?.origin || "");
+  const requestHost = sanitizeHost(req.hostname || "");
+
+  const customOriginHost =
+    resolvedOrigins
+      .map((origin) => getHostFromOrigin(origin))
+      .find(
+        (host) =>
+          host &&
+          !["localhost", "127.0.0.1"].includes(host) &&
+          !host.endsWith(".onrender.com")
+      ) || "";
+
+  const rpID =
+    configuredRpID ||
+    (originHost && !originHost.endsWith(".onrender.com") ? originHost : "") ||
+    customOriginHost ||
+    requestHost ||
+    "localhost";
 
   return {
     rpName: process.env.WEBAUTHN_RP_NAME || "Biggi Data",
     rpID,
-    expectedOrigins: expectedOrigins.length > 0 ? expectedOrigins : DEFAULT_ORIGINS,
+    expectedOrigins: resolvedOrigins,
   };
 };
 
@@ -115,7 +152,7 @@ export const beginBiometricRegistration = async (req, res) => {
       rpID,
       userName: user.email,
       userDisplayName: user.username,
-      userID: user._id.toString(),
+      userID: isoUint8Array.fromUTF8String(user._id.toString()),
       timeout: 60000,
       attestationType: "none",
       authenticatorSelection: {
@@ -136,7 +173,10 @@ export const beginBiometricRegistration = async (req, res) => {
 
     return res.json({ success: true, options });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Failed to start biometric registration" });
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to start biometric registration",
+    });
   }
 };
 
@@ -217,7 +257,10 @@ export const verifyBiometricRegistration = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Failed to verify biometric registration" });
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to verify biometric registration",
+    });
   }
 };
 
@@ -251,7 +294,10 @@ export const beginBiometricLogin = async (req, res) => {
 
     return res.json({ success: true, options });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Failed to start biometric login" });
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to start biometric login",
+    });
   }
 };
 
@@ -320,7 +366,10 @@ export const verifyBiometricLogin = async (req, res) => {
       user: sanitizeUserPayload(user),
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Failed to verify biometric login" });
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to verify biometric login",
+    });
   }
 };
 
@@ -360,7 +409,10 @@ export const beginBiometricTransaction = async (req, res) => {
 
     return res.json({ success: true, options });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Failed to start biometric transaction verification" });
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to start biometric transaction verification",
+    });
   }
 };
 
@@ -437,7 +489,10 @@ export const verifyBiometricTransaction = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Failed to verify biometric transaction" });
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Failed to verify biometric transaction",
+    });
   }
 };
 
@@ -472,4 +527,3 @@ export const disableBiometric = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to disable biometric authentication" });
   }
 };
-
