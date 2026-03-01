@@ -1,0 +1,25 @@
+⏱️ CRON SERVICE RUNNING...
+
+  ðŸš€ Server Information:
+  ======================
+  âœ… Environment: production
+  âœ… Host: 0.0.0.0
+  âœ… Port: 5000
+  âœ… MongoDB: Disconnected
+  âœ… Email Service: Not configured âŒ
+  âœ… Webhook: http://0.0.0.0:5000/api/v1/wallet/flutterwave-webhook
+  âœ… Health: http://0.0.0.0:5000/health
+  âœ… Debug: http://0.0.0.0:5000/debug/env
+  âœ… Resend Test: http://0.0.0.0:5000/debug/resend-test
+  âœ… Flutterwave Test: http://0.0.0.0:5000/debug/flutterwave-test
+  âœ… Version: 2.0.2
+  âœ… Time: 2026-03-01T10:22:40.513Z
+  
+âœ… Cron job initialized
+ðŸ’¡ Set up Resend: https://resend.com
+âœ… MongoDB Connected Successfully ðŸš€
+âœ… MongoDB Ping Successful
+ðŸ“¥ [b3qtis] GET /api/v1/auth/ping
+ðŸ“¤ [b3qtis] GET /api/v1/auth/ping 200 17ms
+ðŸ“¥ [q4s9o] POST /api/v1/auth/biometric/login/options
+ðŸ“¤ [q4s9o] POST /biometric/login/options 404 293ms

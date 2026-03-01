@@ -27,6 +27,8 @@ router.post("/register", register);
 router.post("/login", login);
 router.post("/biometric/login/options", beginBiometricLogin);
 router.post("/biometric/login/verify", verifyBiometricLogin);
+router.post("/fingerprint/login/options", beginBiometricLogin);
+router.post("/fingerprint/login/verify", verifyBiometricLogin);
 router.post("/refresh", refreshTokenController);
 router.post("/forgot-password", forgotPassword);
 
@@ -39,5 +41,11 @@ router.post("/biometric/register/verify", protect, verifyBiometricRegistration);
 router.post("/biometric/transaction/options", protect, beginBiometricTransaction);
 router.post("/biometric/transaction/verify", protect, verifyBiometricTransaction);
 router.delete("/biometric", protect, disableBiometric);
+router.get("/fingerprint/status", protect, getBiometricStatus);
+router.post("/fingerprint/register/options", protect, beginBiometricRegistration);
+router.post("/fingerprint/register/verify", protect, verifyBiometricRegistration);
+router.post("/fingerprint/transaction/options", protect, beginBiometricTransaction);
+router.post("/fingerprint/transaction/verify", protect, verifyBiometricTransaction);
+router.delete("/fingerprint", protect, disableBiometric);
 
 export default router;

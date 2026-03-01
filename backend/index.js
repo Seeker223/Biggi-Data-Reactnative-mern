@@ -229,6 +229,14 @@ app.get("/health", async (req, res) => {
   }
 });
 
+app.get("/debug/auth-routes-live", (req, res) => {
+  const stack = (authRoutes?.stack || []).map((layer) => ({
+    path: layer?.route?.path || null,
+    methods: layer?.route?.methods ? Object.keys(layer.route.methods) : [],
+  }));
+  res.json({ success: true, routes: stack });
+});
+
 /* ----------------------------------------
    DEBUG ROUTES (PROTECT IN PRODUCTION)
 ---------------------------------------- */
