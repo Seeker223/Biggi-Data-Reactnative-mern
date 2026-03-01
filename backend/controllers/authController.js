@@ -116,6 +116,7 @@ export const register = async (req, res) => {
         referralCode: user.referralCode,
         referredByCode: user.referredByCode,
         userRole: user.userRole || null,
+        biometricEnabled: Boolean(user.biometricAuth?.enabled),
       }
     });
 
@@ -219,6 +220,7 @@ export const login = async (req, res) => {
         mainBalance: user.mainBalance,
         rewardBalance: user.rewardBalance,
         notifications: user.notifications || 0,
+        biometricEnabled: Boolean(user.biometricAuth?.enabled),
       },
     });
   } catch (error) {
@@ -305,9 +307,17 @@ export const getMe = async (req, res) => {
       await user.save({ validateBeforeSave: false });
     }
 
+    const safeUser = user.toObject();
+    const credsCount = Array.isArray(safeUser?.biometricAuth?.credentials)
+      ? safeUser.biometricAuth.credentials.length
+      : 0;
+    safeUser.biometricEnabled = Boolean(safeUser?.biometricAuth?.enabled);
+    safeUser.biometricCredentialsCount = credsCount;
+    delete safeUser.biometricAuth;
+
     res.status(200).json({
       success: true,
-      user
+      user: safeUser
     });
   } catch (err) {
     console.error("GET /auth/me error:", err);

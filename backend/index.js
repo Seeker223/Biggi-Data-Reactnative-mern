@@ -110,6 +110,8 @@ const allowedOrigins = [
   "http://localhost:19006",
   "exp://192.168.*.*:8081",
   "https://biggi-data-frontend.vercel.app",
+  "https://biggidata.com.ng",
+  "https://www.biggidata.com.ng",
 ];
 
 const isPrivateLanOrigin = (origin = "") => {

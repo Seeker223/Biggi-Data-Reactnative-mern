@@ -7,6 +7,39 @@ import mongoose from "mongoose";
 import { logWalletTransaction } from "../utils/wallet.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 
+const consumeBiometricProof = (user, token, expectedAction, expectedAmount = 0) => {
+  const biometric = user?.biometricAuth || {};
+  if (!biometric.enabled) return { ok: true };
+  if (!token) {
+    return { ok: false, message: "Biometric verification is required for this transaction" };
+  }
+
+  const proofs = Array.isArray(biometric.transactionProofs) ? biometric.transactionProofs : [];
+  const now = Date.now();
+  const proof = proofs.find((item) => item.token === token);
+  if (!proof) {
+    return { ok: false, message: "Invalid biometric proof. Please verify again." };
+  }
+  if (proof.usedAt) {
+    return { ok: false, message: "Biometric proof already used. Verify again." };
+  }
+  if (!proof.expiresAt || new Date(proof.expiresAt).getTime() < now) {
+    return { ok: false, message: "Biometric proof expired. Verify again." };
+  }
+  if (expectedAction && proof.action && proof.action !== expectedAction) {
+    return { ok: false, message: "Biometric proof action mismatch. Verify again." };
+  }
+  const reqAmount = Number(expectedAmount || 0);
+  const proofAmount = Number(proof.amount || 0);
+  if (reqAmount > 0 && proofAmount > 0 && reqAmount !== proofAmount) {
+    return { ok: false, message: "Biometric proof amount mismatch. Verify again." };
+  }
+
+  proof.usedAt = new Date();
+  user.biometricAuth.transactionProofs = proofs.slice(0, 20);
+  return { ok: true };
+};
+
 /* =====================================================
    GET USER BALANCE
 ===================================================== */
@@ -55,6 +88,7 @@ export const redeemRewards = async (req, res) => {
   try {
     const userId = req.user.id;
     const requestedAmount = Number(req.body?.amount || 0);
+    const biometricProof = String(req.body?.biometricProof || "").trim();
 
     const user = await User.findById(userId);
     if (!user) {
@@ -86,6 +120,19 @@ export const redeemRewards = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Insufficient reward balance",
+      });
+    }
+
+    const biometricCheck = consumeBiometricProof(
+      user,
+      biometricProof,
+      "redeem",
+      amountToRedeem
+    );
+    if (!biometricCheck.ok) {
+      return res.status(401).json({
+        success: false,
+        message: biometricCheck.message,
       });
     }
 
@@ -150,6 +197,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       narration,
       currency = "NGN"
     } = req.body;
+    const biometricProof = String(req.body?.biometricProof || "").trim();
 
     // Enhanced validation
     if (!tx_ref || !amount || !account_bank || !account_number || !beneficiary_name) {
@@ -194,6 +242,20 @@ export const flutterwaveWithdrawal = async (req, res) => {
         message: "Insufficient balance",
         user_balance: user.mainBalance,
         withdrawal_amount: numericAmount
+      });
+    }
+
+    const biometricCheck = consumeBiometricProof(
+      user,
+      biometricProof,
+      "withdraw",
+      numericAmount
+    );
+    if (!biometricCheck.ok) {
+      await session.abortTransaction();
+      return res.status(401).json({
+        success: false,
+        message: biometricCheck.message,
       });
     }
 
@@ -610,6 +672,7 @@ export const withdrawFunds = async (req, res) => {
   try {
     const userId = req.user.id;
     const { method, bank, accountNumber, accountName, amount } = req.body;
+    const biometricProof = String(req.body?.biometricProof || "").trim();
 
     if (!method || !accountNumber || !accountName || !amount) {
       return res.status(400).json({
@@ -638,6 +701,19 @@ export const withdrawFunds = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Insufficient balance",
+      });
+    }
+
+    const biometricCheck = consumeBiometricProof(
+      user,
+      biometricProof,
+      "withdraw",
+      numericAmount
+    );
+    if (!biometricCheck.ok) {
+      return res.status(401).json({
+        success: false,
+        message: biometricCheck.message,
       });
     }
 

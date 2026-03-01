@@ -201,6 +201,42 @@ const UserSchema = new mongoose.Schema(
     tickets: { type: Number, default: 0 },
     notifications: { type: Number, default: 0 },
     notificationItems: [UserNotificationSchema],
+    biometricAuth: {
+      enabled: { type: Boolean, default: false },
+      registrationChallenge: { type: String, default: null },
+      registrationChallengeExpiresAt: { type: Date, default: null },
+      authenticationChallenge: { type: String, default: null },
+      authenticationChallengeExpiresAt: { type: Date, default: null },
+      transactionChallenge: { type: String, default: null },
+      transactionChallengeExpiresAt: { type: Date, default: null },
+      transactionContext: {
+        action: { type: String, default: null },
+        amount: { type: Number, default: null },
+        createdAt: { type: Date, default: null },
+      },
+      transactionProofs: [
+        {
+          token: { type: String, required: true },
+          action: { type: String, default: null },
+          amount: { type: Number, default: null },
+          createdAt: { type: Date, default: Date.now },
+          expiresAt: { type: Date, required: true },
+          usedAt: { type: Date, default: null },
+        },
+      ],
+      credentials: [
+        {
+          credentialID: { type: String, required: true },
+          publicKey: { type: String, required: true },
+          counter: { type: Number, default: 0 },
+          transports: [{ type: String }],
+          deviceType: { type: String, default: "singleDevice" },
+          backedUp: { type: Boolean, default: false },
+          createdAt: { type: Date, default: Date.now },
+          lastUsedAt: { type: Date, default: null },
+        },
+      ],
+    },
 
     /* ---------------- GAMES ---------------- */
     dailyNumberDraw: [DailyGameSchema],
