@@ -470,8 +470,49 @@ UserSchema.methods.setTransactionPin = async function (pin) {
 
 UserSchema.methods.matchTransactionPin = async function (enteredPin) {
   const normalizedPin = String(enteredPin || "").trim();
-  if (!this.transactionPinHash) return false;
-  return bcrypt.compare(normalizedPin, this.transactionPinHash);
+  const storedHash = String(this.transactionPinHash || "").trim();
+
+  // Legacy compatibility: some records may still have plain-text PIN values
+  // in transactionPinHash or older fields (transactionPin/securityPin).
+  const legacyPin = String(
+    this.transactionPin || this.securityPin || ""
+  ).trim();
+
+  // Prefer bcrypt hash when present.
+  if (storedHash) {
+    if (/^\$2[aby]\$/.test(storedHash)) {
+      return bcrypt.compare(normalizedPin, storedHash);
+    }
+
+    // Legacy plain 4-digit stored in transactionPinHash.
+    if (/^\d{4}$/.test(storedHash)) {
+      const isMatch = normalizedPin === storedHash;
+      if (isMatch) {
+        await this.setTransactionPin(normalizedPin);
+        await this.save({ validateBeforeSave: false });
+      }
+      return isMatch;
+    }
+
+    // Unknown format: attempt bcrypt compare, otherwise fail safe.
+    try {
+      return await bcrypt.compare(normalizedPin, storedHash);
+    } catch {
+      return false;
+    }
+  }
+
+  // Legacy fallback for old schema fields.
+  if (/^\d{4}$/.test(legacyPin)) {
+    const isMatch = normalizedPin === legacyPin;
+    if (isMatch) {
+      await this.setTransactionPin(normalizedPin);
+      await this.save({ validateBeforeSave: false });
+    }
+    return isMatch;
+  }
+
+  return false;
 };
 
 /* ==========================================
