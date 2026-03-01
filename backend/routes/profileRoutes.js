@@ -7,6 +7,9 @@ import {
   getNotifications,
   markNotificationsAsRead,
   getReferrals,
+  getTransactionSecurityStatus,
+  setTransactionPin,
+  disableTransactionPin,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -19,6 +22,9 @@ router.put("/update-profile", protect, updateProfile);
 router.get("/notifications", protect, getNotifications);
 router.post("/notifications/read", protect, markNotificationsAsRead);
 router.get("/referrals", protect, getReferrals);
+router.get("/transaction-security", protect, getTransactionSecurityStatus);
+router.post("/transaction-pin", protect, setTransactionPin);
+router.delete("/transaction-pin", protect, disableTransactionPin);
 
 router.put(
   "/update-avatar",

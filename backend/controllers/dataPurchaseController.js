@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import { zenipointPost, generateReference } from "../utils/zenipoint.js";
 import { logWalletTransaction, syncWalletBalance } from "../utils/wallet.js";
+import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 
 const mapZenipointPlanCode = (plan) => {
   const rawCode = String(plan?.zenipoint_code || plan?.plan_id || "").trim();
@@ -32,6 +33,8 @@ export const buyData = async (req, res) => {
     if (!userId) return res.status(401).json({ success: false, msg: "Not authorized" });
 
     const { plan_id, mobile_no } = req.body;
+    const biometricProof = String(req.body?.biometricProof || "").trim();
+    const transactionPin = String(req.body?.transactionPin || "").trim();
     if (!plan_id || !mobile_no)
       return res.status(400).json({ success: false, msg: "plan_id and mobile_no required" });
 
@@ -39,12 +42,26 @@ export const buyData = async (req, res) => {
     const plan = await DataPlan.findOne({ plan_id: normalizedPlanId, active: true });
     if (!plan) return res.status(404).json({ success: false, msg: "Plan not found" });
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select("+transactionPinHash");
     if (!user) return res.status(404).json({ success: false, msg: "User not found" });
 
     const amount = Number(plan.amount);
     if (user.mainBalance < amount)
       return res.status(400).json({ success: false, msg: "Insufficient balance" });
+
+    const authCheck = await verifyTransactionAuthorization({
+      user,
+      expectedAction: "data_purchase",
+      expectedAmount: amount,
+      biometricProof,
+      transactionPin,
+    });
+    if (!authCheck.ok) {
+      return res.status(401).json({
+        success: false,
+        msg: authCheck.message,
+      });
+    }
 
     // Create reference and prepare payload
     const reference = generateReference();

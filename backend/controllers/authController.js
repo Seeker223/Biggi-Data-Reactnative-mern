@@ -117,6 +117,7 @@ export const register = async (req, res) => {
         referredByCode: user.referredByCode,
         userRole: user.userRole || null,
         biometricEnabled: Boolean(user.biometricAuth?.enabled),
+        transactionPinEnabled: Boolean(user.transactionPinHash),
       }
     });
 
@@ -221,6 +222,7 @@ export const login = async (req, res) => {
         rewardBalance: user.rewardBalance,
         notifications: user.notifications || 0,
         biometricEnabled: Boolean(user.biometricAuth?.enabled),
+        transactionPinEnabled: Boolean(user.transactionPinHash),
       },
     });
   } catch (error) {
@@ -293,7 +295,7 @@ export const getMe = async (req, res) => {
     }
 
     const user = await User.findById(userId)
-      .select("-password -refreshToken");
+      .select("-password -refreshToken +transactionPinHash");
 
     if (!user) {
       return res.status(404).json({
@@ -312,8 +314,10 @@ export const getMe = async (req, res) => {
       ? safeUser.biometricAuth.credentials.length
       : 0;
     safeUser.biometricEnabled = Boolean(safeUser?.biometricAuth?.enabled);
+    safeUser.transactionPinEnabled = Boolean(safeUser?.transactionPinHash);
     safeUser.biometricCredentialsCount = credsCount;
     delete safeUser.biometricAuth;
+    delete safeUser.transactionPinHash;
 
     res.status(200).json({
       success: true,

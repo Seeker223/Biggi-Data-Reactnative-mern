@@ -130,12 +130,12 @@ const findUserForLogin = async (identifier) => {
   if (!clean) return null;
 
   const lower = clean.toLowerCase();
-  const byEmail = await User.findOne({ email: lower });
+  const byEmail = await User.findOne({ email: lower }).select("+transactionPinHash");
   if (byEmail) return byEmail;
 
   return User.findOne({
     username: { $regex: `^${clean.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
-  });
+  }).select("+transactionPinHash");
 };
 
 const sanitizeUserPayload = (user) => ({
@@ -154,6 +154,7 @@ const sanitizeUserPayload = (user) => ({
   rewardBalance: user.rewardBalance,
   notifications: user.notifications || 0,
   biometricEnabled: Boolean(user.biometricAuth?.enabled),
+  transactionPinEnabled: Boolean(user.transactionPinHash),
 });
 
 export const getBiometricStatus = async (req, res) => {

@@ -6,39 +6,7 @@ import axios from "axios";
 import mongoose from "mongoose";
 import { logWalletTransaction } from "../utils/wallet.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
-
-const consumeBiometricProof = (user, token, expectedAction, expectedAmount = 0) => {
-  const biometric = user?.biometricAuth || {};
-  if (!biometric.enabled) return { ok: true };
-  if (!token) {
-    return { ok: false, message: "Biometric verification is required for this transaction" };
-  }
-
-  const proofs = Array.isArray(biometric.transactionProofs) ? biometric.transactionProofs : [];
-  const now = Date.now();
-  const proof = proofs.find((item) => item.token === token);
-  if (!proof) {
-    return { ok: false, message: "Invalid biometric proof. Please verify again." };
-  }
-  if (proof.usedAt) {
-    return { ok: false, message: "Biometric proof already used. Verify again." };
-  }
-  if (!proof.expiresAt || new Date(proof.expiresAt).getTime() < now) {
-    return { ok: false, message: "Biometric proof expired. Verify again." };
-  }
-  if (expectedAction && proof.action && proof.action !== expectedAction) {
-    return { ok: false, message: "Biometric proof action mismatch. Verify again." };
-  }
-  const reqAmount = Number(expectedAmount || 0);
-  const proofAmount = Number(proof.amount || 0);
-  if (reqAmount > 0 && proofAmount > 0 && reqAmount !== proofAmount) {
-    return { ok: false, message: "Biometric proof amount mismatch. Verify again." };
-  }
-
-  proof.usedAt = new Date();
-  user.biometricAuth.transactionProofs = proofs.slice(0, 20);
-  return { ok: true };
-};
+import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 
 /* =====================================================
    GET USER BALANCE
@@ -89,8 +57,9 @@ export const redeemRewards = async (req, res) => {
     const userId = req.user.id;
     const requestedAmount = Number(req.body?.amount || 0);
     const biometricProof = String(req.body?.biometricProof || "").trim();
+    const transactionPin = String(req.body?.transactionPin || "").trim();
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select("+transactionPinHash");
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -123,16 +92,17 @@ export const redeemRewards = async (req, res) => {
       });
     }
 
-    const biometricCheck = consumeBiometricProof(
+    const authCheck = await verifyTransactionAuthorization({
       user,
+      expectedAction: "redeem",
+      expectedAmount: amountToRedeem,
       biometricProof,
-      "redeem",
-      amountToRedeem
-    );
-    if (!biometricCheck.ok) {
+      transactionPin,
+    });
+    if (!authCheck.ok) {
       return res.status(401).json({
         success: false,
-        message: biometricCheck.message,
+        message: authCheck.message,
       });
     }
 
@@ -198,6 +168,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       currency = "NGN"
     } = req.body;
     const biometricProof = String(req.body?.biometricProof || "").trim();
+    const transactionPin = String(req.body?.transactionPin || "").trim();
 
     // Enhanced validation
     if (!tx_ref || !amount || !account_bank || !account_number || !beneficiary_name) {
@@ -226,7 +197,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       });
     }
 
-    const user = await User.findById(userId).session(session);
+    const user = await User.findById(userId).select("+transactionPinHash").session(session);
     if (!user) {
       await session.abortTransaction();
       return res.status(404).json({
@@ -245,17 +216,18 @@ export const flutterwaveWithdrawal = async (req, res) => {
       });
     }
 
-    const biometricCheck = consumeBiometricProof(
+    const authCheck = await verifyTransactionAuthorization({
       user,
+      expectedAction: "withdraw",
+      expectedAmount: numericAmount,
       biometricProof,
-      "withdraw",
-      numericAmount
-    );
-    if (!biometricCheck.ok) {
+      transactionPin,
+    });
+    if (!authCheck.ok) {
       await session.abortTransaction();
       return res.status(401).json({
         success: false,
-        message: biometricCheck.message,
+        message: authCheck.message,
       });
     }
 
@@ -673,6 +645,7 @@ export const withdrawFunds = async (req, res) => {
     const userId = req.user.id;
     const { method, bank, accountNumber, accountName, amount } = req.body;
     const biometricProof = String(req.body?.biometricProof || "").trim();
+    const transactionPin = String(req.body?.transactionPin || "").trim();
 
     if (!method || !accountNumber || !accountName || !amount) {
       return res.status(400).json({
@@ -689,7 +662,7 @@ export const withdrawFunds = async (req, res) => {
       });
     }
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select("+transactionPinHash");
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -704,16 +677,17 @@ export const withdrawFunds = async (req, res) => {
       });
     }
 
-    const biometricCheck = consumeBiometricProof(
+    const authCheck = await verifyTransactionAuthorization({
       user,
+      expectedAction: "withdraw",
+      expectedAmount: numericAmount,
       biometricProof,
-      "withdraw",
-      numericAmount
-    );
-    if (!biometricCheck.ok) {
+      transactionPin,
+    });
+    if (!authCheck.ok) {
       return res.status(401).json({
         success: false,
-        message: biometricCheck.message,
+        message: authCheck.message,
       });
     }
 

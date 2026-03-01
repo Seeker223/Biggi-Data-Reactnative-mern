@@ -177,3 +177,136 @@ export const getReferrals = async (req, res) => {
     });
   }
 };
+
+// -----------------------------------------------
+// GET TRANSACTION SECURITY STATUS
+// -----------------------------------------------
+export const getTransactionSecurityStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("+transactionPinHash biometricAuth.enabled");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    return res.json({
+      success: true,
+      security: {
+        transactionPinEnabled: Boolean(user.transactionPinHash),
+        biometricEnabled: Boolean(user.biometricAuth?.enabled),
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch transaction security status",
+    });
+  }
+};
+
+// -----------------------------------------------
+// SET OR UPDATE TRANSACTION PIN (4 DIGITS)
+// -----------------------------------------------
+export const setTransactionPin = async (req, res) => {
+  try {
+    const pin = String(req.body?.pin || "").trim();
+    const currentPin = String(req.body?.currentPin || "").trim();
+
+    if (!/^\d{4}$/.test(pin)) {
+      return res.status(400).json({
+        success: false,
+        message: "PIN must be exactly 4 digits",
+      });
+    }
+
+    const user = await User.findById(req.user.id).select("+transactionPinHash");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (user.transactionPinHash) {
+      if (!/^\d{4}$/.test(currentPin)) {
+        return res.status(400).json({
+          success: false,
+          message: "Current PIN is required to update PIN",
+        });
+      }
+      const isCurrentPinValid = await user.matchTransactionPin(currentPin);
+      if (!isCurrentPinValid) {
+        return res.status(401).json({
+          success: false,
+          message: "Current PIN is incorrect",
+        });
+      }
+    }
+
+    await user.setTransactionPin(pin);
+    user.addNotification({
+      type: "Security",
+      status: "success",
+      message: "Transaction PIN updated successfully.",
+    });
+    await user.save({ validateBeforeSave: false });
+
+    return res.json({
+      success: true,
+      message: "Transaction PIN saved successfully",
+      transactionPinEnabled: true,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Failed to save transaction PIN",
+    });
+  }
+};
+
+// -----------------------------------------------
+// DISABLE TRANSACTION PIN
+// -----------------------------------------------
+export const disableTransactionPin = async (req, res) => {
+  try {
+    const currentPin = String(req.body?.currentPin || "").trim();
+    const user = await User.findById(req.user.id).select("+transactionPinHash");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    if (!user.transactionPinHash) {
+      return res.json({
+        success: true,
+        message: "Transaction PIN already disabled",
+        transactionPinEnabled: false,
+      });
+    }
+    if (!/^\d{4}$/.test(currentPin)) {
+      return res.status(400).json({
+        success: false,
+        message: "Current PIN is required",
+      });
+    }
+    const isPinValid = await user.matchTransactionPin(currentPin);
+    if (!isPinValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Current PIN is incorrect",
+      });
+    }
+
+    user.transactionPinHash = null;
+    user.addNotification({
+      type: "Security",
+      status: "info",
+      message: "Transaction PIN disabled.",
+    });
+    await user.save({ validateBeforeSave: false });
+
+    return res.json({
+      success: true,
+      message: "Transaction PIN disabled",
+      transactionPinEnabled: false,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to disable transaction PIN",
+    });
+  }
+};

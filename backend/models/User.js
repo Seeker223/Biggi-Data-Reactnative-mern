@@ -254,6 +254,11 @@ const UserSchema = new mongoose.Schema(
     
     /* ---------------- SECURITY ---------------- */
     // REMOVED: securityPin, securityPinExpires
+    transactionPinHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
     
     resetPasswordToken: String,
     resetPasswordExpire: Date,
@@ -448,6 +453,25 @@ UserSchema.pre("save", async function (next) {
 ========================================== */
 UserSchema.methods.matchPassword = async function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
+};
+
+/* ==========================================
+   TRANSACTION PIN METHODS
+========================================== */
+UserSchema.methods.setTransactionPin = async function (pin) {
+  const normalizedPin = String(pin || "").trim();
+  if (!/^\d{4}$/.test(normalizedPin)) {
+    throw new Error("Transaction PIN must be exactly 4 digits");
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.transactionPinHash = await bcrypt.hash(normalizedPin, salt);
+  return this.transactionPinHash;
+};
+
+UserSchema.methods.matchTransactionPin = async function (enteredPin) {
+  const normalizedPin = String(enteredPin || "").trim();
+  if (!this.transactionPinHash) return false;
+  return bcrypt.compare(normalizedPin, this.transactionPinHash);
 };
 
 /* ==========================================
