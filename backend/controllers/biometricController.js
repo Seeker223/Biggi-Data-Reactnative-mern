@@ -142,6 +142,7 @@ const sanitizeUserPayload = (user) => ({
   id: user._id,
   username: user.username,
   email: user.email,
+  photo: user.photo || null,
   phoneNumber: user.phoneNumber,
   age: user.age,
   isVerified: true,
