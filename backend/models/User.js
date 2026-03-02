@@ -268,6 +268,16 @@ const UserSchema = new mongoose.Schema(
       type: String,
       select: false,
     },
+    refreshTokenExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    refreshTokenRememberMe: {
+      type: Boolean,
+      default: false,
+      select: false,
+    },
 
     /* ---------------- TIMESTAMPS ---------------- */
     lastLogin: { type: Date, default: null },
@@ -536,15 +546,40 @@ UserSchema.methods.getRefreshToken = function () {
     throw new Error("JWT_REFRESH_SECRET is missing in environment variables");
   }
 
+  const parseDurationMs = (value, fallbackMs) => {
+    const input = String(value || "").trim();
+    const match = input.match(/^(\d+)\s*([smhd])$/i);
+    if (!match) return fallbackMs;
+    const amount = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const multipliers = {
+      s: 1000,
+      m: 60 * 1000,
+      h: 60 * 60 * 1000,
+      d: 24 * 60 * 60 * 1000,
+    };
+    return amount * (multipliers[unit] || 1000);
+  };
+
+  const options = arguments[0] || {};
+  const rememberMe = Boolean(options.rememberMe);
+  const defaultShort = process.env.JWT_REFRESH_EXPIRE || "7d";
+  const defaultLong = process.env.JWT_REFRESH_REMEMBER_EXPIRE || "30d";
+  const refreshExpiry = rememberMe ? defaultLong : defaultShort;
+
   const refreshToken = jwt.sign(
-    { id: this._id },
+    { id: this._id, rememberMe },
     process.env.JWT_REFRESH_SECRET,
     {
-      expiresIn: process.env.JWT_REFRESH_EXPIRE || "7d",
+      expiresIn: refreshExpiry,
     }
   );
 
   this.refreshToken = refreshToken;
+  this.refreshTokenRememberMe = rememberMe;
+  this.refreshTokenExpiresAt = new Date(
+    Date.now() + parseDurationMs(refreshExpiry, 7 * 24 * 60 * 60 * 1000)
+  );
   return refreshToken;
 };
 

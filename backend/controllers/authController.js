@@ -154,9 +154,10 @@ export const register = async (req, res) => {
 // =====================================================
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
     const identifier = String(email || "").trim();
     const normalizedEmail = identifier.toLowerCase();
+    const shouldRemember = Boolean(rememberMe);
 
     if (!identifier || !password) {
       return res.status(400).json({
@@ -190,7 +191,7 @@ export const login = async (req, res) => {
 
     // Generate tokens
     const accessToken = user.getSignedJwtToken();
-    const refreshToken = user.getRefreshToken();
+    const refreshToken = user.getRefreshToken({ rememberMe: shouldRemember });
 
     // Save refresh token and update last login
     user.refreshToken = refreshToken;
@@ -207,6 +208,7 @@ export const login = async (req, res) => {
       success: true,
       token: accessToken,
       refreshToken,
+      rememberMe: shouldRemember,
       user: {
         id: user._id,
         username: user.username,
@@ -251,7 +253,7 @@ export const refreshTokenController = async (req, res) => {
 
   try {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await User.findById(decoded.id).select("+refreshToken");
+    const user = await User.findById(decoded.id).select("+refreshToken +refreshTokenExpiresAt +refreshTokenRememberMe");
 
     if (!user || user.refreshToken !== refreshToken) {
       return res.status(401).json({
@@ -260,14 +262,28 @@ export const refreshTokenController = async (req, res) => {
       });
     }
 
+    if (user.refreshTokenExpiresAt && new Date(user.refreshTokenExpiresAt).getTime() <= Date.now()) {
+      user.refreshToken = null;
+      user.refreshTokenExpiresAt = null;
+      user.refreshTokenRememberMe = false;
+      await user.save({ validateBeforeSave: false });
+      return res.status(401).json({
+        success: false,
+        error: "Refresh token expired",
+      });
+    }
+
     const newAccessToken = user.getSignedJwtToken();
-    const newRefreshToken = user.getRefreshToken();
+    const newRefreshToken = user.getRefreshToken({
+      rememberMe: Boolean(user.refreshTokenRememberMe),
+    });
     user.refreshToken = newRefreshToken;
     await user.save({ validateBeforeSave: false });
     res.status(200).json({
       success: true,
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
+      rememberMe: Boolean(user.refreshTokenRememberMe),
     });
   } catch (err) {
     console.error("Refresh Token Error:", err);
@@ -301,7 +317,7 @@ export const getMe = async (req, res) => {
     }
 
     const user = await User.findById(userId)
-      .select("-password +refreshToken +transactionPinHash");
+      .select("-password +refreshToken +transactionPinHash +refreshTokenRememberMe +refreshTokenExpiresAt");
 
     if (!user) {
       return res.status(404).json({
@@ -313,7 +329,9 @@ export const getMe = async (req, res) => {
     if (!user.referralCode) {
       await ensureReferralCode(user);
     }
-    const newRefreshToken = user.getRefreshToken();
+    const newRefreshToken = user.getRefreshToken({
+      rememberMe: Boolean(user.refreshTokenRememberMe),
+    });
     await user.save({ validateBeforeSave: false });
 
     const safeUser = user.toObject();
@@ -330,6 +348,7 @@ export const getMe = async (req, res) => {
       success: true,
       user: safeUser,
       refreshToken: newRefreshToken,
+      rememberMe: Boolean(user.refreshTokenRememberMe),
     });
   } catch (err) {
     console.error("GET /auth/me error:", err);
@@ -394,6 +413,8 @@ export const logout = async (req, res) => {
       const user = await User.findById(userId);
       if (user) {
         user.refreshToken = null;
+        user.refreshTokenExpiresAt = null;
+        user.refreshTokenRememberMe = false;
         user.lastLogout = new Date();
         user.addNotification({
           type: "Signout",
