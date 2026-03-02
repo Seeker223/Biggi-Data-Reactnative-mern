@@ -158,6 +158,45 @@ const sanitizeUserPayload = (user) => ({
   transactionPinEnabled: Boolean(user.transactionPinHash),
 });
 
+const queueEnableBiometricNotification = (user) => {
+  if (!user) return;
+  user.addNotification({
+    type: "Security",
+    status: "info",
+    message: "Fingerprint not enabled. Go to Profile to enable fingerprint login.",
+  });
+};
+
+export const getBiometricLoginAvailability = async (req, res) => {
+  try {
+    const identifier = normalizeIdentifier(req.body?.identifier);
+    if (!identifier) {
+      return res.status(400).json({
+        success: false,
+        enabled: false,
+        message: "Email or username is required",
+      });
+    }
+
+    const user = await findUserForLogin(identifier);
+    const enabled = Boolean(
+      user?.biometricAuth?.enabled && Array.isArray(user?.biometricAuth?.credentials) && user.biometricAuth.credentials.length
+    );
+
+    return res.json({
+      success: true,
+      enabled,
+      setupPath: enabled ? null : "/profile",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      enabled: false,
+      message: error?.message || "Failed to check biometric login availability",
+    });
+  }
+};
+
 export const getBiometricStatus = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("biometricAuth.enabled biometricAuth.credentials");
@@ -318,7 +357,16 @@ export const beginBiometricLogin = async (req, res) => {
 
     const user = await findUserForLogin(identifier);
     if (!user || !user.biometricAuth?.enabled || !(user.biometricAuth?.credentials || []).length) {
-      return res.status(404).json({ success: false, message: "Biometric login is not enabled for this account" });
+      if (user) {
+        queueEnableBiometricNotification(user);
+        await user.save({ validateBeforeSave: false });
+      }
+      return res.status(400).json({
+        success: false,
+        code: "BIOMETRIC_NOT_ENABLED",
+        setupPath: "/profile",
+        message: "Biometric login is not enabled for this account",
+      });
     }
 
     const { rpID } = getWebAuthnConfig(req);
@@ -426,7 +474,14 @@ export const beginBiometricTransaction = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
     if (!user.biometricAuth?.enabled || !(user.biometricAuth?.credentials || []).length) {
-      return res.status(400).json({ success: false, message: "Biometric authentication not enabled" });
+      queueEnableBiometricNotification(user);
+      await user.save({ validateBeforeSave: false });
+      return res.status(400).json({
+        success: false,
+        code: "BIOMETRIC_NOT_ENABLED",
+        setupPath: "/profile",
+        message: "Biometric authentication not enabled",
+      });
     }
 
     const action = String(req.body?.action || "transaction").trim().toLowerCase();

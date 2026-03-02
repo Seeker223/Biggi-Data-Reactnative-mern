@@ -10,6 +10,7 @@ import {
 } from "../controllers/authController.js";
 import {
   getBiometricStatus,
+  getBiometricLoginAvailability,
   beginBiometricRegistration,
   verifyBiometricRegistration,
   beginBiometricLogin,
@@ -26,8 +27,10 @@ const router = express.Router();
 router.post("/register", register);
 router.post("/login", login);
 router.post("/biometric/login/options", beginBiometricLogin);
+router.post("/biometric/login/status", getBiometricLoginAvailability);
 router.post("/biometric/login/verify", verifyBiometricLogin);
 router.post("/fingerprint/login/options", beginBiometricLogin);
+router.post("/fingerprint/login/status", getBiometricLoginAvailability);
 router.post("/fingerprint/login/verify", verifyBiometricLogin);
 router.post("/refresh", refreshTokenController);
 router.post("/forgot-password", forgotPassword);
