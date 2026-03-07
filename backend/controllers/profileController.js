@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import { notifyAdmins } from "../utils/notifyAdmins.js";
 
 // -----------------------------------------------
 // UPDATE PROFILE (name, phone, birthdate, etc)
@@ -52,6 +53,15 @@ export const updateProfile = async (req, res) => {
       runValidators: true,
     }).select("-password");
 
+    const changedFields = Object.keys(updates || {}).filter(
+      (key) => !["password", "role", "email"].includes(key)
+    );
+    await notifyAdmins({
+      type: "User Update",
+      status: "info",
+      message: `Profile updated by ${user?.username || "a user"} (${user?.email || "unknown"}). Fields: ${changedFields.join(", ") || "profile details"}.`,
+    });
+
     return res.json({ success: true, user });
   } catch (err) {
     return res.status(500).json({
@@ -86,6 +96,11 @@ export const updateAvatar = async (req, res) => {
         message: "Profile photo updated successfully.",
       });
       await user.save();
+      await notifyAdmins({
+        type: "User Update",
+        status: "info",
+        message: `Profile photo updated by ${user?.username || "a user"} (${user?.email || "unknown"}).`,
+      });
     }
 
     return res.json({ success: true, user });

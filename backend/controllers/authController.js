@@ -1,6 +1,7 @@
 // backend/controllers/authController.js - COMPLETE SIMPLIFIED MVP VERSION
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { notifyAdmins } from "../utils/notifyAdmins.js";
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const generateReferralCode = () =>
@@ -98,6 +99,12 @@ export const register = async (req, res) => {
     // Save refresh token
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
+
+    await notifyAdmins({
+      type: "User Signup",
+      status: "info",
+      message: `New signup: ${user.username} (${user.email}) joined Biggi Data.`,
+    });
 
     res.status(201).json({
       success: true,
@@ -203,6 +210,12 @@ export const login = async (req, res) => {
       message: `Welcome back, ${user.username}!`,
     });
     await user.save({ validateBeforeSave: false });
+
+    await notifyAdmins({
+      type: "User Login",
+      status: "info",
+      message: `User login: ${user.username} (${user.email}) logged in.`,
+    });
 
     res.status(200).json({
       success: true,
