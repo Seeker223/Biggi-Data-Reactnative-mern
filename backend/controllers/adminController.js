@@ -26,6 +26,8 @@ export const getAdminDashboard = async (req, res) => {
     const role = String(req.query.role || "").trim().toLowerCase();
     const userRole = String(req.query.userRole || "").trim().toLowerCase();
     const verified = String(req.query.verified || "").trim().toLowerCase();
+    const userAge = String(req.query.userAge || "").trim().toLowerCase();
+    const userSort = userAge === "old" ? { createdAt: 1 } : { createdAt: -1 };
 
     const filter = {};
     if (search) {
@@ -43,7 +45,7 @@ export const getAdminDashboard = async (req, res) => {
     const [totalUsers, usersRaw, aggregates] = await Promise.all([
       User.countDocuments(filter),
       User.find(filter)
-        .sort({ createdAt: -1 })
+        .sort(userSort)
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
@@ -301,6 +303,7 @@ export const getAdminDashboard = async (req, res) => {
         role: role || null,
         userRole: userRole || null,
         verified: verified || null,
+        userAge: userAge || "new",
       },
       generatedAt: new Date().toISOString(),
     };
