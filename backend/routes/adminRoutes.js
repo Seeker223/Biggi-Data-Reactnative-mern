@@ -1,10 +1,21 @@
 import { Router } from "express";
 import { protect, authorize } from "../middleware/auth.js";
-import { getAdminDashboard } from "../controllers/adminController.js";
+import {
+  createAdminUser,
+  deleteAdminUser,
+  getAdminDashboard,
+  getAdminUserById,
+  getAdminUsers,
+  updateAdminUser,
+} from "../controllers/adminController.js";
 
 const router = Router();
 
 router.get("/dashboard", protect, authorize("admin"), getAdminDashboard);
+router.get("/users", protect, authorize("admin"), getAdminUsers);
+router.get("/users/:id", protect, authorize("admin"), getAdminUserById);
+router.post("/users", protect, authorize("admin"), createAdminUser);
+router.put("/users/:id", protect, authorize("admin"), updateAdminUser);
+router.delete("/users/:id", protect, authorize("admin"), deleteAdminUser);
 
 export default router;
-

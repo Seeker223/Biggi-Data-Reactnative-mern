@@ -14,6 +14,8 @@ const toNum = (value, fallback = 0) => {
 };
 
 const safeSlice = (arr, max = 10) => (Array.isArray(arr) ? arr.slice(0, max) : []);
+const USER_PUBLIC_SELECT =
+  "-password -transactionPinHash -refreshToken -refreshTokenExpiresAt -refreshTokenRememberMe -__v";
 
 export const getAdminDashboard = async (req, res) => {
   try {
@@ -314,3 +316,188 @@ export const getAdminDashboard = async (req, res) => {
   }
 };
 
+export const getAdminUsers = async (req, res) => {
+  try {
+    const page = Math.max(1, toInt(req.query.page, 1));
+    const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
+    const search = String(req.query.search || "").trim();
+    const role = String(req.query.role || "").trim().toLowerCase();
+    const userRole = String(req.query.userRole || "").trim().toLowerCase();
+
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { username: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phoneNumber: { $regex: search, $options: "i" } },
+      ];
+    }
+    if (["user", "admin"].includes(role)) filter.role = role;
+    if (["private", "merchant"].includes(userRole)) filter.userRole = userRole;
+
+    const [total, users] = await Promise.all([
+      User.countDocuments(filter),
+      User.find(filter)
+        .select(USER_PUBLIC_SELECT)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      users,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+      error: error.message,
+    });
+  }
+};
+
+export const getAdminUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select(USER_PUBLIC_SELECT);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    return res.status(200).json({ success: true, user });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid user id",
+      error: error.message,
+    });
+  }
+};
+
+export const createAdminUser = async (req, res) => {
+  try {
+    const payload = { ...req.body };
+    if (payload.userRole && !["private", "merchant"].includes(String(payload.userRole).toLowerCase())) {
+      return res.status(400).json({ success: false, message: "Invalid userRole" });
+    }
+    if (payload.role && !["user", "admin"].includes(String(payload.role).toLowerCase())) {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+    if (payload.userRole) payload.userRole = String(payload.userRole).toLowerCase();
+    if (payload.role) payload.role = String(payload.role).toLowerCase();
+
+    const user = await User.create(payload);
+    const safeUser = await User.findById(user._id).select(USER_PUBLIC_SELECT);
+    return res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      user: safeUser,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: "Failed to create user",
+      error: error.message,
+    });
+  }
+};
+
+export const updateAdminUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("+password +transactionPinHash");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const payload = { ...req.body };
+    const allowed = [
+      "username",
+      "email",
+      "phoneNumber",
+      "birthDate",
+      "state",
+      "role",
+      "userRole",
+      "isVerified",
+      "verifiedAt",
+      "photo",
+      "mainBalance",
+      "rewardBalance",
+      "totalDeposits",
+      "dataBundleCount",
+      "tickets",
+      "notifications",
+      "password",
+      "referredByCode",
+      "lastLogin",
+      "lastLogout",
+    ];
+
+    for (const key of Object.keys(payload)) {
+      if (!allowed.includes(key)) continue;
+      if (key === "role") {
+        const val = String(payload.role || "").toLowerCase();
+        if (!["user", "admin"].includes(val)) {
+          return res.status(400).json({ success: false, message: "Invalid role" });
+        }
+        user.role = val;
+        continue;
+      }
+      if (key === "userRole") {
+        const val = String(payload.userRole || "").toLowerCase();
+        if (val && !["private", "merchant"].includes(val)) {
+          return res.status(400).json({ success: false, message: "Invalid userRole" });
+        }
+        user.userRole = val || null;
+        continue;
+      }
+      user[key] = payload[key];
+    }
+
+    await user.save();
+    const safeUser = await User.findById(user._id).select(USER_PUBLIC_SELECT);
+    return res.status(200).json({
+      success: true,
+      message: "User updated successfully",
+      user: safeUser,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: "Failed to update user",
+      error: error.message,
+    });
+  }
+};
+
+export const deleteAdminUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    await Promise.all([
+      Wallet.deleteMany({ userId: user._id }),
+      Deposit.deleteMany({ user: user._id }),
+      Withdraw.deleteMany({ user: user._id }),
+      User.findByIdAndDelete(user._id),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete user",
+      error: error.message,
+    });
+  }
+};
