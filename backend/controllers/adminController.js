@@ -27,6 +27,7 @@ export const getAdminDashboard = async (req, res) => {
     const userRole = String(req.query.userRole || "").trim().toLowerCase();
     const verified = String(req.query.verified || "").trim().toLowerCase();
     const userAge = String(req.query.userAge || "").trim().toLowerCase();
+    const state = String(req.query.state || "").trim();
     const userSort = userAge === "old" ? { createdAt: 1 } : { createdAt: -1 };
 
     const filter = {};
@@ -41,8 +42,9 @@ export const getAdminDashboard = async (req, res) => {
     if (["user", "admin"].includes(role)) filter.role = role;
     if (["private", "merchant"].includes(userRole)) filter.userRole = userRole;
     if (["true", "false"].includes(verified)) filter.isVerified = verified === "true";
+    if (state) filter.state = state;
 
-    const [totalUsers, usersRaw, aggregates] = await Promise.all([
+    const [totalUsers, usersRaw, aggregates, stateBreakdownRaw] = await Promise.all([
       User.countDocuments(filter),
       User.find(filter)
         .sort(userSort)
@@ -74,6 +76,16 @@ export const getAdminDashboard = async (req, res) => {
             },
           },
         },
+      ]),
+      User.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: "$state",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1, _id: 1 } },
       ]),
     ]);
 
@@ -291,6 +303,10 @@ export const getAdminDashboard = async (req, res) => {
           totalPrizeWon: toNum(u.totalPrizeWon),
         })),
       },
+      stateBreakdown: (stateBreakdownRaw || []).map((row) => ({
+        state: row?._id || "Unknown",
+        count: toNum(row?.count),
+      })),
       users,
       pagination: {
         page,
@@ -304,6 +320,7 @@ export const getAdminDashboard = async (req, res) => {
         userRole: userRole || null,
         verified: verified || null,
         userAge: userAge || "new",
+        state: state || null,
       },
       generatedAt: new Date().toISOString(),
     };
