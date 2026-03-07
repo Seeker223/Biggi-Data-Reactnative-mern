@@ -24,6 +24,7 @@ import profileRoutes from "./routes/profileRoutes.js";
 import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 import gameStatsRoutes from "./routes/gameStatsRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
@@ -473,6 +474,7 @@ if (process.env.NODE_ENV !== "production") {
       { path: "/api/v1/game-stats", description: "Game statistics" },
       { path: "/api/v1/plans", description: "Data plans" },
       { path: "/api/v1/data", description: "Data purchase" },
+      { path: "/api/v1/admin", description: "Admin dashboard and analytics" },
     ];
     res.json({ success: true, routes });
   });
@@ -491,6 +493,7 @@ app.use("/api/v1/top-random-monthly", topRandomMonthlyRoutes);
 app.use("/api/v1/game-stats", gameStatsRoutes);
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 /* ----------------------------------------
    GAME RULES AND INFORMATION ROUTES
