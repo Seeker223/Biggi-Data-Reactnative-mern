@@ -5,6 +5,7 @@ const apiKey = process.env.ZENI_API_KEY;
 const contractKey = process.env.ZENI_CONTRACT_KEY;
 const BASE_URL = process.env.ZENI_BASE_URL || "https://zenipoint.com/api";
 const ZENI_LIVE = (process.env.ZENI_LIVE || "false").toLowerCase() === "true";
+const IS_PROD = (process.env.NODE_ENV || "").toLowerCase() === "production";
 
 const makeAuth = () =>
   apiKey && contractKey
@@ -19,7 +20,14 @@ const makeAuth = () =>
  * - returns a normalized object: { mode, success, raw }
  */
 export const zenipointPost = async (endpoint, payload) => {
-  // If not live, simulate
+  // In production, never simulate provider transactions.
+  if (IS_PROD && (!ZENI_LIVE || !apiKey || !contractKey)) {
+    throw new Error(
+      "Zenipoint live mode is required in production. Set ZENI_LIVE=true and configure credentials."
+    );
+  }
+
+  // In non-production, allow simulation for local/dev environments.
   if (!ZENI_LIVE || !apiKey || !contractKey) {
     console.warn("Zenipoint: running in LOCAL_TEST_MODE (ZENI_LIVE=false or missing keys)");
     return {
@@ -59,7 +67,12 @@ export const zenipointPost = async (endpoint, payload) => {
         return retryRes;
       } catch (retryErr) {
         console.error("Zenipoint retry failed:", retryErr.message || retryErr.response?.data);
-        // Fallback to simulated response so your frontend can proceed in dev
+        // Never simulate in production; bubble up provider/network failure.
+        if (IS_PROD) {
+          throw retryErr;
+        }
+
+        // Dev fallback simulation to keep local testing unblocked.
         return {
           data: {
             mode: "LOCAL_TEST_MODE",

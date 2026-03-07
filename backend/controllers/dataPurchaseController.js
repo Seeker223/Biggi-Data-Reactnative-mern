@@ -29,6 +29,7 @@ const mapZenipointPlanCode = (plan) => {
  */
 export const buyData = async (req, res) => {
   try {
+    const isProd = (process.env.NODE_ENV || "").toLowerCase() === "production";
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, msg: "Not authorized" });
 
@@ -97,6 +98,17 @@ export const buyData = async (req, res) => {
 
     // If simulated fallback
     if (zenResponse?.mode === "LOCAL_TEST_MODE") {
+      if (isProd) {
+        user.mainBalance += amount;
+        await user.save();
+        await syncWalletBalance(userId);
+        await logWalletTransaction(userId, "purchase", amount, reference, "failed");
+        return res.status(503).json({
+          success: false,
+          msg: "Data provider is currently unavailable. Please try again shortly.",
+        });
+      }
+
       await logWalletTransaction(userId, "purchase", amount, reference, "simulated");
 
       // Add ticket for simulated purchase
