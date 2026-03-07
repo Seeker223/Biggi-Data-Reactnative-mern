@@ -1,39 +1,66 @@
-// middleware/error.js (Converted to ESM)
+const isProd = process.env.NODE_ENV === "production";
 
-const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
-
-  // Log to console for dev
-  // NOTE: Ensure you have the 'colors' package installed/imported if you use '.red'
-  console.log(err.stack); // Removed .red for safety if 'colors' isn't available/imported
-
-  // Mongoose Bad ObjectId (CastError)
-  if (err.name === 'CastError') {
-    const message = `Resource not found with id of ${err.value}`;
-    error = { statusCode: 404, message };
-  }
-
-  // Mongoose Duplicate Key (E11000)
-  if (err.code === 11000) {
-    // Extract the key causing the duplication (e.g., 'email' or 'username')
-    const field = Object.keys(err.keyValue); 
-    const message = `This User already exist. Go to login: ${field.join(', ')}.`;
-    error = { statusCode: 400, message };
-  }
-
-  // Mongoose Validation Error
-  if (err.name === 'ValidationError') {
-    // Extract error messages from all failed fields
-    const message = Object.values(err.errors).map(val => val.message);
-    error = { statusCode: 400, message: message.join(', ') };
-  }
-
-  res.status(error.statusCode || 500).json({
-    success: false,
-    error: error.message || 'Server Error',
-  });
+const USER_MESSAGES = {
+  default: "Something went wrong. Please try again.",
+  server: "We are unable to process your request right now. Please try again shortly.",
+  badRequest: "Your request could not be completed. Please check your input and try again.",
+  unauthorized: "You need to log in to continue.",
+  forbidden: "You do not have permission to perform this action.",
+  notFound: "The requested resource was not found.",
 };
 
-// Use ESM default export
+const getProdMessage = (statusCode = 500) => {
+  if (statusCode === 400 || statusCode === 422) return USER_MESSAGES.badRequest;
+  if (statusCode === 401) return USER_MESSAGES.unauthorized;
+  if (statusCode === 403) return USER_MESSAGES.forbidden;
+  if (statusCode === 404) return USER_MESSAGES.notFound;
+  if (statusCode >= 500) return USER_MESSAGES.server;
+  return USER_MESSAGES.default;
+};
+
+const errorHandler = (err, req, res, next) => {
+  let statusCode = Number(err?.statusCode || err?.status || 500);
+  let message = String(err?.message || "Server Error");
+
+  if (err?.name === "CastError") {
+    statusCode = 404;
+    message = "Resource not found.";
+  }
+
+  if (err?.code === 11000) {
+    statusCode = 400;
+    message = "An account with these details already exists. Please log in instead.";
+  }
+
+  if (err?.name === "ValidationError") {
+    statusCode = 400;
+    message = Object.values(err.errors || {})
+      .map((val) => val.message)
+      .join(", ");
+  }
+
+  if (!isProd) {
+    console.error("[ERROR]", {
+      method: req.method,
+      url: req.originalUrl,
+      statusCode,
+      message,
+      stack: err?.stack,
+    });
+  }
+
+  const responseBody = {
+    success: false,
+    message: isProd ? getProdMessage(statusCode) : message,
+  };
+
+  if (!isProd) {
+    responseBody.error = message;
+    responseBody.details = err?.details || null;
+    responseBody.stack = err?.stack || null;
+  }
+
+  return res.status(statusCode).json(responseBody);
+};
+
 export default errorHandler;

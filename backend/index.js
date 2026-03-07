@@ -172,6 +172,46 @@ app.use((req, res, next) => {
 });
 
 /* ----------------------------------------
+   PRODUCTION ERROR RESPONSE SANITIZER
+---------------------------------------- */
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  const isProd = process.env.NODE_ENV === "production";
+
+  const toUserMessage = (statusCode = 500) => {
+    if (statusCode === 400 || statusCode === 422) return "Your request could not be completed. Please check your input and try again.";
+    if (statusCode === 401) return "You need to log in to continue.";
+    if (statusCode === 403) return "You do not have permission to perform this action.";
+    if (statusCode === 404) return "The requested resource was not found.";
+    if (statusCode >= 500) return "We are unable to process your request right now. Please try again shortly.";
+    return "Something went wrong. Please try again.";
+  };
+
+  res.json = (body) => {
+    const statusCode = Number(res.statusCode || 200);
+    if (!isProd || statusCode < 400 || !body || typeof body !== "object") {
+      return originalJson(body);
+    }
+
+    const hasErrorShape =
+      "error" in body ||
+      "stack" in body ||
+      "details" in body ||
+      (statusCode >= 500 && "message" in body);
+
+    if (!hasErrorShape) return originalJson(body);
+
+    const sanitized = {
+      success: false,
+      message: toUserMessage(statusCode),
+    };
+    return originalJson(sanitized);
+  };
+
+  next();
+});
+
+/* ----------------------------------------
    HEALTH CHECKS
 ---------------------------------------- */
 app.get("/", (req, res) => {
@@ -584,7 +624,13 @@ if (process.env.NODE_ENV !== "production") {
 ---------------------------------------- */
 app.use((req, res) => {
   console.warn(`âŒ 404 Route not found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({
+      success: false,
+      message: "The requested resource was not found.",
+    });
+  }
+  return res.status(404).json({
     success: false,
     error: `Route not found: ${req.method} ${req.originalUrl}`,
     timestamp: new Date().toISOString(),
