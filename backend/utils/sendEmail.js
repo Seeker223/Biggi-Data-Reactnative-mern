@@ -1,4 +1,5 @@
 // backend/utils/sendEmail.js - UPDATED FOR RESEND API
+import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import fs from 'fs';
 import path from 'path';
@@ -28,9 +29,49 @@ try {
   console.error(chalk.red("❌ Failed to initialize Resend client:"), error);
 }
 
+const getEnv = (key) => String(process.env[key] || "").trim();
+
+const getSmtpConfig = () => {
+  const host = getEnv("SMTP_HOST") || "smtp.gmail.com";
+  const port = Number(getEnv("SMTP_PORT") || 465);
+  const secureRaw = getEnv("SMTP_SECURE");
+  const secure =
+    secureRaw === ""
+      ? port === 465
+      : ["1", "true", "yes"].includes(secureRaw.toLowerCase());
+
+  const user = getEnv("SMTP_USER") || getEnv("SMTP_USERNAME") || getEnv("SMTP_EMAIL");
+  const pass = getEnv("SMTP_PASS") || getEnv("SMTP_PASSWORD");
+  const fromEmail =
+    getEnv("SMTP_FROM") ||
+    getEnv("SMTP_FROM_EMAIL") ||
+    getEnv("SMTP_EMAIL") ||
+    getEnv("SMTP_USER") ||
+    "";
+
+  return { host, port, secure, auth: user && pass ? { user, pass } : null, fromEmail };
+};
+
+let smtpTransporter = null;
+const getSmtpTransporter = (cfg) => {
+  if (smtpTransporter) return smtpTransporter;
+  if (!cfg?.auth) return null;
+
+  smtpTransporter = nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: cfg.auth,
+  });
+
+  return smtpTransporter;
+};
+
 const sendEmail = async (options) => {
+  const smtpCfg = getSmtpConfig();
+  const smtpReady = Boolean(smtpCfg?.auth?.user && smtpCfg?.auth?.pass);
   // Validate Resend API key
-  if (!process.env.RESEND_API_KEY || !resend) {
+  if (!smtpReady && (!process.env.RESEND_API_KEY || !resend)) {
     const errorMsg = "❌ Resend API key not configured";
     console.error(chalk.red(errorMsg));
     logToFile(errorMsg);
@@ -41,7 +82,7 @@ const sendEmail = async (options) => {
       return { success: true, message: "OTP logged to console (development mode)" };
     }
     
-    throw new Error("Email service configuration missing - Resend API key required");
+    throw new Error("Email service configuration missing - configure SMTP_USER/SMTP_PASS or RESEND_API_KEY");
   }
 
   try {
@@ -120,10 +161,34 @@ const sendEmail = async (options) => {
 
     // Get from email from environment or use default verified domain
     const fromEmail = process.env.RESEND_FROM_EMAIL || 
+                     process.env.SMTP_FROM_EMAIL ||
                      process.env.SMTP_EMAIL || 
+                     process.env.SMTP_USER ||
                      `no-reply@${process.env.RESEND_DOMAIN || 'resend.dev'}`;
     
     const fromName = process.env.FROM_NAME || 'Biggi Data';
+
+    // Prefer SMTP when configured (e.g. Gmail App Password on Render)
+    if (smtpReady) {
+      const transporter = getSmtpTransporter(smtpCfg);
+      if (!transporter) {
+        throw new Error("SMTP transporter initialization failed");
+      }
+
+      const info = await transporter.sendMail({
+        from: `${fromName} <${fromEmail}>`,
+        to: options.email,
+        subject: options.subject,
+        html: html,
+        text: options.message.replace(/<[^>]*>/g, ''), // Plain text version
+      });
+
+      const successMsg = `Email sent to ${options.email} via SMTP | Subject: ${options.subject} | Message ID: ${info?.messageId || "n/a"}`;
+      console.log(chalk.green(successMsg));
+      logToFile(`SMTP_SUCCESS: ${successMsg}`);
+
+      return { success: true, messageId: info?.messageId, provider: 'smtp' };
+    }
 
     // Send email using Resend
     const { data, error } = await resend.emails.send({

@@ -8,6 +8,7 @@ import {
   forgotPassword,
   logout
 } from "../controllers/authController.js";
+import { sendTestEmail } from "../controllers/emailController.js";
 import {
   getBiometricStatus,
   getBiometricLoginAvailability,
@@ -19,7 +20,7 @@ import {
   verifyBiometricTransaction,
   disableBiometric,
 } from "../controllers/biometricController.js";
-import { protect } from "../middleware/auth.js";
+import { protect, authorize } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -50,5 +51,8 @@ router.post("/fingerprint/register/verify", protect, verifyBiometricRegistration
 router.post("/fingerprint/transaction/options", protect, beginBiometricTransaction);
 router.post("/fingerprint/transaction/verify", protect, verifyBiometricTransaction);
 router.delete("/fingerprint", protect, disableBiometric);
+
+// Admin-only: SMTP/Email test (useful for Render env validation)
+router.post("/test-email", protect, authorize("admin"), sendTestEmail);
 
 export default router;
