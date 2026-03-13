@@ -2,7 +2,7 @@
 import { CronJob } from "cron";
 import https from "https";
 import http from "http";
-import User from "../models/User.js";
+import { generateDailyWinningNumbers } from "../controllers/dailyGameController.js";
 
 /* ---------------------------------------------------------
    1. KEEP-ALIVE PING (Render - every 14 minutes)
@@ -39,21 +39,14 @@ const keepAliveJob = new CronJob("*/14 * * * *", () => {
    2. WEEKLY RESULT SETTLEMENT (Checks every day at 00:01 AM)
 --------------------------------------------------------- */
 
-const WEEKLY_RESULT_WAIT_MS = 7 * 24 * 60 * 60 * 1000;
-
-// Generate 5 unique winning numbers between 1 and 52
-function generateWinningNumbers() {
-  const nums = new Set();
-  while (nums.size < 5) {
-    nums.add(Math.floor(Math.random() * 52) + 1);
-  }
-  return [...nums];
-}
+// Weekly letter draw results are settled at month end and must be identical for all users.
 
 const dailyGameJob = new CronJob(
   "1 0 * * *", // Run at 00:01 AM daily
   async () => {
     try {
+      await generateDailyWinningNumbers();
+      return;
       console.log("🎯 [CRON] Running Weekly Result Settlement...");
 
       const winningNumbers = generateWinningNumbers();

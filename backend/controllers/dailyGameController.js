@@ -1,9 +1,43 @@
 ﻿import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
+import WeeklyLetterDrawResult from "../models/WeeklyLetterDrawResult.js";
 
 const getMonthEnd = (date) => {
   const ref = date instanceof Date ? date : new Date(date);
   return new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999);
+};
+
+const getMonthKey = (date) => {
+  const ref = date instanceof Date ? date : new Date(date);
+  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const generateWinningNumbers = () => {
+  const nums = new Set();
+  while (nums.size < 5) nums.add(Math.floor(Math.random() * 52) + 1);
+  return [...nums];
+};
+
+const getOrCreateMonthlyResult = async (monthKey) => {
+  const existing = await WeeklyLetterDrawResult.findOne({ month: monthKey }).lean();
+  if (existing?.winningNumbers?.length === 5) return existing.winningNumbers;
+
+  const winningNumbers = generateWinningNumbers();
+  try {
+    const created = await WeeklyLetterDrawResult.create({
+      month: monthKey,
+      winningNumbers,
+      generatedAt: new Date(),
+    });
+    return created.winningNumbers;
+  } catch (err) {
+    // In case of race across processes.
+    if (err?.code === 11000) {
+      const retry = await WeeklyLetterDrawResult.findOne({ month: monthKey }).lean();
+      if (retry?.winningNumbers?.length === 5) return retry.winningNumbers;
+    }
+    throw err;
+  }
 };
 
 const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
@@ -202,47 +236,37 @@ export const claimDailyReward = async (req, res) => {
 // ---------------------------------------------------
 export const generateDailyWinningNumbers = async () => {
   try {
-    // Generate 5 unique winning numbers between 1â€“70
-    const winningNumbers = [];
-    while (winningNumbers.length < 5) {
-      const num = Math.floor(Math.random() * 52) + 1;
-      if (!winningNumbers.includes(num)) winningNumbers.push(num);
-    }
-
-    console.log("ðŸŽ¯ Weekly winning numbers:", winningNumbers);
-
     // Fetch users with unsettled entries.
     const users = await User.find({ "dailyNumberDraw.result": { $size: 0 } });
 
     for (const user of users) {
       let updated = false;
 
-      user.dailyNumberDraw.forEach((entry) => {
-        if (entry.result.length === 0) {
-          const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now());
-          const monthEnd = getMonthEnd(playedAt);
-          if (Date.now() < monthEnd.getTime()) return;
+      for (const entry of user.dailyNumberDraw || []) {
+        if (!Array.isArray(entry?.result) || entry.result.length > 0) continue;
 
-          // Not yet evaluated
-          entry.result = winningNumbers;
+        const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now());
+        const monthEnd = getMonthEnd(playedAt);
+        if (Date.now() < monthEnd.getTime()) continue;
 
-          // Check if user matched all 5 numbers
-          const isWinner =
-            entry.numbers.length === winningNumbers.length &&
-            entry.numbers.every((n) => winningNumbers.includes(n));
+        // Central per-month result: all users share the same winning letters for the month.
+        const monthKey = getMonthKey(playedAt);
+        const winningNumbers = await getOrCreateMonthlyResult(monthKey);
 
-          entry.isWinner = isWinner;
+        entry.result = winningNumbers;
 
-          // Do not auto-credit here; reward is claimed manually (one per month enforced on claim)
+        const isWinner =
+          entry.numbers.length === winningNumbers.length &&
+          entry.numbers.every((n) => winningNumbers.includes(n));
 
-          updated = true;
-        }
-      });
+        entry.isWinner = isWinner;
+        updated = true;
+      }
 
       if (updated) await user.save();
     }
 
-    return winningNumbers;
+    return true;
   } catch (error) {
     console.log("Daily Game Result Error:", error);
   }
