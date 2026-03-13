@@ -53,6 +53,20 @@ const TopRandomMonthlyPickSchema = new mongoose.Schema({
 });
 
 /* -------------------------------------------
+   MONTHLY RAFFLE TICKET SCHEMA (issued every 5 purchases)
+------------------------------------------- */
+const MonthlyRaffleTicketSchema = new mongoose.Schema(
+  {
+    month: { type: String, required: true }, // Format: "YYYY-MM"
+    code: { type: String, required: true },
+    issuedAt: { type: Date, default: Date.now },
+    played: { type: Boolean, default: false },
+    playedAt: { type: Date, default: null },
+  },
+  { _id: true }
+);
+
+/* -------------------------------------------
    USER NOTIFICATION SCHEMA
 ------------------------------------------- */
 const UserNotificationSchema = new mongoose.Schema(
@@ -243,6 +257,7 @@ const UserSchema = new mongoose.Schema(
     lastDailyGame: { type: Date, default: null },
     
     monthlyDraws: [MonthlyDrawSchema],
+    monthlyRaffleTickets: [MonthlyRaffleTicketSchema],
     topRandomMonthlyPicks: [TopRandomMonthlyPickSchema],
     currentMonthPurchases: { type: Number, default: 0 },
     currentMonthEligible: { type: Boolean, default: false },
@@ -360,6 +375,16 @@ UserSchema.methods.getCurrentMonthString = function() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
 
+const generateRaffleCode = () => {
+  // 6 random uppercase alphanumeric characters
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid ambiguous 0/1/O/I
+  let out = "";
+  for (let i = 0; i < 6; i += 1) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+};
+
 /* ==========================================
    METHOD: UPDATE MONTHLY PURCHASE
 ========================================== */
@@ -388,6 +413,23 @@ UserSchema.methods.updateMonthlyPurchase = function() {
   this.currentMonthEligible = monthlyDraw.purchasesCount >= 5;
   monthlyDraw.isEligible = this.currentMonthEligible;
   
+  // Issue raffle ticket for every 5 purchases (5,10,15,...)
+  const shouldHave = Math.floor(Number(monthlyDraw.purchasesCount || 0) / 5);
+  const existingTickets = (this.monthlyRaffleTickets || []).filter((t) => t.month === currentMonth);
+  const toCreate = Math.max(0, shouldHave - existingTickets.length);
+  for (let i = 0; i < toCreate; i += 1) {
+    const code = generateRaffleCode();
+    this.monthlyRaffleTickets = [
+      ...(this.monthlyRaffleTickets || []),
+      { month: currentMonth, code, issuedAt: new Date(), played: false, playedAt: null },
+    ];
+    this.addNotification({
+      type: "Monthly Raffle Ticket",
+      status: "success",
+      message: `You earned a monthly raffle ticket: ${code}. Play it in Monthly Draw to enter.`,
+    });
+  }
+
   // Update data bundle count
   this.dataBundleCount += 1;
   

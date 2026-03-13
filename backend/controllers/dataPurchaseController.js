@@ -113,7 +113,7 @@ export const buyData = async (req, res) => {
 
       // Add ticket for simulated purchase
       user.tickets = (user.tickets || 0) + 1;
-      await user.save();
+      await user.updateMonthlyPurchase();
 
       return res.status(200).json({
         success: true,
@@ -132,7 +132,8 @@ export const buyData = async (req, res) => {
 
       // Add ticket reward
       user.tickets = (user.tickets || 0) + 1; // Or plan.ticketReward if variable
-      await user.save();
+      // Update monthly progress and issue raffle ticket every 5 purchases
+      await user.updateMonthlyPurchase();
 
       return res.status(200).json({
         success: true,

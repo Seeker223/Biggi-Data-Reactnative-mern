@@ -1,8 +1,9 @@
-// utils/cron.js
+﻿// utils/cron.js
 import { CronJob } from "cron";
 import https from "https";
 import http from "http";
 import { generateDailyWinningNumbers } from "../controllers/dailyGameController.js";
+import { runMonthlyRaffleDrawIfDue, getPreviousMonthString } from "../controllers/monthlyGameController.js";
 
 /* ---------------------------------------------------------
    1. KEEP-ALIVE PING (Render - every 14 minutes)
@@ -13,13 +14,13 @@ const KEEP_ALIVE_URL = process.env.API_URL;
 // API_URL=https://biggi-data-reactnative-mern.onrender.com/
 
 if (!KEEP_ALIVE_URL) {
-  console.warn("⚠️ No API_URL set — Keep-alive cron disabled.");
+  console.warn("âš ï¸ No API_URL set â€” Keep-alive cron disabled.");
 }
 
 const keepAliveJob = new CronJob("*/14 * * * *", () => {
   if (!KEEP_ALIVE_URL) return;
 
-  console.log(`[CRON] Pinging keep-alive URL → ${KEEP_ALIVE_URL}`);
+  console.log(`[CRON] Pinging keep-alive URL â†’ ${KEEP_ALIVE_URL}`);
 
   const client = KEEP_ALIVE_URL.startsWith("https") ? https : http;
 
@@ -47,10 +48,10 @@ const dailyGameJob = new CronJob(
     try {
       await generateDailyWinningNumbers();
       return;
-      console.log("🎯 [CRON] Running Weekly Result Settlement...");
+      console.log("ðŸŽ¯ [CRON] Running Weekly Result Settlement...");
 
       const winningNumbers = generateWinningNumbers();
-      console.log("🎉 Weekly Winning Numbers:", winningNumbers);
+      console.log("ðŸŽ‰ Weekly Winning Numbers:", winningNumbers);
 
       // Find users with plays and settle only entries that are at least 7 days old.
       const users = await User.find();
@@ -88,22 +89,46 @@ const dailyGameJob = new CronJob(
         }
       }
 
-      console.log("✅ Weekly result settlement completed successfully.");
+      console.log("âœ… Weekly result settlement completed successfully.");
     } catch (err) {
-      console.error("❌ Weekly Result Settlement Cron Error:", err);
+      console.error("âŒ Weekly Result Settlement Cron Error:", err);
     }
   },
   null,
   true
 );
 
+
+/* ---------------------------------------------------------
+   3. MONTHLY RAFFLE DRAW (Checks daily at 00:05 AM)
+--------------------------------------------------------- */
+
+const monthlyRaffleJob = new CronJob(
+  "5 0 * * *",
+  async () => {
+    try {
+      const month = getPreviousMonthString();
+      console.log(`[CRON] Monthly raffle draw check -> ${month}`);
+      await runMonthlyRaffleDrawIfDue(month);
+    } catch (err) {
+      console.error("[CRON] Monthly raffle draw error:", err);
+    }
+  },
+  null,
+  true
+);
 /* ---------------------------------------------------------
    3. AUTO-START CRONS (prevent double-start on hot reload)
 --------------------------------------------------------- */
 
 if (!keepAliveJob.running) keepAliveJob.start();
 if (!dailyGameJob.running) dailyGameJob.start();
+if (!monthlyRaffleJob.running) monthlyRaffleJob.start();
 
-console.log("⏱️ CRON SERVICE RUNNING...");
+console.log("â±ï¸ CRON SERVICE RUNNING...");
 
-export default { keepAliveJob, dailyGameJob };
+export default { keepAliveJob, dailyGameJob, monthlyRaffleJob };
+
+
+
+
