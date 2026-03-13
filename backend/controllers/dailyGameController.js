@@ -248,4 +248,79 @@ export const generateDailyWinningNumbers = async () => {
   }
 };
 
+// ---------------------------------------------------
+// GET WEEKLY WINNERS (live, per-month view)
+// Returns at most 1 win per user for the month (latest).
+// ---------------------------------------------------
+export const getWeeklyWinners = async (req, res) => {
+  try {
+    const rawMonth = String(req.query?.month || "").trim(); // "YYYY-MM"
+    const now = new Date();
+    const monthKey =
+      /^\d{4}-\d{2}$/.test(rawMonth)
+        ? rawMonth
+        : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    const [yearStr, monthStr] = monthKey.split("-");
+    const year = Number(yearStr);
+    const monthIndex = Number(monthStr) - 1;
+    const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+    const end = new Date(year, monthIndex + 1, 1, 0, 0, 0, 0);
+
+    const winners = await User.aggregate([
+      { $unwind: "$dailyNumberDraw" },
+      {
+        $match: {
+          "dailyNumberDraw.isWinner": true,
+          "dailyNumberDraw.createdAt": { $gte: start, $lt: end },
+        },
+      },
+      { $sort: { "dailyNumberDraw.createdAt": -1 } },
+      {
+        $group: {
+          _id: "$_id",
+          username: { $first: "$username" },
+          email: { $first: "$email" },
+          photo: { $first: "$photo" },
+          gameId: { $first: "$dailyNumberDraw._id" },
+          createdAt: { $first: "$dailyNumberDraw.createdAt" },
+          playedAt: { $first: "$dailyNumberDraw.playedAt" },
+          numbers: { $first: "$dailyNumberDraw.numbers" },
+          result: { $first: "$dailyNumberDraw.result" },
+          prizeAmount: { $first: "$dailyNumberDraw.prizeAmount" },
+          claimed: { $first: "$dailyNumberDraw.claimed" },
+          claimedAt: { $first: "$dailyNumberDraw.claimedAt" },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $limit: 100 },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      month: monthKey,
+      count: winners.length,
+      winners: winners.map((w) => ({
+        userId: w._id,
+        username: w.username,
+        email: w.email,
+        photo: w.photo || null,
+        gameId: w.gameId,
+        createdAt: w.createdAt || w.playedAt || null,
+        numbers: w.numbers || [],
+        result: w.result || [],
+        prizeAmount: Number(w.prizeAmount || 10000),
+        claimed: Boolean(w.claimed),
+        claimedAt: w.claimedAt || null,
+      })),
+    });
+  } catch (error) {
+    console.log("Get weekly winners error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch weekly winners",
+    });
+  }
+};
+
 
