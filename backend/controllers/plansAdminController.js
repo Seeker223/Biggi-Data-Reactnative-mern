@@ -203,3 +203,36 @@ export const syncPlansFromProviderCatalog = async (req, res) => {
     });
   }
 };
+
+// Dangerous but requested: remove legacy plans from DB and replace with provider catalog only.
+export const resetPlansToProviderCatalog = async (req, res) => {
+  try {
+    const catalog = Array.isArray(providerPlanCatalog) ? providerPlanCatalog : [];
+    if (!catalog.length) {
+      return res.status(500).json({ success: false, msg: "Provider plan catalog is empty" });
+    }
+
+    await DataPlan.deleteMany({});
+    const inserted = await DataPlan.insertMany(
+      catalog.map((p) => ({
+        ...p,
+        plan_id: String(p.plan_id || "").trim().toLowerCase(),
+        network: String(p.network || "").trim().toLowerCase(),
+        category: String(p.category || "").trim(),
+        zenipoint_code: String(p.zenipoint_code || p.plan_id || "").trim(),
+      }))
+    );
+
+    return res.json({
+      success: true,
+      msg: "Plans reset to provider catalog (legacy plans removed)",
+      inserted: inserted.length,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      msg: "Failed to reset plans",
+      error: err.message,
+    });
+  }
+};

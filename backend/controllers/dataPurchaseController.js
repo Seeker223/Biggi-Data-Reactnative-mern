@@ -73,6 +73,14 @@ export const buyData = async (req, res) => {
     const plan = await DataPlan.findOne({ plan_id: normalizedPlanId, active: true });
     if (!plan) return res.status(404).json({ success: false, msg: "Plan not found" });
 
+    // Prevent legacy/unpriced plans from being purchased (causes provider/price mismatch).
+    if (plan.provider_amount === null || plan.provider_amount === undefined) {
+      return res.status(400).json({
+        success: false,
+        msg: "This plan is not available right now. Please refresh and select a different plan.",
+      });
+    }
+
     const user = await User.findById(userId).select("+transactionPinHash");
     if (!user) return res.status(404).json({ success: false, msg: "User not found" });
 

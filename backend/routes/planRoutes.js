@@ -5,6 +5,7 @@ import {
   createAdminPlan,
   deactivateAdminPlan,
   listAdminPlans,
+  resetPlansToProviderCatalog,
   syncPlansFromProviderCatalog,
   updateAdminPlan,
 } from "../controllers/plansAdminController.js";
@@ -24,6 +25,14 @@ router.post(
   protect,
   authorize("admin"),
   syncPlansFromProviderCatalog
+);
+
+// Admin: hard reset plans to provider catalog (deletes legacy plans).
+router.post(
+  "/admin/reset-provider-catalog",
+  protect,
+  authorize("admin"),
+  resetPlansToProviderCatalog
 );
 
 // Admin: plans CRUD

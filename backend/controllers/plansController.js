@@ -14,6 +14,10 @@ export const getNetworkPlans = async (req, res) => {
     const plans = await DataPlan.find({
       network,
       active: true,
+      // Only show plans that have a configured provider price (Zenipoint cost).
+      // This prevents legacy/mock plans from leaking into the UI.
+      provider_amount: { $ne: null },
+      amount: { $gt: 0 },
     }).sort({ amount: 1 });
 
     return res.json({
@@ -41,12 +45,17 @@ export const getPlanById = async (req, res) => {
     // Normalize plan_id
     plan_id = (plan_id || "").trim().toLowerCase();
 
-    const plan = await DataPlan.findOne({ plan_id });
+    const plan = await DataPlan.findOne({
+      plan_id,
+      active: true,
+      provider_amount: { $ne: null },
+      amount: { $gt: 0 },
+    });
 
     if (!plan) {
       return res.status(404).json({
         success: false,
-        msg: "Plan not found",
+        msg: "Plan not available",
       });
     }
 
