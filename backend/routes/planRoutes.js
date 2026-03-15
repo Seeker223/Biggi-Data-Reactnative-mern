@@ -1,7 +1,13 @@
 // backend/routes/planRoutes.js
 import express from "express";
 import { getNetworkPlans, getPlanById } from "../controllers/plansController.js";
-import { syncPlansFromProviderCatalog } from "../controllers/plansAdminController.js";
+import {
+  createAdminPlan,
+  deactivateAdminPlan,
+  listAdminPlans,
+  syncPlansFromProviderCatalog,
+  updateAdminPlan,
+} from "../controllers/plansAdminController.js";
 import { protect, authorize } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -19,6 +25,12 @@ router.post(
   authorize("admin"),
   syncPlansFromProviderCatalog
 );
+
+// Admin: plans CRUD
+router.get("/admin/plans", protect, authorize("admin"), listAdminPlans);
+router.post("/admin/plans", protect, authorize("admin"), createAdminPlan);
+router.put("/admin/plans/:plan_id", protect, authorize("admin"), updateAdminPlan);
+router.delete("/admin/plans/:plan_id", protect, authorize("admin"), deactivateAdminPlan);
 
 export default router;
 
