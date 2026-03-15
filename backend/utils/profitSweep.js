@@ -26,10 +26,21 @@ const getSettings = async () => {
     timezone: String(process.env.PROFIT_SWEEP_TIMEZONE || "").trim() || undefined,
   };
 
+  const hardDefaults = {
+    cron: "55 23 * * *",
+    timezone: "Africa/Lagos",
+    narration: "BiggiData profit sweep",
+    currency: "NGN",
+    minAmount: 5000,
+  };
+
   if (!settings) {
     const createPayload = {};
     for (const [k, v] of Object.entries(envDefaults)) {
       if (v !== undefined && v !== "" && !(Number.isNaN(v) && k === "minAmount")) createPayload[k] = v;
+    }
+    for (const [k, v] of Object.entries(hardDefaults)) {
+      if (createPayload[k] === undefined) createPayload[k] = v;
     }
     settings = await ProfitSweepSettings.create(createPayload);
     return settings;
@@ -40,12 +51,13 @@ const getSettings = async () => {
   if (!settings.bankCode && envDefaults.bankCode) patch.bankCode = envDefaults.bankCode;
   if (!settings.accountNumber && envDefaults.accountNumber) patch.accountNumber = envDefaults.accountNumber;
   if (!settings.accountName && envDefaults.accountName) patch.accountName = envDefaults.accountName;
+  if (!settings.cron) patch.cron = envDefaults.cron || hardDefaults.cron;
+  if (!settings.timezone) patch.timezone = envDefaults.timezone || hardDefaults.timezone;
+  if (!settings.narration) patch.narration = hardDefaults.narration;
+  if (!settings.currency) patch.currency = hardDefaults.currency;
+  if (settings.minAmount === null || settings.minAmount === undefined) patch.minAmount = Number.isFinite(envDefaults.minAmount) ? envDefaults.minAmount : hardDefaults.minAmount;
   if ((settings.enabled === false || settings.enabled === true) === false && envDefaults.enabled !== undefined)
     patch.enabled = envDefaults.enabled;
-  if ((settings.minAmount === null || settings.minAmount === undefined) && Number.isFinite(envDefaults.minAmount))
-    patch.minAmount = envDefaults.minAmount;
-  if (!settings.cron && envDefaults.cron) patch.cron = envDefaults.cron;
-  if (!settings.timezone && envDefaults.timezone) patch.timezone = envDefaults.timezone;
   if (Object.keys(patch).length) {
     settings = await ProfitSweepSettings.findByIdAndUpdate(settings._id, { $set: patch }, { new: true });
   }
