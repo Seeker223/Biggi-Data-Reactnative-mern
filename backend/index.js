@@ -25,6 +25,7 @@ import planRoutes from "./routes/planRoutes.js";
 import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 import gameStatsRoutes from "./routes/gameStatsRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import profitSweepAdminRoutes from "./routes/profitSweepAdminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
@@ -494,6 +495,7 @@ app.use("/api/v1/game-stats", gameStatsRoutes);
 app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/admin/profit-sweep", profitSweepAdminRoutes);
 
 /* ----------------------------------------
    GAME RULES AND INFORMATION ROUTES

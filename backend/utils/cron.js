@@ -4,6 +4,7 @@ import https from "https";
 import http from "http";
 import { generateDailyWinningNumbers } from "../controllers/dailyGameController.js";
 import { runMonthlyRaffleDrawIfDue, getPreviousMonthString } from "../controllers/monthlyGameController.js";
+import { runProfitSweep } from "./profitSweep.js";
 
 /* ---------------------------------------------------------
    1. KEEP-ALIVE PING (Render - every 14 minutes)
@@ -117,6 +118,25 @@ const monthlyRaffleJob = new CronJob(
   null,
   true
 );
+
+/* ---------------------------------------------------------
+   4. PROFIT SWEEP (Checks daily at 23:55 Africa/Lagos)
+--------------------------------------------------------- */
+
+const profitSweepJob = new CronJob(
+  "55 23 * * *",
+  async () => {
+    try {
+      console.log("[CRON] Profit sweep check...");
+      await runProfitSweep({ force: false });
+    } catch (err) {
+      console.error("[CRON] Profit sweep error:", err);
+    }
+  },
+  null,
+  true,
+  "Africa/Lagos"
+);
 /* ---------------------------------------------------------
    3. AUTO-START CRONS (prevent double-start on hot reload)
 --------------------------------------------------------- */
@@ -124,10 +144,11 @@ const monthlyRaffleJob = new CronJob(
 if (!keepAliveJob.running) keepAliveJob.start();
 if (!dailyGameJob.running) dailyGameJob.start();
 if (!monthlyRaffleJob.running) monthlyRaffleJob.start();
+if (!profitSweepJob.running) profitSweepJob.start();
 
 console.log("â±ï¸ CRON SERVICE RUNNING...");
 
-export default { keepAliveJob, dailyGameJob, monthlyRaffleJob };
+export default { keepAliveJob, dailyGameJob, monthlyGameJob: dailyGameJob, monthlyRaffleJob, profitSweepJob };
 
 
 

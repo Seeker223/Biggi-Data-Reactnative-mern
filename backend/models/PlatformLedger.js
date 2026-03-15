@@ -23,6 +23,16 @@ const PlatformLedgerSchema = new mongoose.Schema(
     // revenue - cost (nullable if cost unknown).
     profit: { type: Number, default: null },
 
+    // Profit sweep status for dedicated account transfers
+    sweepStatus: {
+      type: String,
+      enum: ["pending", "initiated", "swept", "failed", "skipped"],
+      default: "pending",
+      index: true,
+    },
+    sweepRef: { type: String, default: "", index: true },
+    sweptAt: { type: Date, default: null },
+
     // Raw provider response snippet for auditing (kept small).
     provider: { type: Object, default: {} },
   },
@@ -32,4 +42,3 @@ const PlatformLedgerSchema = new mongoose.Schema(
 PlatformLedgerSchema.index({ createdAt: -1 });
 
 export default mongoose.model("PlatformLedger", PlatformLedgerSchema);
-

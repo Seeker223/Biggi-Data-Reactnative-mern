@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { logWalletTransaction } from "../utils/wallet.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
+import { handleProfitSweepWebhook } from "../utils/profitSweep.js";
 
 /* =====================================================
    GET USER BALANCE
@@ -468,6 +469,21 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
     if (event === "transfer.completed") {
       const { id, status, reference } = data;
       
+      // Profit sweep webhook (dedicated account transfer)
+      try {
+        const sweepRes = await handleProfitSweepWebhook({
+          id,
+          status,
+          reference,
+          raw: payload,
+        });
+        if (sweepRes?.ok && !sweepRes?.notFound) {
+          return res.sendStatus(200);
+        }
+      } catch (e) {
+        // Fall through to withdrawal handler
+      }
+
       // Find withdrawal by Flutterwave transfer ID or reference
       const withdrawal = await Withdraw.findOne({
         $or: [
