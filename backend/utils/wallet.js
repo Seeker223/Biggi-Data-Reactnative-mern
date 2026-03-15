@@ -47,6 +47,36 @@ export const logWalletTransaction = async (userId, type, amount, reference, stat
       date: new Date(),
       status,
       reference,
+      meta: {},
+    });
+
+    wallet.lastUpdated = new Date();
+    await wallet.save();
+  } catch (err) {
+    console.error("Wallet transaction log failed:", err.message);
+  }
+};
+
+// New signature with metadata for better auditability. Keep old calls working.
+export const logWalletTransactionWithMeta = async (
+  userId,
+  type,
+  amount,
+  reference,
+  status,
+  meta = {}
+) => {
+  try {
+    const wallet = await syncWalletBalance(userId);
+    if (!wallet) return;
+
+    wallet.transactions.push({
+      type,
+      amount,
+      date: new Date(),
+      status,
+      reference,
+      meta: meta && typeof meta === "object" ? meta : {},
     });
 
     wallet.lastUpdated = new Date();

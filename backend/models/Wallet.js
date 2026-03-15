@@ -34,6 +34,8 @@ const walletSchema = new mongoose.Schema({
       amount: Number,
       date: { type: Date, default: Date.now },
       status: { type: String, default: "completed" },
+      reference: { type: String, default: "" },
+      meta: { type: Object, default: {} },
     },
   ],
 });

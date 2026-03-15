@@ -1,6 +1,8 @@
 // backend/routes/planRoutes.js
 import express from "express";
 import { getNetworkPlans, getPlanById } from "../controllers/plansController.js";
+import { syncPlansFromProviderCatalog } from "../controllers/plansAdminController.js";
+import { protect, authorize } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -9,6 +11,14 @@ router.get("/single/:plan_id", getPlanById);
 
 // network filter
 router.get("/network/:network", getNetworkPlans);
+
+// Admin: sync plans from canonical provider catalog and disable all others.
+router.post(
+  "/admin/sync-provider-catalog",
+  protect,
+  authorize("admin"),
+  syncPlansFromProviderCatalog
+);
 
 export default router;
 

@@ -2,8 +2,13 @@ import DataPlan from "../models/DataPlan.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import { zenipointPost, generateReference } from "../utils/zenipoint.js";
-import { logWalletTransaction, syncWalletBalance } from "../utils/wallet.js";
+import {
+  logWalletTransaction,
+  logWalletTransactionWithMeta,
+  syncWalletBalance,
+} from "../utils/wallet.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
+import { logPlatformDataPurchase } from "../utils/platformLedger.js";
 
 const mapZenipointPlanCode = (plan) => {
   const rawCode = String(plan?.zenipoint_code || plan?.plan_id || "").trim();
@@ -18,6 +23,31 @@ const mapZenipointPlanCode = (plan) => {
   };
 
   return airtelCodeMap[rawCode] || rawCode;
+};
+
+const toNumberOrNull = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Best-effort extraction: Zenipoint response formats can vary.
+const extractZenipointAmount = (zenResponse) => {
+  if (!zenResponse || typeof zenResponse !== "object") return null;
+  const candidates = [
+    zenResponse.amount,
+    zenResponse.price,
+    zenResponse?.data?.amount,
+    zenResponse?.data?.price,
+    zenResponse?.transaction?.amount,
+    zenResponse?.transaction?.price,
+    zenResponse?.data?.transaction?.amount,
+    zenResponse?.data?.transaction?.price,
+  ];
+  for (const c of candidates) {
+    const n = toNumberOrNull(c);
+    if (n !== null) return n;
+  }
+  return null;
 };
 
 /**
@@ -75,7 +105,14 @@ export const buyData = async (req, res) => {
 
     // Sync wallet balance and log pending purchase
     await syncWalletBalance(userId);
-    await logWalletTransaction(userId, "purchase", amount, reference, "pending");
+    await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "pending", {
+      action: "data_purchase",
+      plan_id: plan.plan_id,
+      providerPlanCode,
+      network: plan.network,
+      category: plan.category,
+      mobile_no,
+    });
 
     let zenResponse;
     try {
@@ -87,7 +124,15 @@ export const buyData = async (req, res) => {
       user.mainBalance += amount;
       await user.save();
       await syncWalletBalance(userId);
-      await logWalletTransaction(userId, "purchase", amount, reference, "failed");
+      await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
+        action: "data_purchase",
+        plan_id: plan.plan_id,
+        providerPlanCode,
+        network: plan.network,
+        category: plan.category,
+        mobile_no,
+        error: apiErr?.message || apiErr?.response?.data || "Zenipoint request failed",
+      });
 
       return res.status(500).json({
         success: false,
@@ -119,6 +164,7 @@ export const buyData = async (req, res) => {
         success: true,
         msg: "Simulated success (LOCAL_TEST_MODE)",
         reference,
+        providerPlanCode,
         plan,
         newBalance: user.mainBalance,
         tickets: user.tickets,
@@ -128,7 +174,39 @@ export const buyData = async (req, res) => {
 
     // Live success
     if (zenResponse?.status === "success" || zenResponse?.code === 200) {
-      await logWalletTransaction(userId, "purchase", amount, reference, "success");
+      const providerAmount = extractZenipointAmount(zenResponse);
+      const priceMismatch =
+        providerAmount !== null && Number.isFinite(providerAmount) && providerAmount !== amount;
+
+      await logWalletTransactionWithMeta(
+        userId,
+        "purchase",
+        amount,
+        reference,
+        priceMismatch ? "success_price_mismatch" : "success",
+        {
+          action: "data_purchase",
+          plan_id: plan.plan_id,
+          providerPlanCode,
+          network: plan.network,
+          category: plan.category,
+          mobile_no,
+          providerAmount,
+          expectedAmount: amount,
+          priceMismatch,
+        }
+      );
+
+      // Persist platform revenue/cost/profit so BiggiData margin is auditable.
+      await logPlatformDataPurchase({
+        userId,
+        reference,
+        plan,
+        providerPlanCode,
+        revenue: amount,
+        providerAmount,
+        zenipoint: zenResponse,
+      });
 
       // Add ticket reward
       user.tickets = (user.tickets || 0) + 1; // Or plan.ticketReward if variable
@@ -139,6 +217,8 @@ export const buyData = async (req, res) => {
         success: true,
         msg: zenResponse.message || "Data purchased successfully",
         reference,
+        providerPlanCode,
+        providerAmount,
         plan,
         zenipoint: zenResponse,
         newBalance: user.mainBalance,
@@ -150,7 +230,16 @@ export const buyData = async (req, res) => {
     user.mainBalance += amount;
     await user.save();
     await syncWalletBalance(userId);
-    await logWalletTransaction(userId, "purchase", amount, reference, "failed");
+    await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
+      action: "data_purchase",
+      plan_id: plan.plan_id,
+      providerPlanCode,
+      network: plan.network,
+      category: plan.category,
+      mobile_no,
+      zenipointStatus: zenResponse?.status || zenResponse?.code || "rejected",
+      zenipointMessage: zenResponse?.message || "",
+    });
 
     return res.status(400).json({
       success: false,
