@@ -1,4 +1,4 @@
-import PlatformLedger from "../models/PlatformLedger.js";
+﻿import PlatformLedger from "../models/PlatformLedger.js";
 
 const pickProviderSnippet = (zenResponse) => {
   if (!zenResponse || typeof zenResponse !== "object") return {};
@@ -47,4 +47,20 @@ export const logPlatformDataPurchase = async ({
     console.error("Platform ledger log failed:", err?.message || err);
   }
 };
-
+export const logPlatformDepositFee = async ({ userId, reference, revenue }) => {
+  try {
+    const amt = Number(revenue || 0);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    await PlatformLedger.create({
+      type: "deposit_fee",
+      userId,
+      reference: String(reference || ""),
+      revenue: amt,
+      cost: 0,
+      profit: amt,
+      provider: {},
+    });
+  } catch (err) {
+    console.error("Platform deposit fee log failed:", err?.message || err);
+  }
+};

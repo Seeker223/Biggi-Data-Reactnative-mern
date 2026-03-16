@@ -1,4 +1,4 @@
-import axios from "axios";
+﻿import axios from "axios";
 import PlatformLedger from "../models/PlatformLedger.js";
 import ProfitSweep from "../models/ProfitSweep.js";
 import ProfitSweepSettings from "../models/ProfitSweepSettings.js";
@@ -66,7 +66,7 @@ const getSettings = async () => {
 
 const findUnsweptLedger = async () => {
   return PlatformLedger.find({
-    type: "data_purchase",
+    type: { $in: ["data_purchase", "deposit_fee"] },
     profit: { $gt: 0 },
     sweepStatus: "pending",
   })
@@ -80,15 +80,15 @@ const sumProfit = (rows) =>
 export const getProfitSummary = async () => {
   const [pendingAgg, sweptAgg, totalAgg] = await Promise.all([
     PlatformLedger.aggregate([
-      { $match: { type: "data_purchase", profit: { $gt: 0 }, sweepStatus: "pending" } },
+      { $match: { type: { $in: ["data_purchase", "deposit_fee"] }, profit: { $gt: 0 }, sweepStatus: "pending" } },
       { $group: { _id: null, profit: { $sum: "$profit" }, count: { $sum: 1 } } },
     ]),
     PlatformLedger.aggregate([
-      { $match: { type: "data_purchase", profit: { $gt: 0 }, sweepStatus: "swept" } },
+      { $match: { type: { $in: ["data_purchase", "deposit_fee"] }, profit: { $gt: 0 }, sweepStatus: "swept" } },
       { $group: { _id: null, profit: { $sum: "$profit" }, count: { $sum: 1 } } },
     ]),
     PlatformLedger.aggregate([
-      { $match: { type: "data_purchase", profit: { $gt: 0 } } },
+      { $match: { type: { $in: ["data_purchase", "deposit_fee"] }, profit: { $gt: 0 } } },
       { $group: { _id: null, profit: { $sum: "$profit" }, count: { $sum: 1 } } },
     ]),
   ]);
@@ -238,3 +238,4 @@ export const handleProfitSweepWebhook = async ({ id, status, reference, raw }) =
 };
 
 export const getOrCreateProfitSweepSettings = getSettings;
+

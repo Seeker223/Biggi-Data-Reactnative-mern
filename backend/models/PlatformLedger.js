@@ -1,11 +1,11 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 
 // Platform-level ledger to track BiggiData revenue/cost/profit per transaction.
 const PlatformLedgerSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["data_purchase"],
+      enum: ["data_purchase", "deposit_fee"],
       required: true,
     },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -42,3 +42,4 @@ const PlatformLedgerSchema = new mongoose.Schema(
 PlatformLedgerSchema.index({ createdAt: -1 });
 
 export default mongoose.model("PlatformLedger", PlatformLedgerSchema);
+

@@ -1,4 +1,4 @@
-// backend/models/Deposit.js
+﻿// backend/models/Deposit.js
 import mongoose from "mongoose";
 
 const depositSchema = new mongoose.Schema(
@@ -13,6 +13,18 @@ const depositSchema = new mongoose.Schema(
     amount: {
       type: Number,
       required: true,
+      min: 0,
+    },
+
+    serviceCharge: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    totalAmount: {
+      type: Number,
+      default: 0,
       min: 0,
     },
 

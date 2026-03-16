@@ -1,4 +1,4 @@
-// backend/routes/walletRoutes.js
+﻿// backend/routes/walletRoutes.js
 import express from "express";
 import { protect } from "../middleware/auth.js";
 import { paymentLimiter } from "../middleware/rateLimit.js";
@@ -19,12 +19,13 @@ import {
   getWithdrawalHistory,
   getUserBalance,
   getDepositStats,
+  getDepositFeeSettings,
 } from "../controllers/walletController.js";
 
 const router = express.Router();
 
 /* ============================================
-   🏦 WALLET & PAYMENT ROUTES (PROTECTED)
+   ðŸ¦ WALLET & PAYMENT ROUTES (PROTECTED)
 ============================================ */
 
 /* ===============================
@@ -91,6 +92,9 @@ router.get("/deposit-history", protect, getDepositHistory);
 
 // Get deposit statistics
 router.get("/deposit-stats", protect, getDepositStats);
+
+// Get deposit fee settings for UI
+router.get("/deposit-fee-settings", protect, getDepositFeeSettings);
 
 /* ===============================
    BALANCE & WALLET INFO
@@ -177,3 +181,5 @@ router.patch("/withdraw/:id/cancel", protect, async (req, res) => {
 });
 
 export default router;
+
+

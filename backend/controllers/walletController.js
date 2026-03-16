@@ -1,5 +1,4 @@
-﻿// backend/controllers/walletController.js - UPDATED WITH ENHANCED ERROR HANDLING
-import User from "../models/User.js";
+﻿import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
 import Deposit from "../models/Deposit.js";
 import axios from "axios";
@@ -8,7 +7,7 @@ import { logWalletTransaction } from "../utils/wallet.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { handleProfitSweepWebhook } from "../utils/profitSweep.js";
-
+import { getDepositFeeSettings as fetchDepositFeeSettings } from "../utils/depositFee.js";
 /* =====================================================
    GET USER BALANCE
 ===================================================== */
@@ -852,5 +851,16 @@ export const getDepositStats = async (req, res) => {
     });
   }
 };
-
+/* =====================================================
+   GET DEPOSIT FEE SETTINGS (USER)
+===================================================== */
+export const getDepositFeeSettings = async (req, res) => {
+  try {
+    const settings = await fetchDepositFeeSettings();
+    return res.json({ success: true, settings });
+  } catch (error) {
+    console.error("Get deposit fee settings error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch deposit fee settings" });
+  }
+};
 

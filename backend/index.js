@@ -26,6 +26,7 @@ import dataPurchaseRoutes from "./routes/dataPurchaseRoutes.js";
 import gameStatsRoutes from "./routes/gameStatsRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import profitSweepAdminRoutes from "./routes/profitSweepAdminRoutes.js";
+import depositFeeAdminRoutes from "./routes/depositFeeAdminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
@@ -496,6 +497,7 @@ app.use("/api/v1/plans", planRoutes);
 app.use("/api/v1/data", dataPurchaseRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/admin/profit-sweep", profitSweepAdminRoutes);
+app.use("/api/v1/admin/deposit-fee", depositFeeAdminRoutes);
 
 /* ----------------------------------------
    GAME RULES AND INFORMATION ROUTES
@@ -697,7 +699,8 @@ const server = app.listen(PORT, HOST, () => {
    GRACEFUL SHUTDOWN
 ---------------------------------------- */
 const shutdown = async (signal) => {
-  console.log(`\nâš ï¸  Received ${signal}. Starting graceful shutdown...`);
+  console.log(`
+âš ï¸  Received ${signal}. Starting graceful shutdown...`);
   
   try {
     server.close(() => {
@@ -740,4 +743,6 @@ server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 export default app;
+
+
 

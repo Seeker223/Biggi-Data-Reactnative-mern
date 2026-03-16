@@ -1,11 +1,11 @@
-﻿//backend/controllers/flutterwaveController.js
-import axios from "axios";
+﻿import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
+import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
-
+import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
 /* =====================================================
    VERIFY FLUTTERWAVE PAYMENT (SDK â†’ BACKEND)
 ===================================================== */
@@ -18,6 +18,10 @@ export const verifyFlutterwavePayment = async (req, res) => {
     const biometricProof = String(biometricProofFromBody || "").trim();
     const transactionPin = String(txPinFromBody || "").trim();
     const userId = req.user.id;
+    const requestedAmount = Number(req.body?.amount || 0);
+    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Amount is required" });
+    }
 
     if (!tx_ref) {
       return res.status(400).json({ success: false, message: "tx_ref required" });
@@ -48,7 +52,9 @@ export const verifyFlutterwavePayment = async (req, res) => {
         success: true,
         message: "Payment already processed",
         tx_ref: payment.tx_ref,
-        amount: payment.amount,
+        amount: Number(existingDeposit.amount || payment.amount || 0),
+        serviceCharge: Number(existingDeposit.serviceCharge || 0),
+        totalAmount: Number(existingDeposit.totalAmount || payment.amount || 0),
         balance: await getCurrentBalance(userId),
       });
     }
@@ -74,6 +80,19 @@ export const verifyFlutterwavePayment = async (req, res) => {
         });
       }
 
+      const feeSettings = await getDepositFeeSettings();
+      const serviceCharge = computeDepositFee(requestedAmount, feeSettings);
+      const expectedTotal = Number(requestedAmount) + Number(serviceCharge || 0);
+      const paidAmount = Number(payment.amount || 0);
+      if (Math.round(paidAmount) !== Math.round(expectedTotal)) {
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount does not match expected total",
+          expectedTotal,
+          paidAmount,
+        });
+      }
+
       let deposit;
       if (existingDeposit) {
         existingDeposit.status = "successful";
@@ -84,7 +103,9 @@ export const verifyFlutterwavePayment = async (req, res) => {
       } else {
         deposit = await Deposit.create({
           user: userId,
-          amount: payment.amount,
+          amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
           reference: tx_ref,
           status: "successful",
           channel: "flutterwave",
@@ -93,25 +114,31 @@ export const verifyFlutterwavePayment = async (req, res) => {
         });
       }
 
-      user.mainBalance += Number(payment.amount);
-      user.totalDeposits += Number(payment.amount);
+      user.mainBalance += Number(requestedAmount);
+      user.totalDeposits += Number(requestedAmount);
       await user.save();
 
       await logWalletTransaction(
         userId,
         "deposit",
-        payment.amount,
+        requestedAmount,
         tx_ref,
         "success"
       );
 
+      if (serviceCharge > 0) {
+        await logPlatformDepositFee({ userId, reference: tx_ref, revenue: serviceCharge });
+      }
+
       console.log("âœ… Wallet credited via verification API:", tx_ref);
-      
+
       return res.json({
         success: true,
         message: "Payment verified and wallet credited",
         tx_ref: payment.tx_ref,
-        amount: payment.amount,
+        amount: requestedAmount,
+        serviceCharge,
+        totalAmount: paidAmount,
         balance: user.mainBalance,
       });
     } else {
@@ -327,6 +354,8 @@ export const getDepositStatus = async (req, res) => {
         success: true,
         status: deposit.status,
         amount: deposit.amount,
+        serviceCharge: deposit.serviceCharge || 0,
+        totalAmount: deposit.totalAmount || deposit.amount,
         createdAt: deposit.createdAt,
         balance: user?.mainBalance || 0
       });
@@ -351,7 +380,9 @@ export const getDepositStatus = async (req, res) => {
           { reference: tx_ref },
           {
             user: userId,
-            amount: payment.amount,
+            amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
             reference: tx_ref,
             status: "pending",
             channel: "flutterwave",
@@ -364,7 +395,9 @@ export const getDepositStatus = async (req, res) => {
         return res.json({
           success: true,
           status: "pending",
-          amount: payment.amount,
+          amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
           message: "Payment received. Authorization required to credit wallet.",
           balance: 0,
         });
@@ -372,7 +405,9 @@ export const getDepositStatus = async (req, res) => {
         return res.json({ 
           success: true,
           status: payment.status || "pending",
-          amount: payment.amount,
+          amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
           balance: 0
         });
       }
@@ -404,6 +439,10 @@ export const reconcilePayment = async (req, res) => {
     const biometricProof = String(biometricProofFromBody || "").trim();
     const transactionPin = String(txPinFromBody || "").trim();
     const userId = req.user.id;
+    const requestedAmount = Number(req.body?.amount || 0);
+    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Amount is required" });
+    }
 
     if (!tx_ref) {
       return res.status(400).json({ success: false, message: "tx_ref required" });
@@ -415,11 +454,14 @@ export const reconcilePayment = async (req, res) => {
     });
 
     if (existingDeposit && existingDeposit.status === "successful") {
-      const user = await User.findById(userId);
       return res.json({
         success: true,
         message: "Payment already processed",
-        balance: user?.mainBalance || 0,
+        tx_ref: payment.tx_ref,
+        amount: Number(existingDeposit.amount || payment.amount || 0),
+        serviceCharge: Number(existingDeposit.serviceCharge || 0),
+        totalAmount: Number(existingDeposit.totalAmount || payment.amount || 0),
+        balance: await getCurrentBalance(userId),
       });
     }
 
@@ -468,6 +510,19 @@ export const reconcilePayment = async (req, res) => {
       });
     }
 
+    const feeSettings = await getDepositFeeSettings();
+    const serviceCharge = computeDepositFee(requestedAmount, feeSettings);
+    const expectedTotal = Number(requestedAmount) + Number(serviceCharge || 0);
+    const paidAmount = Number(payment.amount || 0);
+    if (Math.round(paidAmount) !== Math.round(expectedTotal)) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount does not match expected total",
+        expectedTotal,
+        paidAmount,
+      });
+    }
+
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -476,7 +531,9 @@ export const reconcilePayment = async (req, res) => {
         { reference: tx_ref },
         {
           user: userId,
-          amount: payment.amount,
+          amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
           reference: tx_ref,
           status: "successful",
           channel: "flutterwave",
@@ -487,8 +544,8 @@ export const reconcilePayment = async (req, res) => {
       );
 
       const previousBalance = user.mainBalance;
-      user.mainBalance += Number(payment.amount);
-      user.totalDeposits += Number(payment.amount);
+      user.mainBalance += Number(requestedAmount);
+      user.totalDeposits += Number(requestedAmount);
       await user.save({ session });
 
       await session.commitTransaction();
@@ -497,17 +554,23 @@ export const reconcilePayment = async (req, res) => {
         await logWalletTransaction(
           userId,
           "deposit",
-          payment.amount,
+          requestedAmount,
           tx_ref,
           "success"
         );
+
+        if (serviceCharge > 0) {
+          await logPlatformDepositFee({ userId, reference: tx_ref, revenue: serviceCharge });
+        }
       } catch (logError) {
         console.error("Wallet log error:", logError);
       }
 
       console.log("âœ… Manual reconciliation successful:", {
         tx_ref,
-        amount: payment.amount,
+        amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
         previousBalance,
         newBalance: user.mainBalance,
       });
@@ -519,6 +582,8 @@ export const reconcilePayment = async (req, res) => {
         deposit: {
           id: deposit._id,
           amount: deposit.amount,
+          serviceCharge: deposit.serviceCharge || 0,
+          totalAmount: deposit.totalAmount || deposit.amount,
           status: deposit.status,
           createdAt: deposit.createdAt,
         },
@@ -547,4 +612,20 @@ export const reconcilePayment = async (req, res) => {
     });
   }
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
