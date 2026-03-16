@@ -384,6 +384,13 @@ export const flutterwaveWithdrawal = async (req, res) => {
       // Map common Flutterwave error codes to user-friendly messages
       let userFriendlyMessage = errorMsg;
       let actionRequired = "Please try again later.";
+
+      // Flutterwave Transfers can be restricted by IP whitelist settings.
+      const lowerMsg = String(errorMsg || "").toLowerCase();
+      if (lowerMsg.includes("whitelist") || lowerMsg.includes("whitelisting")) {
+        userFriendlyMessage = "Withdrawals are temporarily unavailable due to a payment configuration issue.";
+        actionRequired = "Admin: In Flutterwave dashboard, enable IP whitelisting and whitelist this server IP (static outbound IP required).";
+      }
       
       switch(errorCode) {
         case "10401":
@@ -845,4 +852,5 @@ export const getDepositStats = async (req, res) => {
     });
   }
 };
+
 
