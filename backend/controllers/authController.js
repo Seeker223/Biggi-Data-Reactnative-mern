@@ -29,7 +29,7 @@ const ensureReferralCode = async (user) => {
 // =====================================================
 export const register = async (req, res) => {
   try {
-    const { username, email, password, phoneNumber, birthDate, state, referralCode } = req.body;
+    const { username, email, password, phoneNumber, birthDate, state, referralCode, bvn, nin } = req.body;
     const normalizedUsername = username?.trim();
     const normalizedEmail = email?.trim().toLowerCase();
     const normalizedPhone = phoneNumber?.trim();
@@ -73,6 +73,15 @@ export const register = async (req, res) => {
       }
     }
 
+    const normalizedBvn = String(bvn || "").replace(/\D/g, "").trim() || null;
+    const normalizedNin = String(nin || "").replace(/\D/g, "").trim() || null;
+    if (normalizedBvn && !/^\d{11}$/.test(normalizedBvn)) {
+      return res.status(400).json({ success: false, error: "BVN must be 11 digits" });
+    }
+    if (normalizedNin && !/^\d{11}$/.test(normalizedNin)) {
+      return res.status(400).json({ success: false, error: "NIN must be 11 digits" });
+    }
+
     const user = await User.create({ 
       username: normalizedUsername, 
       email: normalizedEmail, 
@@ -80,6 +89,8 @@ export const register = async (req, res) => {
       phoneNumber: normalizedPhone || undefined, 
       birthDate,
       state: normalizedState,
+      bvn: normalizedBvn || undefined,
+      nin: normalizedNin || undefined,
       referralCode: uniqueReferralCode,
       referredByCode: normalizedReferralCode,
       isVerified: true,  // Auto-verify for MVP
@@ -123,6 +134,8 @@ export const register = async (req, res) => {
         state: user.state,
         referralCode: user.referralCode,
         referredByCode: user.referredByCode,
+        bvn: user.bvn || null,
+        nin: user.nin || null,
         userRole: user.userRole || null,
         biometricEnabled: Boolean(user.biometricAuth?.enabled),
         transactionPinEnabled: Boolean(user.transactionPinHash),
@@ -235,6 +248,8 @@ export const login = async (req, res) => {
         state: user.state,
         referralCode: user.referralCode,
         referredByCode: user.referredByCode,
+        bvn: user.bvn || null,
+        nin: user.nin || null,
         mainBalance: user.mainBalance,
         rewardBalance: user.rewardBalance,
         notifications: user.notifications || 0,

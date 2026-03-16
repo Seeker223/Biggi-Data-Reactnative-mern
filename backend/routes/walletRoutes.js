@@ -20,6 +20,7 @@ import {
   getUserBalance,
   getDepositStats,
   getDepositFeeSettings,
+  getFlutterwaveVirtualAccount,
 } from "../controllers/walletController.js";
 
 const router = express.Router();
@@ -95,6 +96,9 @@ router.get("/deposit-stats", protect, getDepositStats);
 
 // Get deposit fee settings for UI
 router.get("/deposit-fee-settings", protect, getDepositFeeSettings);
+
+// Get or create Flutterwave virtual account for deposits
+router.get("/virtual-account", protect, getFlutterwaveVirtualAccount);
 
 /* ===============================
    BALANCE & WALLET INFO

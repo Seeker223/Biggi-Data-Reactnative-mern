@@ -48,6 +48,22 @@ export const updateProfile = async (req, res) => {
     }
     delete updates.email; // (frontend doesnâ€™t update email)
 
+    if (updates.bvn) {
+      const bvn = String(updates.bvn || "").replace(/\D/g, "").trim();
+      if (!/^\d{11}$/.test(bvn)) {
+        return res.status(400).json({ success: false, msg: "BVN must be 11 digits." });
+      }
+      updates.bvn = bvn;
+    }
+
+    if (updates.nin) {
+      const nin = String(updates.nin || "").replace(/\D/g, "").trim();
+      if (!/^\d{11}$/.test(nin)) {
+        return res.status(400).json({ success: false, msg: "NIN must be 11 digits." });
+      }
+      updates.nin = nin;
+    }
+
     const user = await User.findByIdAndUpdate(req.user.id, updates, {
       new: true,
       runValidators: true,

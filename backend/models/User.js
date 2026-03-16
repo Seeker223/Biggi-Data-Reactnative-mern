@@ -1,4 +1,4 @@
-﻿// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
+// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -121,6 +121,20 @@ const UserSchema = new mongoose.Schema(
       match: [/^\+?[0-9]{10,15}$/, "Invalid phone number"],
     },
 
+    bvn: {
+      type: String,
+      default: null,
+      trim: true,
+      match: [/^\d{11}$/, "BVN must be exactly 11 digits"],
+    },
+
+    nin: {
+      type: String,
+      default: null,
+      trim: true,
+      match: [/^\d{11}$/, "NIN must be exactly 11 digits"],
+    },
+
     birthDate: { type: Date, required: true },
 
     state: {
@@ -205,8 +219,16 @@ const UserSchema = new mongoose.Schema(
     verifiedAt: { type: Date, default: null },
 
     photo: { type: String, default: null },
-
-    /* ---------------- WALLET ---------------- */
+    flutterwaveVirtualAccount: {
+      provider: { type: String, default: "flutterwave" },
+      accountNumber: { type: String, default: "" },
+      bankName: { type: String, default: "" },
+      accountName: { type: String, default: "" },
+      reference: { type: String, default: "" },
+      createdAt: { type: Date, default: null },
+      updatedAt: { type: Date, default: null },
+      meta: { type: Object, default: {} },
+    },/* ---------------- WALLET ---------------- */
     mainBalance: { type: Number, default: 0 },
     rewardBalance: { type: Number, default: 0 },
     totalDeposits: { type: Number, default: 0 },
@@ -646,4 +668,5 @@ UserSchema.methods.getResetPasswordToken = function () {
 };
 
 export default mongoose.model("User", UserSchema);
+
 

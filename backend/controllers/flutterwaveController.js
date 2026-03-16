@@ -244,6 +244,13 @@ export const flutterwaveWebhook = async (req, res) => {
     }
 
     const { tx_ref, status, amount, id, currency } = data;
+    const accountNumber =
+      data?.account_number ||
+      data?.meta?.account_number ||
+      data?.meta?.accountNumber ||
+      data?.customer?.account_number ||
+      data?.account?.account_number;
+    const customerEmail = data?.customer?.email;
 
     if (!tx_ref || !amount) {
       console.error("âŒ Missing tx_ref or amount in webhook");
@@ -251,13 +258,32 @@ export const flutterwaveWebhook = async (req, res) => {
     }
 
     // Extract userId from tx_ref format: flw_<USERID>_<timestamp>
-    const parts = tx_ref.split("_");
-    const userId = parts[1];
+    const parts = String(tx_ref || "").split("_");
+    let userId = parts[1];
+
+    // If tx_ref isn't in expected format, attempt to resolve by virtual account number or email.
+    let virtualAccountUser = null;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      userId = null;
+      if (accountNumber) {
+        virtualAccountUser = await User.findOne({
+          "flutterwaveVirtualAccount.accountNumber": String(accountNumber),
+        });
+      }
+      if (!virtualAccountUser && customerEmail) {
+        virtualAccountUser = await User.findOne({ email: String(customerEmail).toLowerCase() });
+      }
+      if (virtualAccountUser) {
+        userId = String(virtualAccountUser._id);
+      }
+    }
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.error("âŒ Invalid user ID in tx_ref:", tx_ref);
+      console.error("âŒ Invalid user ID in tx_ref and no virtual account match:", tx_ref);
       return res.sendStatus(200);
     }
+
+    const isVirtualAccountPayment = Boolean(accountNumber);
 
     // Atomic operation to prevent double crediting
     const session = await mongoose.startSession();
@@ -271,26 +297,81 @@ export const flutterwaveWebhook = async (req, res) => {
         return res.sendStatus(200);
       }
 
+      const paidAmount = Number(amount || 0);
+      if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+        await session.abortTransaction();
+        console.error("âŒ Invalid payment amount for webhook:", amount);
+        return res.sendStatus(200);
+      }
+      const reference = String(tx_ref || data?.flw_ref || id || `va_${userId}_${Date.now()}`);
+
       // Check for existing successful deposit
       const existingDeposit = await Deposit.findOne({
-        reference: tx_ref,
+        reference,
         status: "successful",
       }).session(session);
 
       if (existingDeposit) {
         await session.abortTransaction();
-        console.log("âš ï¸ Deposit already processed:", tx_ref);
+        console.log("âš ï¸ Deposit already processed:", reference);
+        return res.sendStatus(200);
+      }
+
+      if (isVirtualAccountPayment && status === "successful") {
+        const feeSettings = await getDepositFeeSettings();
+        const serviceCharge = computeDepositFee(paidAmount, feeSettings);
+        const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
+
+        await Deposit.findOneAndUpdate(
+          { reference },
+          {
+            user: userId,
+            amount: creditedAmount,
+            serviceCharge,
+            totalAmount: paidAmount,
+            currency: currency || "NGN",
+            reference,
+            status: "successful",
+            channel: "flutterwave_virtual",
+            flutterwaveTransactionId: id,
+            gatewayResponse: data,
+          },
+          { upsert: true, new: true, session }
+        );
+
+        user.mainBalance += Number(creditedAmount);
+        user.totalDeposits += Number(creditedAmount);
+        user.addNotification({
+          type: "Deposit",
+          status: "success",
+          amount: creditedAmount,
+          message: `Bank transfer received. Wallet credited with N${creditedAmount.toLocaleString()}.`,
+        });
+        await user.save({ session });
+
+        await session.commitTransaction();
+
+        try {
+          await logWalletTransaction(userId, "deposit", creditedAmount, reference, "success");
+          if (serviceCharge > 0) {
+            await logPlatformDepositFee({ userId, reference, revenue: serviceCharge });
+          }
+        } catch (logError) {
+          console.error("Wallet log error:", logError);
+        }
+
+        console.log("âœ… Virtual account deposit credited:", reference);
         return res.sendStatus(200);
       }
 
       // Store payment event only; crediting is handled by verify/reconcile endpoint
       await Deposit.findOneAndUpdate(
-        { reference: tx_ref },
+        { reference },
         {
           user: userId,
-          amount,
+          amount: paidAmount,
           currency: currency || "NGN",
-          reference: tx_ref,
+          reference,
           status: status === "successful" ? "pending" : "failed",
           channel: "flutterwave",
           flutterwaveTransactionId: id,
@@ -301,17 +382,17 @@ export const flutterwaveWebhook = async (req, res) => {
 
       if (status === "successful") {
         console.log("â„¹ï¸ Deposit marked pending auth via webhook:", {
-          tx_ref,
-          amount,
+          reference,
+          amount: paidAmount,
           currency,
           userId,
         });
       } else {
-        console.log("âŒ Payment failed via webhook:", { tx_ref, status });
+        console.log("âŒ Payment failed via webhook:", { reference, status });
       }
 
       await session.commitTransaction();
-      console.log("âœ… Webhook transaction committed for:", tx_ref);
+      console.log("âœ… Webhook transaction committed for:", reference);
     } catch (sessionError) {
       await session.abortTransaction();
       console.error("âŒ Webhook transaction failed:", sessionError);
