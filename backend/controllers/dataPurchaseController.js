@@ -1,4 +1,4 @@
-import DataPlan from "../models/DataPlan.js";
+﻿import DataPlan from "../models/DataPlan.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import { zenipointPost, generateReference } from "../utils/zenipoint.js";
@@ -96,7 +96,7 @@ export const buyData = async (req, res) => {
       transactionPin,
     });
     if (!authCheck.ok) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         msg: authCheck.message,
       });
@@ -263,3 +263,4 @@ export const buyData = async (req, res) => {
     });
   }
 };
+

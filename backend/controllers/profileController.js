@@ -1,4 +1,4 @@
-import User from "../models/User.js";
+﻿import User from "../models/User.js";
 import { notifyAdmins } from "../utils/notifyAdmins.js";
 
 // -----------------------------------------------
@@ -46,7 +46,7 @@ export const updateProfile = async (req, res) => {
         updates.userRole = normalizedRole;
       }
     }
-    delete updates.email; // (frontend doesn’t update email)
+    delete updates.email; // (frontend doesnâ€™t update email)
 
     const user = await User.findByIdAndUpdate(req.user.id, updates, {
       new: true,
@@ -72,7 +72,7 @@ export const updateProfile = async (req, res) => {
 };
 
 // -----------------------------------------------
-// UPDATE AVATAR — your frontend uses FormData
+// UPDATE AVATAR â€” your frontend uses FormData
 // -----------------------------------------------
 export const updateAvatar = async (req, res) => {
   try {
@@ -246,7 +246,7 @@ export const setTransactionPin = async (req, res) => {
       }
       const isCurrentPinValid = await user.matchTransactionPin(currentPin);
       if (!isCurrentPinValid) {
-        return res.status(401).json({
+        return res.status(400).json({
           success: false,
           message: "Current PIN is incorrect",
         });
@@ -299,7 +299,7 @@ export const disableTransactionPin = async (req, res) => {
     }
     const isPinValid = await user.matchTransactionPin(currentPin);
     if (!isPinValid) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         message: "Current PIN is incorrect",
       });
@@ -354,7 +354,7 @@ export const verifyTransactionPin = async (req, res) => {
 
     const isValid = await user.matchTransactionPin(pin);
     if (!isValid) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         message: "Invalid transaction PIN",
       });
@@ -371,3 +371,4 @@ export const verifyTransactionPin = async (req, res) => {
     });
   }
 };
+

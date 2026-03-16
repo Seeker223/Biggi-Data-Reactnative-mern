@@ -1,4 +1,4 @@
-//backend/controllers/flutterwaveController.js
+﻿//backend/controllers/flutterwaveController.js
 import axios from "axios";
 import mongoose from "mongoose";
 import User from "../models/User.js";
@@ -7,7 +7,7 @@ import { logWalletTransaction } from "../utils/wallet.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 
 /* =====================================================
-   VERIFY FLUTTERWAVE PAYMENT (SDK → BACKEND)
+   VERIFY FLUTTERWAVE PAYMENT (SDK â†’ BACKEND)
 ===================================================== */
 export const verifyFlutterwavePayment = async (req, res) => {
   let tx_ref; // Declare here for catch block access
@@ -68,7 +68,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
         transactionPin,
       });
       if (!authCheck.ok) {
-        return res.status(401).json({
+        return res.status(400).json({
           success: false,
           message: authCheck.message,
         });
@@ -105,7 +105,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
         "success"
       );
 
-      console.log("✅ Wallet credited via verification API:", tx_ref);
+      console.log("âœ… Wallet credited via verification API:", tx_ref);
       
       return res.json({
         success: true,
@@ -179,10 +179,10 @@ export const flutterwaveWebhook = async (req, res) => {
     const signature = req.headers["verif-hash"];
     
     // DEBUG LOGGING - Keep for troubleshooting
-    console.log("📥 Webhook headers received:", JSON.stringify(req.headers, null, 2));
+    console.log("ðŸ“¥ Webhook headers received:", JSON.stringify(req.headers, null, 2));
     
     if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
-      console.error("❌ Invalid webhook signature");
+      console.error("âŒ Invalid webhook signature");
       console.error("Expected:", process.env.FLUTTERWAVE_WEBHOOK_SECRET);
       console.error("Received:", signature);
       return res.sendStatus(401);
@@ -193,17 +193,17 @@ export const flutterwaveWebhook = async (req, res) => {
     try {
       // req.body is a Buffer because of express.raw()
       const rawBodyString = req.body.toString('utf8');
-      console.log("📥 Raw webhook body:", rawBodyString);
+      console.log("ðŸ“¥ Raw webhook body:", rawBodyString);
       payload = JSON.parse(rawBodyString);
     } catch (parseError) {
-      console.error("❌ Failed to parse webhook body:", parseError.message);
+      console.error("âŒ Failed to parse webhook body:", parseError.message);
       console.error("Raw body type:", typeof req.body);
       return res.sendStatus(400);
     }
 
     const { event, data } = payload;
     
-    console.log("✅ Webhook parsed successfully:", { 
+    console.log("âœ… Webhook parsed successfully:", { 
       event, 
       tx_ref: data?.tx_ref,
       status: data?.status,
@@ -212,14 +212,14 @@ export const flutterwaveWebhook = async (req, res) => {
 
     // Ignore irrelevant events
     if (event !== "charge.completed") {
-      console.log(`ℹ️ Ignoring event: ${event}`);
+      console.log(`â„¹ï¸ Ignoring event: ${event}`);
       return res.sendStatus(200);
     }
 
     const { tx_ref, status, amount, id, currency } = data;
 
     if (!tx_ref || !amount) {
-      console.error("❌ Missing tx_ref or amount in webhook");
+      console.error("âŒ Missing tx_ref or amount in webhook");
       return res.sendStatus(200);
     }
 
@@ -228,7 +228,7 @@ export const flutterwaveWebhook = async (req, res) => {
     const userId = parts[1];
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.error("❌ Invalid user ID in tx_ref:", tx_ref);
+      console.error("âŒ Invalid user ID in tx_ref:", tx_ref);
       return res.sendStatus(200);
     }
 
@@ -240,7 +240,7 @@ export const flutterwaveWebhook = async (req, res) => {
       const user = await User.findById(userId).session(session);
       if (!user) {
         await session.abortTransaction();
-        console.error("❌ User not found for ID:", userId);
+        console.error("âŒ User not found for ID:", userId);
         return res.sendStatus(200);
       }
 
@@ -252,7 +252,7 @@ export const flutterwaveWebhook = async (req, res) => {
 
       if (existingDeposit) {
         await session.abortTransaction();
-        console.log("⚠️ Deposit already processed:", tx_ref);
+        console.log("âš ï¸ Deposit already processed:", tx_ref);
         return res.sendStatus(200);
       }
 
@@ -273,28 +273,28 @@ export const flutterwaveWebhook = async (req, res) => {
       );
 
       if (status === "successful") {
-        console.log("ℹ️ Deposit marked pending auth via webhook:", {
+        console.log("â„¹ï¸ Deposit marked pending auth via webhook:", {
           tx_ref,
           amount,
           currency,
           userId,
         });
       } else {
-        console.log("❌ Payment failed via webhook:", { tx_ref, status });
+        console.log("âŒ Payment failed via webhook:", { tx_ref, status });
       }
 
       await session.commitTransaction();
-      console.log("✅ Webhook transaction committed for:", tx_ref);
+      console.log("âœ… Webhook transaction committed for:", tx_ref);
     } catch (sessionError) {
       await session.abortTransaction();
-      console.error("❌ Webhook transaction failed:", sessionError);
+      console.error("âŒ Webhook transaction failed:", sessionError);
     } finally {
       session.endSession();
     }
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("🔥 Webhook processing error:", err);
+    console.error("ðŸ”¥ Webhook processing error:", err);
     // Always return 200 to prevent Flutterwave from retrying
     return res.sendStatus(200);
   }
@@ -462,7 +462,7 @@ export const reconcilePayment = async (req, res) => {
       transactionPin,
     });
     if (!authCheck.ok) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
         message: authCheck.message,
       });
@@ -505,7 +505,7 @@ export const reconcilePayment = async (req, res) => {
         console.error("Wallet log error:", logError);
       }
 
-      console.log("✅ Manual reconciliation successful:", {
+      console.log("âœ… Manual reconciliation successful:", {
         tx_ref,
         amount: payment.amount,
         previousBalance,
@@ -547,3 +547,4 @@ export const reconcilePayment = async (req, res) => {
     });
   }
 };
+
