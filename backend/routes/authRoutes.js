@@ -3,6 +3,8 @@ import express from "express";
 import {
   register,
   login,
+  verifyEmailOtp,
+  resendEmailOtp,
   getMe,
   refreshTokenController,
   forgotPassword,
@@ -27,6 +29,8 @@ const router = express.Router();
 /* ===================== PUBLIC ROUTES ===================== */
 router.post("/register", register);
 router.post("/login", login);
+router.post("/verify-email", verifyEmailOtp);
+router.post("/resend-verification", resendEmailOtp);
 router.post("/biometric/login/options", beginBiometricLogin);
 router.post("/biometric/login/status", getBiometricLoginAvailability);
 router.post("/biometric/login/verify", verifyBiometricLogin);

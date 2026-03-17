@@ -213,10 +213,13 @@ const UserSchema = new mongoose.Schema(
 
     isVerified: { 
       type: Boolean, 
-      default: true  // Changed from false to true for MVP
+      default: false
     },
 
     verifiedAt: { type: Date, default: null },
+
+    emailOtpHash: { type: String, default: null },
+    emailOtpExpires: { type: Date, default: null },
 
     photo: { type: String, default: null },
     flutterwaveVirtualAccount: {

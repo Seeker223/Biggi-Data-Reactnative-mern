@@ -1,6 +1,8 @@
 // backend/controllers/authController.js - COMPLETE SIMPLIFIED MVP VERSION
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import User from "../models/User.js";
+import sendEmail from "../utils/sendEmail.js";
 import { notifyAdmins } from "../utils/notifyAdmins.js";
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -24,6 +26,43 @@ const ensureReferralCode = async (user) => {
   return user;
 };
 
+const parseBirthDate = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year2 = Number(match[3]);
+  const year = year2 >= 50 ? 1900 + year2 : 2000 + year2;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(date.getTime())) return null;
+  if (date.getUTCDate() !== day || date.getUTCMonth() !== month - 1) return null;
+  return date;
+};
+
+const generateEmailOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+
+const hashOtp = (otp) =>
+  crypto.createHash("sha256").update(String(otp)).digest("hex");
+
+const sendVerificationEmail = async ({ email, username, otp }) => {
+  const message = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;">
+      <h2 style="margin:0 0 12px;">Verify your Biggi Data account</h2>
+      <p>Hello ${username || "there"},</p>
+      <p>Your verification code is:</p>
+      <div style="font-size:28px;font-weight:800;letter-spacing:4px;margin:12px 0;">${otp}</div>
+      <p>This code expires in 10 minutes.</p>
+    </div>
+  `;
+  await sendEmail({
+    email,
+    subject: "Your Biggi Data verification code",
+    message,
+  });
+};
+
 // =====================================================
 // REGISTER (NO OTP, NO EMAIL VERIFICATION)
 // =====================================================
@@ -34,12 +73,13 @@ export const register = async (req, res) => {
     const normalizedEmail = email?.trim().toLowerCase();
     const normalizedPhone = phoneNumber?.trim();
     const normalizedState = state?.trim();
+    const parsedBirthDate = parseBirthDate(birthDate);
 
     // Validate required fields
-    if (!normalizedUsername || !normalizedEmail || !password || !normalizedState) {
+    if (!normalizedUsername || !normalizedEmail || !password || !normalizedState || !parsedBirthDate || !normalizedPhone) {
       return res.status(400).json({ 
         success: false, 
-        error: "Username, email, password, and state are required" 
+        error: "Username, email, password, phone number, state, and valid birth date are required" 
       });
     }
 
@@ -87,29 +127,36 @@ export const register = async (req, res) => {
       email: normalizedEmail, 
       password, 
       phoneNumber: normalizedPhone || undefined, 
-      birthDate,
+      birthDate: parsedBirthDate,
       state: normalizedState,
       bvn: normalizedBvn || undefined,
       nin: normalizedNin || undefined,
       referralCode: uniqueReferralCode,
       referredByCode: normalizedReferralCode,
-      isVerified: true,  // Auto-verify for MVP
-      verifiedAt: new Date()  // Set verification timestamp
+      isVerified: false,
+      verifiedAt: null
     });
+
+    const otp = generateEmailOtp();
+    user.emailOtpHash = hashOtp(otp);
+    user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save({ validateBeforeSave: false });
+
+    try {
+      await sendVerificationEmail({
+        email: user.email,
+        username: user.username,
+        otp,
+      });
+    } catch (emailError) {
+      console.error("Failed to send verification email:", emailError);
+    }
 
     user.addNotification({
       type: "Welcome",
       status: "success",
       message: `Welcome to Biggi Data, ${user.username}!`,
     });
-
-    // Generate tokens immediately
-    const accessToken = user.getSignedJwtToken();
-    const refreshToken = user.getRefreshToken();
-    
-    // Save refresh token
-    user.refreshToken = refreshToken;
-    await user.save({ validateBeforeSave: false });
 
     await notifyAdmins({
       type: "User Signup",
@@ -119,27 +166,9 @@ export const register = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Registration successful!",
-      token: accessToken,
-      refreshToken,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        photo: user.photo || null,
-        phoneNumber: user.phoneNumber,
-        age: user.age,
-        isVerified: true,
-        notifications: user.notifications || 0,
-        state: user.state,
-        referralCode: user.referralCode,
-        referredByCode: user.referredByCode,
-        bvn: user.bvn || null,
-        nin: user.nin || null,
-        userRole: user.userRole || null,
-        biometricEnabled: Boolean(user.biometricAuth?.enabled),
-        transactionPinEnabled: Boolean(user.transactionPinHash),
-      }
+      message: "Registration successful! Please verify your email.",
+      requiresVerification: true,
+      email: user.email
     });
 
   } catch (error) {
@@ -197,6 +226,15 @@ export const login = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "Invalid credentials"
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        error: "Please verify your email to continue",
+        requiresVerification: true,
+        email: user.email,
       });
     }
 
@@ -263,6 +301,123 @@ export const login = async (req, res) => {
       success: false,
       error: "Server Error"
     });
+  }
+};
+
+// =====================================================
+// VERIFY EMAIL OTP
+// =====================================================
+export const verifyEmailOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const code = String(otp || "").trim();
+
+    if (!normalizedEmail || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        error: "Email and 6-digit OTP are required",
+      });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "+emailOtpHash +emailOtpExpires +refreshToken"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+    if (user.isVerified) {
+      return res.status(200).json({ success: true, message: "Email already verified" });
+    }
+
+    if (!user.emailOtpHash || !user.emailOtpExpires || user.emailOtpExpires.getTime() < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        error: "OTP expired. Please request a new code.",
+      });
+    }
+
+    const isMatch = user.emailOtpHash === hashOtp(code);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, error: "Invalid OTP code" });
+    }
+
+    user.isVerified = true;
+    user.verifiedAt = new Date();
+    user.emailOtpHash = null;
+    user.emailOtpExpires = null;
+
+    const accessToken = user.getSignedJwtToken();
+    const refreshToken = user.getRefreshToken();
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return res.status(200).json({
+      success: true,
+      message: "Email verified successfully",
+      token: accessToken,
+      refreshToken,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        photo: user.photo || null,
+        phoneNumber: user.phoneNumber,
+        age: user.age,
+        isVerified: user.isVerified,
+        notifications: user.notifications || 0,
+        state: user.state,
+        referralCode: user.referralCode,
+        referredByCode: user.referredByCode,
+        userRole: user.userRole || null,
+        biometricEnabled: Boolean(user.biometricAuth?.enabled),
+        transactionPinEnabled: Boolean(user.transactionPinHash),
+      },
+    });
+  } catch (error) {
+    console.error("Verify email OTP error:", error);
+    return res.status(500).json({ success: false, error: "Server Error" });
+  }
+};
+
+// =====================================================
+// RESEND EMAIL OTP
+// =====================================================
+export const resendEmailOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      return res.status(400).json({ success: false, error: "Email is required" });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(200).json({ success: true, message: "Email already verified" });
+    }
+
+    const otp = generateEmailOtp();
+    user.emailOtpHash = hashOtp(otp);
+    user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save({ validateBeforeSave: false });
+
+    await sendVerificationEmail({
+      email: user.email,
+      username: user.username,
+      otp,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Verification code sent",
+    });
+  } catch (error) {
+    console.error("Resend email OTP error:", error);
+    return res.status(500).json({ success: false, error: "Server Error" });
   }
 };
 

@@ -19,3 +19,12 @@
 [2025-12-18T17:54:27.076Z] ✅ Email sent to baduntobi2024@gmail.com | Subject: Verify Your Account - Biggi Data | Message ID: <294efb23-ba31-3b94-a9c5-3fb1d8ae2c13@gmail.com>
 [2025-12-22T14:04:40.391Z] ❌ Email error for baduntobi2024@gmail.com: Connection timeout
 [2025-12-22T14:18:13.572Z] ✅ Email sent to baduntobi2024@gmail.com | Subject: New Verification Code - Biggi Data | Message ID: <d54334df-e432-e6a4-7f8c-4d877cff801b@gmail.com>
+[2026-03-17T18:44:23.041Z] RESEND_ERROR: ❌ Resend email error for baduntobi2024@gmail.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-03-17T18:44:23.067Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-03-17T18:45:59.604Z] RESEND_ERROR: ❌ Resend email error for baduntobi2024@gmail.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-03-17T18:45:59.605Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-03-17T18:46:04.834Z] RESEND_ERROR: ❌ Resend email error for baduntobi2024@gmail.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-03-17T18:46:04.836Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
