@@ -63,6 +63,10 @@ const sendVerificationEmail = async ({ email, username, otp }) => {
   });
 };
 
+const OTP_TTL_MS = 10 * 60 * 1000;
+const isVerificationDisabled = () =>
+  ["1", "true", "yes"].includes(String(process.env.DISABLE_EMAIL_VERIFICATION || "").toLowerCase());
+
 // =====================================================
 // REGISTER (NO OTP, NO EMAIL VERIFICATION)
 // =====================================================
@@ -133,23 +137,25 @@ export const register = async (req, res) => {
       nin: normalizedNin || undefined,
       referralCode: uniqueReferralCode,
       referredByCode: normalizedReferralCode,
-      isVerified: false,
-      verifiedAt: null
+      isVerified: isVerificationDisabled(),
+      verifiedAt: isVerificationDisabled() ? new Date() : null
     });
 
-    const otp = generateEmailOtp();
-    user.emailOtpHash = hashOtp(otp);
-    user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
-    await user.save({ validateBeforeSave: false });
+    if (!isVerificationDisabled()) {
+      const otp = generateEmailOtp();
+      user.emailOtpHash = hashOtp(otp);
+      user.emailOtpExpires = new Date(Date.now() + OTP_TTL_MS);
+      await user.save({ validateBeforeSave: false });
 
-    try {
-      await sendVerificationEmail({
-        email: user.email,
-        username: user.username,
-        otp,
-      });
-    } catch (emailError) {
-      console.error("Failed to send verification email:", emailError);
+      try {
+        await sendVerificationEmail({
+          email: user.email,
+          username: user.username,
+          otp,
+        });
+      } catch (emailError) {
+        console.error("Failed to send verification email:", emailError);
+      }
     }
 
     user.addNotification({
@@ -164,11 +170,44 @@ export const register = async (req, res) => {
       message: `New signup: ${user.username} (${user.email}) joined Biggi Data.`,
     });
 
+    if (isVerificationDisabled()) {
+      const accessToken = user.getSignedJwtToken();
+      const refreshToken = user.getRefreshToken();
+      user.refreshToken = refreshToken;
+      await user.save({ validateBeforeSave: false });
+
+      return res.status(201).json({
+        success: true,
+        message: "Registration successful!",
+        token: accessToken,
+        refreshToken,
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          photo: user.photo || null,
+          phoneNumber: user.phoneNumber,
+          age: user.age,
+          isVerified: user.isVerified,
+          notifications: user.notifications || 0,
+          state: user.state,
+          referralCode: user.referralCode,
+          referredByCode: user.referredByCode,
+          bvn: user.bvn || null,
+          nin: user.nin || null,
+          userRole: user.userRole || null,
+          biometricEnabled: Boolean(user.biometricAuth?.enabled),
+          transactionPinEnabled: Boolean(user.transactionPinHash),
+        }
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: "Registration successful! Please verify your email.",
       requiresVerification: true,
-      email: user.email
+      email: user.email,
+      expiresInSeconds: Math.floor(OTP_TTL_MS / 1000),
     });
 
   } catch (error) {
@@ -229,7 +268,7 @@ export const login = async (req, res) => {
       });
     }
 
-    if (!user.isVerified) {
+    if (!isVerificationDisabled() && !user.isVerified) {
       return res.status(403).json({
         success: false,
         error: "Please verify your email to continue",
@@ -309,6 +348,12 @@ export const login = async (req, res) => {
 // =====================================================
 export const verifyEmailOtp = async (req, res) => {
   try {
+    if (isVerificationDisabled()) {
+      return res.status(403).json({
+        success: false,
+        error: "Email verification is disabled",
+      });
+    }
     const { email, otp } = req.body;
     const normalizedEmail = String(email || "").trim().toLowerCase();
     const code = String(otp || "").trim();
@@ -385,6 +430,12 @@ export const verifyEmailOtp = async (req, res) => {
 // =====================================================
 export const resendEmailOtp = async (req, res) => {
   try {
+    if (isVerificationDisabled()) {
+      return res.status(403).json({
+        success: false,
+        error: "Email verification is disabled",
+      });
+    }
     const { email } = req.body;
     const normalizedEmail = String(email || "").trim().toLowerCase();
     if (!normalizedEmail) {
@@ -402,7 +453,7 @@ export const resendEmailOtp = async (req, res) => {
 
     const otp = generateEmailOtp();
     user.emailOtpHash = hashOtp(otp);
-    user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    user.emailOtpExpires = new Date(Date.now() + OTP_TTL_MS);
     await user.save({ validateBeforeSave: false });
 
     await sendVerificationEmail({
@@ -414,6 +465,7 @@ export const resendEmailOtp = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Verification code sent",
+      expiresInSeconds: Math.floor(OTP_TTL_MS / 1000),
     });
   } catch (error) {
     console.error("Resend email OTP error:", error);
