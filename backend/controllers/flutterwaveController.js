@@ -69,7 +69,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       const authCheck = await verifyTransactionAuthorization({
         user,
         expectedAction: "deposit",
-        expectedAmount: Number(payment.amount || 0),
+        expectedAmount: requestedAmount,
         biometricProof,
         transactionPin,
       });
@@ -81,14 +81,15 @@ export const verifyFlutterwavePayment = async (req, res) => {
       }
 
       const feeSettings = await getDepositFeeSettings();
-      const serviceCharge = computeDepositFee(requestedAmount, feeSettings);
-      const expectedTotal = Number(requestedAmount) + Number(serviceCharge || 0);
       const paidAmount = Number(payment.amount || 0);
-      if (Math.round(paidAmount) !== Math.round(expectedTotal)) {
+      const serviceCharge = computeDepositFee(paidAmount, feeSettings);
+      const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
+      if (Math.round(creditedAmount) !== Math.round(requestedAmount)) {
         return res.status(400).json({
           success: false,
-          message: "Payment amount does not match expected total",
-          expectedTotal,
+          message: "Payment amount does not match expected credit",
+          expectedCredit: requestedAmount,
+          computedCredit: creditedAmount,
           paidAmount,
         });
       }
@@ -103,7 +104,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       } else {
         deposit = await Deposit.create({
           user: userId,
-          amount: requestedAmount,
+          amount: creditedAmount,
           serviceCharge,
           totalAmount: paidAmount,
           reference: tx_ref,
@@ -114,14 +115,14 @@ export const verifyFlutterwavePayment = async (req, res) => {
         });
       }
 
-      user.mainBalance += Number(requestedAmount);
-      user.totalDeposits += Number(requestedAmount);
+      user.mainBalance += Number(creditedAmount);
+      user.totalDeposits += Number(creditedAmount);
       await user.save();
 
       await logWalletTransaction(
         userId,
         "deposit",
-        requestedAmount,
+        creditedAmount,
         tx_ref,
         "success"
       );
@@ -136,7 +137,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
         success: true,
         message: "Payment verified and wallet credited",
         tx_ref: payment.tx_ref,
-        amount: requestedAmount,
+        amount: creditedAmount,
         serviceCharge,
         totalAmount: paidAmount,
         balance: user.mainBalance,
