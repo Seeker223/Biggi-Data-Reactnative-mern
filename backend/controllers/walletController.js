@@ -8,6 +8,7 @@ import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { handleProfitSweepWebhook } from "../utils/profitSweep.js";
 import { getDepositFeeSettings as fetchDepositFeeSettings } from "../utils/depositFee.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 /* =====================================================
    GET USER BALANCE
 ===================================================== */
@@ -123,6 +124,16 @@ export const redeemRewards = async (req, res) => {
       `redeem_${userId}_${Date.now()}`,
       "success"
     );
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Redeem Successful",
+      title: "Rewards Redeemed",
+      bodyLines: [
+        `You redeemed N${Number(amountToRedeem).toLocaleString()} to your main balance.`,
+        `New main balance: N${Number(user.mainBalance || 0).toLocaleString()}.`,
+      ],
+    });
 
     return res.status(200).json({
       success: true,
@@ -344,6 +355,18 @@ export const flutterwaveWithdrawal = async (req, res) => {
     await session.commitTransaction();
     console.log(`✅ Withdrawal transaction committed for user ${userId}, amount: ₦${numericAmount}`);
 
+    await sendUserEmail({
+      email: user.email,
+      subject: "Withdrawal Submitted",
+      title: "Withdrawal Request Received",
+      bodyLines: [
+        `Amount: N${Number(numericAmount).toLocaleString()}`,
+        `Account: ${account_number} (${account_bank})`,
+        `Reference: ${tx_ref}`,
+        "We are processing your withdrawal.",
+      ],
+    });
+
     res.status(200).json({
       success: true,
       message: "Withdrawal initiated via Flutterwave",
@@ -498,8 +521,8 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
         ]
       });
 
-      if (withdrawal) {
-        console.log(`📝 Updating withdrawal ${withdrawal._id} to status: ${status}`);
+        if (withdrawal) {
+          console.log(`📝 Updating withdrawal ${withdrawal._id} to status: ${status}`);
         
         // Update withdrawal status
         const oldStatus = withdrawal.status;
@@ -513,6 +536,16 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
             user.mainBalance += withdrawal.amount;
             await user.save();
             console.log(`💰 Refunded ₦${withdrawal.amount} to user ${withdrawal.user}`);
+            await sendUserEmail({
+              email: user.email,
+              subject: "Withdrawal Failed",
+              title: "Withdrawal Failed",
+              bodyLines: [
+                `Your withdrawal of N${Number(withdrawal.amount).toLocaleString()} failed.`,
+                "Your balance has been refunded.",
+                `Reference: ${withdrawal.reference}`,
+              ],
+            });
           }
         }
 
@@ -526,6 +559,21 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
         );
 
         console.log(`✅ Withdrawal ${withdrawal._id} updated from ${oldStatus} to ${withdrawal.status}`);
+
+        if (status === "SUCCESSFUL") {
+          const user = await User.findById(withdrawal.user).select("email username");
+          if (user) {
+            await sendUserEmail({
+              email: user.email,
+              subject: "Withdrawal Successful",
+              title: "Withdrawal Completed",
+              bodyLines: [
+                `Your withdrawal of N${Number(withdrawal.amount).toLocaleString()} was successful.`,
+                `Reference: ${withdrawal.reference}`,
+              ],
+            });
+          }
+        }
       } else {
         console.warn(`⚠️ Withdrawal not found for webhook:`, { id, reference });
       }
@@ -740,6 +788,18 @@ export const withdrawFunds = async (req, res) => {
       reference,
       "pending"
     );
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Withdrawal Submitted",
+      title: "Withdrawal Request Received",
+      bodyLines: [
+        `Amount: N${Number(numericAmount).toLocaleString()}`,
+        `Account: ${accountNumber} (${bank || method})`,
+        `Reference: ${reference}`,
+        "We are processing your withdrawal.",
+      ],
+    });
 
     res.status(200).json({
       success: true,

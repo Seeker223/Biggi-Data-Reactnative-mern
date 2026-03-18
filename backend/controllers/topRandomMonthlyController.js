@@ -1,5 +1,6 @@
 ﻿import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const TOP_RANDOM_MAX_WINNERS = 10;
 const TOP_RANDOM_PRIZE = 10000;
@@ -131,6 +132,16 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
     });
 
     await user.save();
+    await sendUserEmail({
+      email: user.email,
+      subject: "Top Random Monthly Picks",
+      title: "You Were Selected",
+      bodyLines: [
+        `You were selected for Top Random Monthly Picks (${month}).`,
+        `Reward: N${TOP_RANDOM_PRIZE.toLocaleString()}.`,
+        "You can claim your reward now.",
+      ],
+    });
     await awardReferralReward({
       winner: user,
       prizeAmount: TOP_RANDOM_PRIZE,
@@ -317,6 +328,16 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
     });
 
     await user.save();
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Reward Claimed",
+      title: "Top Random Reward Claimed",
+      bodyLines: [
+        `You claimed N${Number(amount).toLocaleString()} for ${month}.`,
+        "Your reward balance has been updated.",
+      ],
+    });
 
     return res.json({
       success: true,

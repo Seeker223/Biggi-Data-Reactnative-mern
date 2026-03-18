@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import MonthlyRaffleEntry from "../models/MonthlyRaffleEntry.js";
 import MonthlyRaffleDraw from "../models/MonthlyRaffleDraw.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const MONTHLY_WIN_PRIZE = 10000;
 
@@ -125,6 +126,35 @@ export const runMonthlyRaffleDrawIfDue = async (rawMonth, options = {}) => {
         message: `Monthly draw result for ${month}: your ticket ${entry.code} won. You can claim your reward now.`,
       });
       await winner.save({ session });
+    }
+
+    try {
+      const allEntries = await MonthlyRaffleEntry.find({ month }).select("user code").lean();
+      const winnerId = String(entry.user);
+      const uniqueUsers = new Map();
+      for (const e of allEntries) {
+        const uid = String(e.user);
+        if (!uniqueUsers.has(uid)) uniqueUsers.set(uid, e.code);
+      }
+
+      for (const [uid, code] of uniqueUsers.entries()) {
+        const user = await User.findById(uid).select("email username");
+        if (!user) continue;
+        const isWinner = uid === winnerId;
+        await sendUserEmail({
+          email: user.email,
+          subject: "Monthly Draw Result",
+          title: "Monthly Draw Result",
+          bodyLines: [
+            isWinner
+              ? `Congratulations! Your ticket ${code} won the monthly draw.`
+              : `Monthly draw completed for ${month}. Your ticket ${code} was not selected this time.`,
+            "You can view details in your Biggi Data account.",
+          ],
+        });
+      }
+    } catch (mailErr) {
+      console.error("Monthly draw email error:", mailErr?.message || mailErr);
     }
 
     return {
@@ -308,13 +338,23 @@ export const playMonthlyRaffleTicket = async (req, res) => {
       ticket.played = true;
       ticket.playedAt = playedAt;
 
-      user.addNotification({
-        type: "Monthly Draw",
-        status: "info",
-        message: `Ticket ${ticket.code} entered for Monthly Draw (${month}). Status: Pending until month end.`,
-      });
+    user.addNotification({
+      type: "Monthly Draw",
+      status: "info",
+      message: `Ticket ${ticket.code} entered for Monthly Draw (${month}). Status: Pending until month end.`,
+    });
 
-      await user.save();
+    await user.save();
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Monthly Draw Entry Submitted",
+      title: "Monthly Draw Entry Submitted",
+      bodyLines: [
+        `Your ticket ${ticket.code} has been entered for the monthly draw (${month}).`,
+        "Status: Pending until month end.",
+      ],
+    });
 
       return res.json({
         success: true,
@@ -492,6 +532,16 @@ export const claimMonthlyReward = async (req, res) => {
       winner: user,
       prizeAmount: MONTHLY_WIN_PRIZE,
       gameLabel: "Monthly Draw",
+    });
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Monthly Draw Reward Claimed",
+      title: "Reward Claimed",
+      bodyLines: [
+        `You claimed N${MONTHLY_WIN_PRIZE.toLocaleString()} for the monthly draw (${month}).`,
+        "Your reward balance has been updated.",
+      ],
     });
 
     return res.json({

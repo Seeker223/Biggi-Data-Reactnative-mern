@@ -7,6 +7,7 @@ import { logWalletTransaction } from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const extractAccountNumber = (data = {}) =>
   data?.account_number ||
@@ -144,6 +145,16 @@ export const verifyFlutterwavePayment = async (req, res) => {
       }
 
       console.log("âœ… Wallet credited via verification API:", tx_ref);
+      await sendUserEmail({
+        email: user.email,
+        subject: "Deposit Confirmed",
+        title: "Deposit Successful",
+        bodyLines: [
+          `We received your deposit of N${Number(creditedAmount).toLocaleString()}.`,
+          `Service charge: N${Number(serviceCharge || 0).toLocaleString()}.`,
+          `Total paid: N${Number(paidAmount).toLocaleString()}.`,
+        ],
+      });
 
       return res.json({
         success: true,
@@ -388,6 +399,16 @@ export const flutterwaveWebhook = async (req, res) => {
         }
 
         console.log("âœ… Virtual account deposit credited:", reference);
+        await sendUserEmail({
+          email: user.email,
+          subject: "Deposit Confirmed",
+          title: "Deposit Successful",
+          bodyLines: [
+            `We received your bank transfer of N${Number(creditedAmount).toLocaleString()}.`,
+            `Service charge: N${Number(serviceCharge || 0).toLocaleString()}.`,
+            `Total paid: N${Number(paidAmount).toLocaleString()}.`,
+          ],
+        });
         return res.sendStatus(200);
       }
 

@@ -9,6 +9,12 @@ const UnmatchedDepositSchema = new mongoose.Schema(
     customerEmail: { type: String, default: "" },
     status: { type: String, default: "unmatched" },
     provider: { type: String, default: "flutterwave" },
+    assignedUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    assignedAt: { type: Date, default: null },
+    creditedAmount: { type: Number, default: 0 },
+    serviceCharge: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
+    note: { type: String, default: "" },
     payload: { type: Object, default: {} },
   },
   { timestamps: true }

@@ -4,6 +4,7 @@ import crypto from "crypto";
 import User from "../models/User.js";
 import sendEmail from "../utils/sendEmail.js";
 import { notifyAdmins } from "../utils/notifyAdmins.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const generateReferralCode = () =>
@@ -162,6 +163,16 @@ export const register = async (req, res) => {
       type: "Welcome",
       status: "success",
       message: `Welcome to Biggi Data, ${user.username}!`,
+    });
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Welcome to Biggi Data",
+      title: "Welcome to Biggi Data",
+      bodyLines: [
+        `Hi ${user.username || "there"}, your account has been created successfully.`,
+        "You can now enjoy data purchases, games, and rewards inside Biggi Data.",
+      ],
     });
 
     await notifyAdmins({

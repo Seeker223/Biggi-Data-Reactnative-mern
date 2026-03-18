@@ -1,6 +1,7 @@
 ﻿import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import WeeklyLetterDrawResult from "../models/WeeklyLetterDrawResult.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const getMonthEnd = (date) => {
   const ref = date instanceof Date ? date : new Date(date);
@@ -120,6 +121,16 @@ export const playDailyGame = async (req, res) => {
 
     await user.save();
 
+    await sendUserEmail({
+      email: user.email,
+      subject: "Weekly Draw Entry Submitted",
+      title: "Weekly Draw Entry Submitted",
+      bodyLines: [
+        "Your weekly draw entry has been submitted successfully.",
+        "Results are released at month end.",
+      ],
+    });
+
 
     return res.status(200).json({
       success: true,
@@ -213,6 +224,16 @@ export const claimDailyReward = async (req, res) => {
       gameLabel: "Weekly Draw",
     });
 
+    await sendUserEmail({
+      email: user.email,
+      subject: "Weekly Reward Claimed",
+      title: "Reward Claimed",
+      bodyLines: [
+        `You claimed N${Number(prize).toLocaleString()} from the weekly draw.`,
+        "Your reward balance has been updated.",
+      ],
+    });
+
     return res.status(200).json({
       success: true,
       message: "Daily reward claimed successfully",
@@ -241,6 +262,7 @@ export const generateDailyWinningNumbers = async () => {
 
     for (const user of users) {
       let updated = false;
+      const emailLines = [];
 
       for (const entry of user.dailyNumberDraw || []) {
         if (!Array.isArray(entry?.result) || entry.result.length > 0) continue;
@@ -261,9 +283,28 @@ export const generateDailyWinningNumbers = async () => {
 
         entry.isWinner = isWinner;
         updated = true;
+
+        const playedAtLabel = entry?.playedAt
+          ? new Date(entry.playedAt).toLocaleDateString()
+          : "this month";
+        if (isWinner) {
+          emailLines.push(`Great news! Your weekly draw entry from ${playedAtLabel} is a WINNER.`);
+        } else {
+          emailLines.push(`Your weekly draw entry from ${playedAtLabel} did not win this time.`);
+        }
       }
 
-      if (updated) await user.save();
+      if (updated) {
+        await user.save();
+        if (emailLines.length) {
+          await sendUserEmail({
+            email: user.email,
+            subject: "Weekly Draw Result",
+            title: "Weekly Draw Result",
+            bodyLines: emailLines,
+          });
+        }
+      }
     }
 
     return true;

@@ -9,6 +9,7 @@ import {
 } from "../utils/wallet.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { logPlatformDataPurchase } from "../utils/platformLedger.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const mapZenipointPlanCode = (plan) => {
   const rawCode = String(plan?.zenipoint_code || plan?.plan_id || "").trim();
@@ -142,6 +143,17 @@ export const buyData = async (req, res) => {
         error: apiErr?.message || apiErr?.response?.data || "Zenipoint request failed",
       });
 
+      await sendUserEmail({
+        email: user.email,
+        subject: "Data Purchase Failed",
+        title: "Data Purchase Unsuccessful",
+        bodyLines: [
+          `We could not complete your data purchase for ${plan.name || plan.plan_id}.`,
+          "Your balance was not deducted.",
+          "Please try again later or contact support.",
+        ],
+      });
+
       return res.status(500).json({
         success: false,
         msg: "Zenipoint transaction failed",
@@ -156,6 +168,16 @@ export const buyData = async (req, res) => {
         await user.save();
         await syncWalletBalance(userId);
         await logWalletTransaction(userId, "purchase", amount, reference, "failed");
+        await sendUserEmail({
+          email: user.email,
+          subject: "Data Purchase Unavailable",
+          title: "Provider Unavailable",
+          bodyLines: [
+            `We could not complete your data purchase for ${plan.name || plan.plan_id}.`,
+            "Your balance was not deducted.",
+            "Please try again shortly.",
+          ],
+        });
         return res.status(503).json({
           success: false,
           msg: "Data provider is currently unavailable. Please try again shortly.",
@@ -221,6 +243,18 @@ export const buyData = async (req, res) => {
       // Update monthly progress and issue raffle ticket every 5 purchases
       await user.updateMonthlyPurchase();
 
+      await sendUserEmail({
+        email: user.email,
+        subject: "Data Purchase Successful",
+        title: "Data Purchase Completed",
+        bodyLines: [
+          `Plan: ${plan.name || plan.plan_id}`,
+          `Amount: N${Number(amount).toLocaleString()}`,
+          `Phone: ${mobile_no}`,
+          `Reference: ${reference}`,
+        ],
+      });
+
       return res.status(200).json({
         success: true,
         msg: zenResponse.message || "Data purchased successfully",
@@ -247,6 +281,17 @@ export const buyData = async (req, res) => {
       mobile_no,
       zenipointStatus: zenResponse?.status || zenResponse?.code || "rejected",
       zenipointMessage: zenResponse?.message || "",
+    });
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Data Purchase Failed",
+      title: "Data Purchase Unsuccessful",
+      bodyLines: [
+        `We could not complete your data purchase for ${plan.name || plan.plan_id}.`,
+        "Your balance was not deducted.",
+        zenResponse?.message ? `Reason: ${zenResponse.message}` : "Please try again.",
+      ],
     });
 
     return res.status(400).json({

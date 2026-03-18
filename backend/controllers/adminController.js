@@ -3,6 +3,10 @@ import Deposit from "../models/Deposit.js";
 import Withdraw from "../models/withdrawModel.js";
 import Wallet from "../models/Wallet.js";
 import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
+import { logWalletTransaction } from "../utils/wallet.js";
+import { logPlatformDepositFee } from "../utils/platformLedger.js";
+import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const toInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -563,6 +567,117 @@ export const getAdminUnmatchedDeposits = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to load unmatched deposits",
+      error: error.message,
+    });
+  }
+};
+
+export const assignUnmatchedDeposit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userRef = String(req.body?.userIdOrEmail || "").trim();
+    const note = String(req.body?.note || "").trim();
+    if (!userRef) {
+      return res.status(400).json({ success: false, message: "userIdOrEmail is required" });
+    }
+
+    const unmatched = await UnmatchedDeposit.findById(id);
+    if (!unmatched) {
+      return res.status(404).json({ success: false, message: "Unmatched deposit not found" });
+    }
+    if (String(unmatched.status || "") === "assigned") {
+      return res.status(400).json({ success: false, message: "Deposit already assigned" });
+    }
+
+    let user =
+      (await User.findById(userRef)) ||
+      (await User.findOne({ email: userRef.toLowerCase() }));
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const paidAmount = Number(unmatched.amount || 0);
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid deposit amount" });
+    }
+
+    const feeSettings = await getDepositFeeSettings();
+    const serviceCharge = computeDepositFee(paidAmount, feeSettings);
+    const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
+
+    const reference = String(
+      unmatched.reference || `unmatched_${String(user._id)}_${Date.now()}`
+    );
+
+    const deposit = await Deposit.create({
+      user: user._id,
+      amount: creditedAmount,
+      serviceCharge,
+      totalAmount: paidAmount,
+      currency: unmatched.currency || "NGN",
+      reference,
+      status: "successful",
+      channel: "flutterwave_virtual_manual",
+      flutterwaveTransactionId: unmatched?.payload?.id || "",
+      gatewayResponse: unmatched?.payload || {},
+    });
+
+    user.mainBalance += Number(creditedAmount);
+    user.totalDeposits += Number(creditedAmount);
+    user.addNotification({
+      type: "Deposit",
+      status: "success",
+      amount: creditedAmount,
+      message: `Deposit credited to your wallet (manual reconciliation). Amount: N${creditedAmount.toLocaleString()}.`,
+    });
+    await user.save();
+
+    await sendUserEmail({
+      email: user.email,
+      subject: "Deposit Credited",
+      title: "Deposit Reconciled",
+      bodyLines: [
+        `Your deposit has been credited to your wallet.`,
+        `Amount credited: N${Number(creditedAmount).toLocaleString()}.`,
+        `Service charge: N${Number(serviceCharge || 0).toLocaleString()}.`,
+      ],
+    });
+
+    await logWalletTransaction(user._id, "deposit", creditedAmount, reference, "success");
+    if (serviceCharge > 0) {
+      await logPlatformDepositFee({ userId: user._id, reference, revenue: serviceCharge });
+    }
+
+    unmatched.status = "assigned";
+    unmatched.assignedUserId = user._id;
+    unmatched.assignedAt = new Date();
+    unmatched.creditedAmount = creditedAmount;
+    unmatched.serviceCharge = serviceCharge;
+    unmatched.totalAmount = paidAmount;
+    unmatched.note = note || "";
+    await unmatched.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Unmatched deposit assigned and credited",
+      deposit: {
+        id: deposit._id,
+        reference: deposit.reference,
+        amount: deposit.amount,
+        serviceCharge: deposit.serviceCharge,
+        totalAmount: deposit.totalAmount,
+      },
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        mainBalance: user.mainBalance,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to assign deposit",
       error: error.message,
     });
   }
