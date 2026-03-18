@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
+import WebhookHealth from "../models/WebhookHealth.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
@@ -262,6 +263,21 @@ export const flutterwaveWebhook = async (req, res) => {
       status: data?.status,
       amount: data?.amount 
     });
+
+    try {
+      await WebhookHealth.create({
+        provider: "flutterwave",
+        event: String(event || ""),
+        reference: String(data?.tx_ref || data?.flw_ref || data?.reference || ""),
+        amount: Number(data?.amount || 0),
+        accountNumber: extractAccountNumber(data) ? String(extractAccountNumber(data)) : "",
+        customerEmail: data?.customer?.email || "",
+        status: String(data?.status || ""),
+        raw: data || {},
+      });
+    } catch (healthErr) {
+      console.error("Webhook health log failed:", healthErr?.message || healthErr);
+    }
 
     // Ignore irrelevant events
     if (event !== "charge.completed") {

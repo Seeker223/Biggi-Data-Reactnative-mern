@@ -31,6 +31,7 @@ import emailSettingsAdminRoutes from "./routes/emailSettingsAdminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
+import { getWebhookHealth } from "./controllers/webhookHealthController.js";
 
 /* ---------------- ERROR HANDLER ---------------- */
 import errorHandler from "./middleware/error.js";
@@ -272,6 +273,10 @@ app.get("/health", async (req, res) => {
       error: error.message,
     });
   }
+});
+
+app.get("/debug/webhook-health", async (req, res) => {
+  return getWebhookHealth(req, res);
 });
 
 app.get("/debug/auth-routes-live", (req, res) => {
