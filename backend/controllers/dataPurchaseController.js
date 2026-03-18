@@ -144,6 +144,8 @@ export const buyData = async (req, res) => {
       });
 
       await sendUserEmail({
+        userId: userId,
+        type: "data_purchase_failed",
         email: user.email,
         subject: "Data Purchase Failed",
         title: "Data Purchase Unsuccessful",
@@ -169,6 +171,8 @@ export const buyData = async (req, res) => {
         await syncWalletBalance(userId);
         await logWalletTransaction(userId, "purchase", amount, reference, "failed");
         await sendUserEmail({
+          userId: userId,
+          type: "data_purchase_failed",
           email: user.email,
           subject: "Data Purchase Unavailable",
           title: "Provider Unavailable",
@@ -244,6 +248,8 @@ export const buyData = async (req, res) => {
       await user.updateMonthlyPurchase();
 
       await sendUserEmail({
+        userId: userId,
+        type: "data_purchase_success",
         email: user.email,
         subject: "Data Purchase Successful",
         title: "Data Purchase Completed",
@@ -284,6 +290,8 @@ export const buyData = async (req, res) => {
     });
 
     await sendUserEmail({
+      userId: userId,
+      type: "data_purchase_failed",
       email: user.email,
       subject: "Data Purchase Failed",
       title: "Data Purchase Unsuccessful",

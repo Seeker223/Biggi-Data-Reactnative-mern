@@ -142,6 +142,8 @@ export const runMonthlyRaffleDrawIfDue = async (rawMonth, options = {}) => {
         if (!user) continue;
         const isWinner = uid === winnerId;
         await sendUserEmail({
+          userId: user._id,
+          type: "monthly_result",
           email: user.email,
           subject: "Monthly Draw Result",
           title: "Monthly Draw Result",
@@ -347,6 +349,8 @@ export const playMonthlyRaffleTicket = async (req, res) => {
     await user.save();
 
     await sendUserEmail({
+      userId: user._id,
+      type: "monthly_entry",
       email: user.email,
       subject: "Monthly Draw Entry Submitted",
       title: "Monthly Draw Entry Submitted",
@@ -535,6 +539,8 @@ export const claimMonthlyReward = async (req, res) => {
     });
 
     await sendUserEmail({
+      userId: userId,
+      type: "monthly_claim",
       email: user.email,
       subject: "Monthly Draw Reward Claimed",
       title: "Reward Claimed",

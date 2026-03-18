@@ -166,6 +166,8 @@ export const register = async (req, res) => {
     });
 
     await sendUserEmail({
+      userId: user._id,
+      type: "signup",
       email: user.email,
       subject: "Welcome to Biggi Data",
       title: "Welcome to Biggi Data",

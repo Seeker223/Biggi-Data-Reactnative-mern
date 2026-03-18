@@ -146,6 +146,8 @@ export const verifyFlutterwavePayment = async (req, res) => {
 
       console.log("âœ… Wallet credited via verification API:", tx_ref);
       await sendUserEmail({
+        userId,
+        type: "deposit",
         email: user.email,
         subject: "Deposit Confirmed",
         title: "Deposit Successful",
@@ -400,6 +402,8 @@ export const flutterwaveWebhook = async (req, res) => {
 
         console.log("âœ… Virtual account deposit credited:", reference);
         await sendUserEmail({
+          userId,
+          type: "deposit",
           email: user.email,
           subject: "Deposit Confirmed",
           title: "Deposit Successful",

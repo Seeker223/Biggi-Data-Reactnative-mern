@@ -122,6 +122,8 @@ export const playDailyGame = async (req, res) => {
     await user.save();
 
     await sendUserEmail({
+      userId: userId,
+      type: "weekly_entry",
       email: user.email,
       subject: "Weekly Draw Entry Submitted",
       title: "Weekly Draw Entry Submitted",
@@ -225,6 +227,8 @@ export const claimDailyReward = async (req, res) => {
     });
 
     await sendUserEmail({
+      userId: userId,
+      type: "weekly_claim",
       email: user.email,
       subject: "Weekly Reward Claimed",
       title: "Reward Claimed",
@@ -298,6 +302,8 @@ export const generateDailyWinningNumbers = async () => {
         await user.save();
         if (emailLines.length) {
           await sendUserEmail({
+            userId: user._id,
+            type: "weekly_result",
             email: user.email,
             subject: "Weekly Draw Result",
             title: "Weekly Draw Result",

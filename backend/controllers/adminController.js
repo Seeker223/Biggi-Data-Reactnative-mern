@@ -633,6 +633,8 @@ export const assignUnmatchedDeposit = async (req, res) => {
     await user.save();
 
     await sendUserEmail({
+      userId: user._id,
+      type: "deposit",
       email: user.email,
       subject: "Deposit Credited",
       title: "Deposit Reconciled",

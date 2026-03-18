@@ -126,6 +126,8 @@ export const redeemRewards = async (req, res) => {
     );
 
     await sendUserEmail({
+      userId: userId,
+      type: "redeem",
       email: user.email,
       subject: "Redeem Successful",
       title: "Rewards Redeemed",
@@ -356,6 +358,8 @@ export const flutterwaveWithdrawal = async (req, res) => {
     console.log(`✅ Withdrawal transaction committed for user ${userId}, amount: ₦${numericAmount}`);
 
     await sendUserEmail({
+      userId: userId,
+      type: "withdraw_requested",
       email: user.email,
       subject: "Withdrawal Submitted",
       title: "Withdrawal Request Received",
@@ -537,6 +541,8 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
             await user.save();
             console.log(`💰 Refunded ₦${withdrawal.amount} to user ${withdrawal.user}`);
             await sendUserEmail({
+              userId: user._id,
+              type: "withdraw_failed",
               email: user.email,
               subject: "Withdrawal Failed",
               title: "Withdrawal Failed",
@@ -564,6 +570,8 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           const user = await User.findById(withdrawal.user).select("email username");
           if (user) {
             await sendUserEmail({
+              userId: user._id,
+              type: "withdraw_success",
               email: user.email,
               subject: "Withdrawal Successful",
               title: "Withdrawal Completed",
@@ -790,6 +798,8 @@ export const withdrawFunds = async (req, res) => {
     );
 
     await sendUserEmail({
+      userId: userId,
+      type: "withdraw_requested",
       email: user.email,
       subject: "Withdrawal Submitted",
       title: "Withdrawal Request Received",

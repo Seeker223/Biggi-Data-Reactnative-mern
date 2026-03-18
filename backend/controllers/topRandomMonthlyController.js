@@ -133,6 +133,8 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
 
     await user.save();
     await sendUserEmail({
+      userId: user._id,
+      type: "top_random_win",
       email: user.email,
       subject: "Top Random Monthly Picks",
       title: "You Were Selected",
@@ -330,6 +332,8 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
     await user.save();
 
     await sendUserEmail({
+      userId: user._id,
+      type: "top_random_claim",
       email: user.email,
       subject: "Reward Claimed",
       title: "Top Random Reward Claimed",
