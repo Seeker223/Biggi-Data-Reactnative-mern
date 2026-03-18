@@ -4,6 +4,7 @@ import {
   createAdminUser,
   deleteAdminUser,
   getAdminDashboard,
+  getAdminUnmatchedDeposits,
   getAdminUserById,
   getAdminUsers,
   updateAdminUser,
@@ -12,6 +13,7 @@ import {
 const router = Router();
 
 router.get("/dashboard", protect, authorize("admin"), getAdminDashboard);
+router.get("/unmatched-deposits", protect, authorize("admin"), getAdminUnmatchedDeposits);
 router.get("/users", protect, authorize("admin"), getAdminUsers);
 router.get("/users/:id", protect, authorize("admin"), getAdminUserById);
 router.post("/users", protect, authorize("admin"), createAdminUser);

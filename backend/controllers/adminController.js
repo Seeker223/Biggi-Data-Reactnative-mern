@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import Withdraw from "../models/withdrawModel.js";
 import Wallet from "../models/Wallet.js";
+import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
 
 const toInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -517,6 +518,51 @@ export const deleteAdminUser = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to delete user",
+      error: error.message,
+    });
+  }
+};
+
+export const getAdminUnmatchedDeposits = async (req, res) => {
+  try {
+    const page = Math.max(1, toInt(req.query.page, 1));
+    const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
+    const search = String(req.query.search || "").trim();
+    const status = String(req.query.status || "").trim().toLowerCase();
+
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { reference: { $regex: search, $options: "i" } },
+        { accountNumber: { $regex: search, $options: "i" } },
+        { customerEmail: { $regex: search, $options: "i" } },
+      ];
+    }
+    if (status) filter.status = status;
+
+    const [total, records] = await Promise.all([
+      UnmatchedDeposit.countDocuments(filter),
+      UnmatchedDeposit.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      unmatched: records || [],
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load unmatched deposits",
       error: error.message,
     });
   }

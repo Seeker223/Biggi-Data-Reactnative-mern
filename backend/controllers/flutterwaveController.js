@@ -2,6 +2,7 @@
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
+import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
@@ -292,6 +293,20 @@ export const flutterwaveWebhook = async (req, res) => {
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       console.error("âŒ Invalid user ID in tx_ref and no virtual account match:", tx_ref);
+      try {
+        await UnmatchedDeposit.create({
+          reference,
+          amount: Number(amount || 0),
+          currency: currency || "NGN",
+          accountNumber: accountNumber ? String(accountNumber) : "",
+          customerEmail: customerEmail ? String(customerEmail).toLowerCase() : "",
+          status: String(status || "unmatched"),
+          provider: "flutterwave",
+          payload: data || {},
+        });
+      } catch (logErr) {
+        console.error("Failed to log unmatched deposit:", logErr?.message || logErr);
+      }
       return res.sendStatus(200);
     }
 
