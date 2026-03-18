@@ -6,6 +6,17 @@ import { logWalletTransaction } from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
+
+const extractAccountNumber = (data = {}) =>
+  data?.account_number ||
+  data?.meta?.account_number ||
+  data?.meta?.accountNumber ||
+  data?.meta?.virtual_account?.account_number ||
+  data?.meta?.static_account?.account_number ||
+  data?.customer?.account_number ||
+  data?.account?.account_number ||
+  data?.account?.number ||
+  data?.meta?.account?.account_number;
 /* =====================================================
    VERIFY FLUTTERWAVE PAYMENT (SDK â†’ BACKEND)
 ===================================================== */
@@ -245,21 +256,21 @@ export const flutterwaveWebhook = async (req, res) => {
     }
 
     const { tx_ref, status, amount, id, currency } = data;
-    const accountNumber =
-      data?.account_number ||
-      data?.meta?.account_number ||
-      data?.meta?.accountNumber ||
-      data?.customer?.account_number ||
-      data?.account?.account_number;
+    const accountNumber = extractAccountNumber(data);
     const customerEmail = data?.customer?.email;
+    const reference = String(tx_ref || data?.flw_ref || data?.reference || id || "");
 
-    if (!tx_ref || !amount) {
-      console.error("âŒ Missing tx_ref or amount in webhook");
+    if (!amount) {
+      console.error("âŒ Missing amount in webhook");
+      return res.sendStatus(200);
+    }
+    if (!reference && !accountNumber && !customerEmail) {
+      console.error("âŒ Missing reference/account/email in webhook payload");
       return res.sendStatus(200);
     }
 
     // Extract userId from tx_ref format: flw_<USERID>_<timestamp>
-    const parts = String(tx_ref || "").split("_");
+    const parts = String(tx_ref || reference || "").split("_");
     let userId = parts[1];
 
     // If tx_ref isn't in expected format, attempt to resolve by virtual account number or email.
@@ -304,7 +315,7 @@ export const flutterwaveWebhook = async (req, res) => {
         console.error("âŒ Invalid payment amount for webhook:", amount);
         return res.sendStatus(200);
       }
-      const reference = String(tx_ref || data?.flw_ref || id || `va_${userId}_${Date.now()}`);
+      const reference = String(tx_ref || data?.flw_ref || data?.reference || id || `va_${userId}_${Date.now()}`);
 
       // Check for existing successful deposit
       const existingDeposit = await Deposit.findOne({
@@ -458,13 +469,18 @@ export const getDepositStatus = async (req, res) => {
       const payment = response.data?.data;
       
       if (payment && payment.status === "successful") {
+        const feeSettings = await getDepositFeeSettings();
+        const paidAmount = Number(payment.amount || 0);
+        const serviceCharge = computeDepositFee(paidAmount, feeSettings);
+        const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
+
         await Deposit.findOneAndUpdate(
           { reference: tx_ref },
           {
             user: userId,
-            amount: requestedAmount,
-          serviceCharge,
-          totalAmount: paidAmount,
+            amount: creditedAmount,
+            serviceCharge,
+            totalAmount: paidAmount,
             reference: tx_ref,
             status: "pending",
             channel: "flutterwave",
@@ -477,18 +493,19 @@ export const getDepositStatus = async (req, res) => {
         return res.json({
           success: true,
           status: "pending",
-          amount: requestedAmount,
+          amount: creditedAmount,
           serviceCharge,
           totalAmount: paidAmount,
           message: "Payment received. Authorization required to credit wallet.",
           balance: 0,
         });
       } else if (payment) {
+        const paidAmount = Number(payment.amount || 0);
         return res.json({ 
           success: true,
           status: payment.status || "pending",
-          amount: requestedAmount,
-          serviceCharge,
+          amount: paidAmount,
+          serviceCharge: 0,
           totalAmount: paidAmount,
           balance: 0
         });
