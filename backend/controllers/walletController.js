@@ -8,7 +8,6 @@ import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { handleProfitSweepWebhook } from "../utils/profitSweep.js";
 import { getDepositFeeSettings as fetchDepositFeeSettings } from "../utils/depositFee.js";
-import { sendUserEmail } from "../utils/transactionalEmail.js";
 /* =====================================================
    GET USER BALANCE
 ===================================================== */
@@ -124,18 +123,6 @@ export const redeemRewards = async (req, res) => {
       `redeem_${userId}_${Date.now()}`,
       "success"
     );
-
-    await sendUserEmail({
-      userId: userId,
-      type: "redeem",
-      email: user.email,
-      subject: "Redeem Successful",
-      title: "Rewards Redeemed",
-      bodyLines: [
-        `You redeemed N${Number(amountToRedeem).toLocaleString()} to your main balance.`,
-        `New main balance: N${Number(user.mainBalance || 0).toLocaleString()}.`,
-      ],
-    });
 
     return res.status(200).json({
       success: true,
@@ -357,20 +344,6 @@ export const flutterwaveWithdrawal = async (req, res) => {
     await session.commitTransaction();
     console.log(`âœ… Withdrawal transaction committed for user ${userId}, amount: â‚¦${numericAmount}`);
 
-    await sendUserEmail({
-      userId: userId,
-      type: "withdraw_requested",
-      email: user.email,
-      subject: "Withdrawal Submitted",
-      title: "Withdrawal Request Received",
-      bodyLines: [
-        `Amount: N${Number(numericAmount).toLocaleString()}`,
-        `Account: ${account_number} (${account_bank})`,
-        `Reference: ${tx_ref}`,
-        "We are processing your withdrawal.",
-      ],
-    });
-
     res.status(200).json({
       success: true,
       message: "Withdrawal initiated via Flutterwave",
@@ -525,8 +498,8 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
         ]
       });
 
-        if (withdrawal) {
-          console.log(`ðŸ“ Updating withdrawal ${withdrawal._id} to status: ${status}`);
+      if (withdrawal) {
+        console.log(`ðŸ“ Updating withdrawal ${withdrawal._id} to status: ${status}`);
         
         // Update withdrawal status
         const oldStatus = withdrawal.status;
@@ -540,18 +513,6 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
             user.mainBalance += withdrawal.amount;
             await user.save();
             console.log(`ðŸ’° Refunded â‚¦${withdrawal.amount} to user ${withdrawal.user}`);
-            await sendUserEmail({
-              userId: user._id,
-              type: "withdraw_failed",
-              email: user.email,
-              subject: "Withdrawal Failed",
-              title: "Withdrawal Failed",
-              bodyLines: [
-                `Your withdrawal of N${Number(withdrawal.amount).toLocaleString()} failed.`,
-                "Your balance has been refunded.",
-                `Reference: ${withdrawal.reference}`,
-              ],
-            });
           }
         }
 
@@ -565,23 +526,6 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
         );
 
         console.log(`âœ… Withdrawal ${withdrawal._id} updated from ${oldStatus} to ${withdrawal.status}`);
-
-        if (status === "SUCCESSFUL") {
-          const user = await User.findById(withdrawal.user).select("email username");
-          if (user) {
-            await sendUserEmail({
-              userId: user._id,
-              type: "withdraw_success",
-              email: user.email,
-              subject: "Withdrawal Successful",
-              title: "Withdrawal Completed",
-              bodyLines: [
-                `Your withdrawal of N${Number(withdrawal.amount).toLocaleString()} was successful.`,
-                `Reference: ${withdrawal.reference}`,
-              ],
-            });
-          }
-        }
       } else {
         console.warn(`âš ï¸ Withdrawal not found for webhook:`, { id, reference });
       }
@@ -797,20 +741,6 @@ export const withdrawFunds = async (req, res) => {
       "pending"
     );
 
-    await sendUserEmail({
-      userId: userId,
-      type: "withdraw_requested",
-      email: user.email,
-      subject: "Withdrawal Submitted",
-      title: "Withdrawal Request Received",
-      bodyLines: [
-        `Amount: N${Number(numericAmount).toLocaleString()}`,
-        `Account: ${accountNumber} (${bank || method})`,
-        `Reference: ${reference}`,
-        "We are processing your withdrawal.",
-      ],
-    });
-
     res.status(200).json({
       success: true,
       message: "Withdrawal submitted successfully",
@@ -933,120 +863,4 @@ export const getDepositFeeSettings = async (req, res) => {
     return res.status(500).json({ success: false, message: "Failed to fetch deposit fee settings" });
   }
 };
-
-/* =====================================================
-   GET / CREATE FLUTTERWAVE VIRTUAL ACCOUNT (USER)
-===================================================== */
-export const getFlutterwaveVirtualAccount = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    const useStaticEnv = String(process.env.USE_STATIC_VIRTUAL_ACCOUNT || "").toLowerCase();
-    const disableStaticEnv = String(process.env.DISABLE_STATIC_VIRTUAL_ACCOUNT || "false").toLowerCase() === "true";
-    const useStaticVirtualAccount = useStaticEnv ? useStaticEnv === "true" : !disableStaticEnv;
-
-    const existing = user.flutterwaveVirtualAccount || {};
-    if (useStaticVirtualAccount && existing.accountNumber && existing.bankName) {
-      return res.json({
-        success: true,
-        account: existing,
-      });
-    }
-
-    const hasBvn = Boolean(String(user.bvn || "").trim());
-    const hasNin = Boolean(String(user.nin || "").trim());
-    if (useStaticVirtualAccount && !hasBvn && !hasNin) {
-      return res.status(400).json({
-        success: false,
-        message: "Please add your BVN or NIN in profile to enable virtual account deposits.",
-      });
-    }
-
-    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;
-
-    const dynamicAmountEnv = Number(process.env.DYNAMIC_VIRTUAL_ACCOUNT_AMOUNT || 0);
-    const requestedAmount = Number(req.query?.amount || 0);
-    const dynamicAmount = requestedAmount > 0 ? Math.round(requestedAmount) : dynamicAmountEnv > 0 ? Math.round(dynamicAmountEnv) : 1;
-    if (!secretKey) {
-      return res.status(500).json({ success: false, message: "Flutterwave secret key missing" });
-    }
-
-    const payload = {
-      email: user.email,
-      is_permanent: useStaticVirtualAccount,
-      amount: useStaticVirtualAccount ? undefined : dynamicAmount,
-      account_name: user.username || user.email,
-      bvn: useStaticVirtualAccount && hasBvn ? user.bvn : undefined,
-      nin: useStaticVirtualAccount && !hasBvn && hasNin ? user.nin : undefined,
-      tx_ref: `va_${user._id}_${Date.now()}`,
-      narration: `BiggiData VA ${user.username || user.email}`,
-    };
-
-    const headers = {
-      Authorization: `Bearer ${secretKey}`,
-      "Content-Type": "application/json",
-    };
-    const fwBase = String(process.env.FLUTTERWAVE_API_URL || "https://api.flutterwave.com").replace(/\/+$/, "");
-    const fwUrl = fwBase.endsWith("/v3") ? `${fwBase}/virtual-account-numbers` : `${fwBase}/v3/virtual-account-numbers`;
-    const directUrl = "https://api.flutterwave.com/v3/virtual-account-numbers";
-
-    let response;
-    try {
-      response = await axios.post(fwUrl, payload, { headers, timeout: 15000 });
-    } catch (err) {
-      // If proxy fails or is misconfigured, try Flutterwave directly.
-      response = await axios.post(directUrl, payload, { headers, timeout: 15000 });
-    }
-
-    const data = response?.data?.data || {};
-    if (!data.account_number || !data.bank_name) {
-      const message = response?.data?.message || "We are unable to process your request right now. Please try again shortly. Virtual account not ready yet. Please try again later.";
-      return res.status(400).json({
-        success: false,
-        message,
-        ...(process.env.NODE_ENV !== "production" ? { error: response?.data } : {}),
-      });
-    }
-
-    const expiresAtRaw = data.expiration_date || data.expiry_date || data.expires_at || null;
-    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
-    const safeExpiresAt = expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null;
-
-    const account = {
-      provider: "flutterwave",
-      accountNumber: String(data.account_number || ""),
-      bankName: String(data.bank_name || ""),
-      accountName: String(data.account_name || user.username || user.email || ""),
-      reference: String(data.flw_ref || data.reference || payload.tx_ref || ""),
-      mode: useStaticVirtualAccount ? "static" : "dynamic",
-      expiresAt: safeExpiresAt,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      meta: data,
-    };
-
-    if (useStaticVirtualAccount) {
-      user.flutterwaveVirtualAccount = account;
-      await user.save();
-    }
-
-    return res.json({ success: true, account, mode: account.mode });
-  } catch (error) {
-    console.error("Virtual account error:", error.response?.data || error.message);
-    return res.status(500).json({
-      success: false,
-      message: "We are unable to process your request right now. Please try again shortly. Virtual account not ready yet. Please try again later.",
-    });
-  }
-};
-
-
-
-
-
-
-
 

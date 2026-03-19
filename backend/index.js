@@ -27,11 +27,9 @@ import gameStatsRoutes from "./routes/gameStatsRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import profitSweepAdminRoutes from "./routes/profitSweepAdminRoutes.js";
 import depositFeeAdminRoutes from "./routes/depositFeeAdminRoutes.js";
-import emailSettingsAdminRoutes from "./routes/emailSettingsAdminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
-import { getWebhookHealth } from "./controllers/webhookHealthController.js";
 
 /* ---------------- ERROR HANDLER ---------------- */
 import errorHandler from "./middleware/error.js";
@@ -41,25 +39,6 @@ app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
-
-const useFlutterwaveTestKeys =
-  String(process.env.FLUTTERWAVE_USE_TEST_KEYS || "false").toLowerCase() === "true";
-
-if (useFlutterwaveTestKeys) {
-  process.env.FLUTTERWAVE_SECRET_KEY =
-    process.env.TEST_FLUTTERWAVE_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY;
-  process.env.FLUTTERWAVE_PUBLIC_KEY =
-    process.env.TEST_FLUTTERWAVE_PUBLIC_KEY || process.env.FLUTTERWAVE_PUBLIC_KEY;
-  process.env.VITE_FLUTTERWAVE_PUBLIC_KEY =
-    process.env.TEST_VITE_FLUTTERWAVE_PUBLIC_KEY ||
-    process.env.TEST_FLUTTERWAVE_PUBLIC_KEY ||
-    process.env.VITE_FLUTTERWAVE_PUBLIC_KEY ||
-    process.env.FLUTTERWAVE_PUBLIC_KEY;
-  process.env.FLUTTERWAVE_WEBHOOK_SECRET =
-    process.env.TEST_FLUTTERWAVE_WEBHOOK_SECRET || process.env.FLUTTERWAVE_WEBHOOK_SECRET;
-  process.env.FLUTTERWAVE_ENCRYPTION_KEY =
-    process.env.TEST_FLUTTERWAVE_ENCRYPTION_KEY || process.env.FLUTTERWAVE_ENCRYPTION_KEY;
-}
 
 /* ----------------------------------------
    ðŸ”Œ CONNECT MONGO WITH ENHANCED CONFIG
@@ -294,10 +273,6 @@ app.get("/health", async (req, res) => {
   }
 });
 
-app.get("/debug/webhook-health", async (req, res) => {
-  return getWebhookHealth(req, res);
-});
-
 app.get("/debug/auth-routes-live", (req, res) => {
   const stack = (authRoutes?.stack || []).map((layer) => ({
     path: layer?.route?.path || null,
@@ -523,7 +498,6 @@ app.use("/api/v1/data", dataPurchaseRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/admin/profit-sweep", profitSweepAdminRoutes);
 app.use("/api/v1/admin/deposit-fee", depositFeeAdminRoutes);
-app.use("/api/v1/admin/email-settings", emailSettingsAdminRoutes);
 
 /* ----------------------------------------
    GAME RULES AND INFORMATION ROUTES
@@ -769,7 +743,6 @@ server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 export default app;
-
 
 
 

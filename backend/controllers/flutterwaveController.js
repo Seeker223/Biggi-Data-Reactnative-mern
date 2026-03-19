@@ -2,24 +2,10 @@
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
-import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
-import WebhookHealth from "../models/WebhookHealth.js";
 import { logWalletTransaction } from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
-import { sendUserEmail } from "../utils/transactionalEmail.js";
-
-const extractAccountNumber = (data = {}) =>
-  data?.account_number ||
-  data?.meta?.account_number ||
-  data?.meta?.accountNumber ||
-  data?.meta?.virtual_account?.account_number ||
-  data?.meta?.static_account?.account_number ||
-  data?.customer?.account_number ||
-  data?.account?.account_number ||
-  data?.account?.number ||
-  data?.meta?.account?.account_number;
 /* =====================================================
    VERIFY FLUTTERWAVE PAYMENT (SDK â†’ BACKEND)
 ===================================================== */
@@ -83,7 +69,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       const authCheck = await verifyTransactionAuthorization({
         user,
         expectedAction: "deposit",
-        expectedAmount: requestedAmount,
+        expectedAmount: Number(payment.amount || 0),
         biometricProof,
         transactionPin,
       });
@@ -95,15 +81,14 @@ export const verifyFlutterwavePayment = async (req, res) => {
       }
 
       const feeSettings = await getDepositFeeSettings();
+      const serviceCharge = computeDepositFee(requestedAmount, feeSettings);
+      const expectedTotal = Number(requestedAmount) + Number(serviceCharge || 0);
       const paidAmount = Number(payment.amount || 0);
-      const serviceCharge = computeDepositFee(paidAmount, feeSettings);
-      const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
-      if (Math.round(creditedAmount) !== Math.round(requestedAmount)) {
+      if (Math.round(paidAmount) !== Math.round(expectedTotal)) {
         return res.status(400).json({
           success: false,
-          message: "Payment amount does not match expected credit",
-          expectedCredit: requestedAmount,
-          computedCredit: creditedAmount,
+          message: "Payment amount does not match expected total",
+          expectedTotal,
           paidAmount,
         });
       }
@@ -118,7 +103,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       } else {
         deposit = await Deposit.create({
           user: userId,
-          amount: creditedAmount,
+          amount: requestedAmount,
           serviceCharge,
           totalAmount: paidAmount,
           reference: tx_ref,
@@ -129,14 +114,14 @@ export const verifyFlutterwavePayment = async (req, res) => {
         });
       }
 
-      user.mainBalance += Number(creditedAmount);
-      user.totalDeposits += Number(creditedAmount);
+      user.mainBalance += Number(requestedAmount);
+      user.totalDeposits += Number(requestedAmount);
       await user.save();
 
       await logWalletTransaction(
         userId,
         "deposit",
-        creditedAmount,
+        requestedAmount,
         tx_ref,
         "success"
       );
@@ -146,24 +131,12 @@ export const verifyFlutterwavePayment = async (req, res) => {
       }
 
       console.log("âœ… Wallet credited via verification API:", tx_ref);
-      await sendUserEmail({
-        userId,
-        type: "deposit",
-        email: user.email,
-        subject: "Deposit Confirmed",
-        title: "Deposit Successful",
-        bodyLines: [
-          `We received your deposit of N${Number(creditedAmount).toLocaleString()}.`,
-          `Service charge: N${Number(serviceCharge || 0).toLocaleString()}.`,
-          `Total paid: N${Number(paidAmount).toLocaleString()}.`,
-        ],
-      });
 
       return res.json({
         success: true,
         message: "Payment verified and wallet credited",
         tx_ref: payment.tx_ref,
-        amount: creditedAmount,
+        amount: requestedAmount,
         serviceCharge,
         totalAmount: paidAmount,
         balance: user.mainBalance,
@@ -264,21 +237,6 @@ export const flutterwaveWebhook = async (req, res) => {
       amount: data?.amount 
     });
 
-    try {
-      await WebhookHealth.create({
-        provider: "flutterwave",
-        event: String(event || ""),
-        reference: String(data?.tx_ref || data?.flw_ref || data?.reference || ""),
-        amount: Number(data?.amount || 0),
-        accountNumber: extractAccountNumber(data) ? String(extractAccountNumber(data)) : "",
-        customerEmail: data?.customer?.email || "",
-        status: String(data?.status || ""),
-        raw: data || {},
-      });
-    } catch (healthErr) {
-      console.error("Webhook health log failed:", healthErr?.message || healthErr);
-    }
-
     // Ignore irrelevant events
     if (event !== "charge.completed") {
       console.log(`â„¹ï¸ Ignoring event: ${event}`);
@@ -286,60 +244,20 @@ export const flutterwaveWebhook = async (req, res) => {
     }
 
     const { tx_ref, status, amount, id, currency } = data;
-    const accountNumber = extractAccountNumber(data);
-    const customerEmail = data?.customer?.email;
-    const reference = String(tx_ref || data?.flw_ref || data?.reference || id || "");
 
-    if (!amount) {
-      console.error("âŒ Missing amount in webhook");
-      return res.sendStatus(200);
-    }
-    if (!reference && !accountNumber && !customerEmail) {
-      console.error("âŒ Missing reference/account/email in webhook payload");
+    if (!tx_ref || !amount) {
+      console.error("âŒ Missing tx_ref or amount in webhook");
       return res.sendStatus(200);
     }
 
     // Extract userId from tx_ref format: flw_<USERID>_<timestamp>
-    const parts = String(tx_ref || reference || "").split("_");
-    let userId = parts[1];
-
-    // If tx_ref isn't in expected format, attempt to resolve by virtual account number or email.
-    let virtualAccountUser = null;
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      userId = null;
-      if (accountNumber) {
-        virtualAccountUser = await User.findOne({
-          "flutterwaveVirtualAccount.accountNumber": String(accountNumber),
-        });
-      }
-      if (!virtualAccountUser && customerEmail) {
-        virtualAccountUser = await User.findOne({ email: String(customerEmail).toLowerCase() });
-      }
-      if (virtualAccountUser) {
-        userId = String(virtualAccountUser._id);
-      }
-    }
+    const parts = tx_ref.split("_");
+    const userId = parts[1];
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.error("âŒ Invalid user ID in tx_ref and no virtual account match:", tx_ref);
-      try {
-        await UnmatchedDeposit.create({
-          reference,
-          amount: Number(amount || 0),
-          currency: currency || "NGN",
-          accountNumber: accountNumber ? String(accountNumber) : "",
-          customerEmail: customerEmail ? String(customerEmail).toLowerCase() : "",
-          status: String(status || "unmatched"),
-          provider: "flutterwave",
-          payload: data || {},
-        });
-      } catch (logErr) {
-        console.error("Failed to log unmatched deposit:", logErr?.message || logErr);
-      }
+      console.error("âŒ Invalid user ID in tx_ref:", tx_ref);
       return res.sendStatus(200);
     }
-
-    const isVirtualAccountPayment = Boolean(accountNumber);
 
     // Atomic operation to prevent double crediting
     const session = await mongoose.startSession();
@@ -353,93 +271,26 @@ export const flutterwaveWebhook = async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const paidAmount = Number(amount || 0);
-      if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
-        await session.abortTransaction();
-        console.error("âŒ Invalid payment amount for webhook:", amount);
-        return res.sendStatus(200);
-      }
-      const reference = String(tx_ref || data?.flw_ref || data?.reference || id || `va_${userId}_${Date.now()}`);
-
       // Check for existing successful deposit
       const existingDeposit = await Deposit.findOne({
-        reference,
+        reference: tx_ref,
         status: "successful",
       }).session(session);
 
       if (existingDeposit) {
         await session.abortTransaction();
-        console.log("âš ï¸ Deposit already processed:", reference);
-        return res.sendStatus(200);
-      }
-
-      if (isVirtualAccountPayment && status === "successful") {
-        const feeSettings = await getDepositFeeSettings();
-        const serviceCharge = computeDepositFee(paidAmount, feeSettings);
-        const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
-
-        await Deposit.findOneAndUpdate(
-          { reference },
-          {
-            user: userId,
-            amount: creditedAmount,
-            serviceCharge,
-            totalAmount: paidAmount,
-            currency: currency || "NGN",
-            reference,
-            status: "successful",
-            channel: "flutterwave_virtual",
-            flutterwaveTransactionId: id,
-            gatewayResponse: data,
-          },
-          { upsert: true, new: true, session }
-        );
-
-        user.mainBalance += Number(creditedAmount);
-        user.totalDeposits += Number(creditedAmount);
-        user.addNotification({
-          type: "Deposit",
-          status: "success",
-          amount: creditedAmount,
-          message: `Bank transfer received. Wallet credited with N${creditedAmount.toLocaleString()}.`,
-        });
-        await user.save({ session });
-
-        await session.commitTransaction();
-
-        try {
-          await logWalletTransaction(userId, "deposit", creditedAmount, reference, "success");
-          if (serviceCharge > 0) {
-            await logPlatformDepositFee({ userId, reference, revenue: serviceCharge });
-          }
-        } catch (logError) {
-          console.error("Wallet log error:", logError);
-        }
-
-        console.log("âœ… Virtual account deposit credited:", reference);
-        await sendUserEmail({
-          userId,
-          type: "deposit",
-          email: user.email,
-          subject: "Deposit Confirmed",
-          title: "Deposit Successful",
-          bodyLines: [
-            `We received your bank transfer of N${Number(creditedAmount).toLocaleString()}.`,
-            `Service charge: N${Number(serviceCharge || 0).toLocaleString()}.`,
-            `Total paid: N${Number(paidAmount).toLocaleString()}.`,
-          ],
-        });
+        console.log("âš ï¸ Deposit already processed:", tx_ref);
         return res.sendStatus(200);
       }
 
       // Store payment event only; crediting is handled by verify/reconcile endpoint
       await Deposit.findOneAndUpdate(
-        { reference },
+        { reference: tx_ref },
         {
           user: userId,
-          amount: paidAmount,
+          amount,
           currency: currency || "NGN",
-          reference,
+          reference: tx_ref,
           status: status === "successful" ? "pending" : "failed",
           channel: "flutterwave",
           flutterwaveTransactionId: id,
@@ -450,17 +301,17 @@ export const flutterwaveWebhook = async (req, res) => {
 
       if (status === "successful") {
         console.log("â„¹ï¸ Deposit marked pending auth via webhook:", {
-          reference,
-          amount: paidAmount,
+          tx_ref,
+          amount,
           currency,
           userId,
         });
       } else {
-        console.log("âŒ Payment failed via webhook:", { reference, status });
+        console.log("âŒ Payment failed via webhook:", { tx_ref, status });
       }
 
       await session.commitTransaction();
-      console.log("âœ… Webhook transaction committed for:", reference);
+      console.log("âœ… Webhook transaction committed for:", tx_ref);
     } catch (sessionError) {
       await session.abortTransaction();
       console.error("âŒ Webhook transaction failed:", sessionError);
@@ -525,18 +376,13 @@ export const getDepositStatus = async (req, res) => {
       const payment = response.data?.data;
       
       if (payment && payment.status === "successful") {
-        const feeSettings = await getDepositFeeSettings();
-        const paidAmount = Number(payment.amount || 0);
-        const serviceCharge = computeDepositFee(paidAmount, feeSettings);
-        const creditedAmount = Math.max(0, Math.round(paidAmount - serviceCharge));
-
         await Deposit.findOneAndUpdate(
           { reference: tx_ref },
           {
             user: userId,
-            amount: creditedAmount,
-            serviceCharge,
-            totalAmount: paidAmount,
+            amount: requestedAmount,
+          serviceCharge,
+          totalAmount: paidAmount,
             reference: tx_ref,
             status: "pending",
             channel: "flutterwave",
@@ -549,19 +395,18 @@ export const getDepositStatus = async (req, res) => {
         return res.json({
           success: true,
           status: "pending",
-          amount: creditedAmount,
+          amount: requestedAmount,
           serviceCharge,
           totalAmount: paidAmount,
           message: "Payment received. Authorization required to credit wallet.",
           balance: 0,
         });
       } else if (payment) {
-        const paidAmount = Number(payment.amount || 0);
         return res.json({ 
           success: true,
           status: payment.status || "pending",
-          amount: paidAmount,
-          serviceCharge: 0,
+          amount: requestedAmount,
+          serviceCharge,
           totalAmount: paidAmount,
           balance: 0
         });

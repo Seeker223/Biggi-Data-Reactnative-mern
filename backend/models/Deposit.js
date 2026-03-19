@@ -1,4 +1,4 @@
-// backend/models/Deposit.js
+﻿// backend/models/Deposit.js
 import mongoose from "mongoose";
 
 const depositSchema = new mongoose.Schema(
@@ -48,7 +48,7 @@ const depositSchema = new mongoose.Schema(
 
     channel: {
       type: String,
-      enum: ["flutterwave", "flutterwave_virtual"],
+      enum: ["flutterwave"],
       default: "flutterwave",
     },
 
