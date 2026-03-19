@@ -30,6 +30,7 @@ import depositFeeAdminRoutes from "./routes/depositFeeAdminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
+import { getWebhookHealth } from "./controllers/webhookHealthController.js";
 
 /* ---------------- ERROR HANDLER ---------------- */
 import errorHandler from "./middleware/error.js";
