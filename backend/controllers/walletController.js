@@ -1,4 +1,4 @@
-import User from "../models/User.js";
+﻿import User from "../models/User.js";
 import Withdraw from "../models/withdrawModel.js";
 import Deposit from "../models/Deposit.js";
 import axios from "axios";
@@ -82,7 +82,7 @@ export const redeemRewards = async (req, res) => {
     if (amountToRedeem < 100) {
       return res.status(400).json({
         success: false,
-        message: "Minimum redeem amount is ₦100",
+        message: "Minimum redeem amount is â‚¦100",
       });
     }
 
@@ -113,7 +113,7 @@ export const redeemRewards = async (req, res) => {
       type: "Redeem",
       status: "success",
       amount: amountToRedeem,
-      message: `Redeemed ₦${amountToRedeem.toLocaleString()} to main balance.`,
+      message: `Redeemed â‚¦${amountToRedeem.toLocaleString()} to main balance.`,
     });
     await user.save();
 
@@ -158,7 +158,7 @@ export const redeemRewards = async (req, res) => {
    FLUTTERWAVE WITHDRAWAL (TRANSFER API) - IMPROVED ERROR HANDLING
 ===================================================== */
 export const flutterwaveWithdrawal = async (req, res) => {
-  // 🚩 Feature flag: Disable withdrawals during Play Store review
+  // ðŸš© Feature flag: Disable withdrawals during Play Store review
   if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
     return res.status(403).json({
       success: false,
@@ -196,7 +196,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     if (isNaN(numericAmount) || numericAmount < 100) {
       return res.status(400).json({
         success: false,
-        message: "Minimum withdrawal amount is ₦100",
+        message: "Minimum withdrawal amount is â‚¦100",
         provided_amount: amount
       });
     }
@@ -205,7 +205,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     if (numericAmount > 5000000) {
       return res.status(400).json({
         success: false,
-        message: "Maximum withdrawal amount is ₦5,000,000",
+        message: "Maximum withdrawal amount is â‚¦5,000,000",
         provided_amount: numericAmount
       });
     }
@@ -256,7 +256,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     }
 
     // Log request for debugging
-    console.log(`🚀 Flutterwave withdrawal request:`, {
+    console.log(`ðŸš€ Flutterwave withdrawal request:`, {
       userId,
       amount: numericAmount,
       account_bank,
@@ -291,7 +291,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       );
     } catch (axiosError) {
       // Log detailed axios error
-      console.error("❌ AXIOS ERROR DETAILS:", {
+      console.error("âŒ AXIOS ERROR DETAILS:", {
         message: axiosError.message,
         code: axiosError.code,
         response: axiosError.response ? {
@@ -307,7 +307,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
 
     if (flutterwaveResponse.data.status !== "success") {
       await session.abortTransaction();
-      console.error("❌ Flutterwave transfer failed:", flutterwaveResponse.data);
+      console.error("âŒ Flutterwave transfer failed:", flutterwaveResponse.data);
       
       return res.status(400).json({
         success: false,
@@ -318,7 +318,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     }
 
     // Log successful Flutterwave response
-    console.log(`✅ Flutterwave transfer initiated:`, {
+    console.log(`âœ… Flutterwave transfer initiated:`, {
       transferId: transferData.id,
       status: transferData.status,
       reference: transferData.reference
@@ -355,7 +355,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
     );
 
     await session.commitTransaction();
-    console.log(`✅ Withdrawal transaction committed for user ${userId}, amount: ₦${numericAmount}`);
+    console.log(`âœ… Withdrawal transaction committed for user ${userId}, amount: â‚¦${numericAmount}`);
 
     await sendUserEmail({
       userId: userId,
@@ -394,13 +394,13 @@ export const flutterwaveWithdrawal = async (req, res) => {
     await session.abortTransaction();
     
     // ENHANCED ERROR HANDLING WITH DETAILED LOGGING
-    console.error("❌ FLUTTERWAVE WITHDRAWAL ERROR:", err.message);
+    console.error("âŒ FLUTTERWAVE WITHDRAWAL ERROR:", err.message);
     
     if (err.response) {
       // The request was made and the server responded with an error
-      console.error("📡 Flutterwave API Error Status:", err.response.status);
-      console.error("📦 Flutterwave Error Headers:", err.response.headers);
-      console.error("📝 Flutterwave Error Response:", JSON.stringify(err.response.data, null, 2));
+      console.error("ðŸ“¡ Flutterwave API Error Status:", err.response.status);
+      console.error("ðŸ“¦ Flutterwave Error Headers:", err.response.headers);
+      console.error("ðŸ“ Flutterwave Error Response:", JSON.stringify(err.response.data, null, 2));
       
       // Extract Flutterwave's specific error message
       const fwError = err.response.data;
@@ -451,7 +451,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       
     } else if (err.request) {
       // The request was made but no response was received
-      console.error("📡 No response received from Flutterwave API");
+      console.error("ðŸ“¡ No response received from Flutterwave API");
       console.error("Request details:", err.request);
       
       return res.status(504).json({
@@ -463,7 +463,7 @@ export const flutterwaveWithdrawal = async (req, res) => {
       
     } else {
       // Something else happened in setting up the request
-      console.error("🔥 Flutterwave Request Setup Error:", err.message);
+      console.error("ðŸ”¥ Flutterwave Request Setup Error:", err.message);
       console.error("Stack trace:", err.stack);
       
       return res.status(500).json({
@@ -486,14 +486,14 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
     const signature = req.headers["verif-hash"];
     
     if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
-      console.error("❌ Invalid webhook signature received");
+      console.error("âŒ Invalid webhook signature received");
       return res.sendStatus(401);
     }
 
     const payload = req.body;
     const { event, data } = payload;
     
-    console.log(`🔔 Flutterwave webhook received: ${event}`, {
+    console.log(`ðŸ”” Flutterwave webhook received: ${event}`, {
       id: data?.id,
       reference: data?.reference,
       status: data?.status
@@ -526,7 +526,7 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
       });
 
         if (withdrawal) {
-          console.log(`📝 Updating withdrawal ${withdrawal._id} to status: ${status}`);
+          console.log(`ðŸ“ Updating withdrawal ${withdrawal._id} to status: ${status}`);
         
         // Update withdrawal status
         const oldStatus = withdrawal.status;
@@ -539,7 +539,7 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           if (user) {
             user.mainBalance += withdrawal.amount;
             await user.save();
-            console.log(`💰 Refunded ₦${withdrawal.amount} to user ${withdrawal.user}`);
+            console.log(`ðŸ’° Refunded â‚¦${withdrawal.amount} to user ${withdrawal.user}`);
             await sendUserEmail({
               userId: user._id,
               type: "withdraw_failed",
@@ -564,7 +564,7 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           status === "SUCCESSFUL" ? "success" : "failed"
         );
 
-        console.log(`✅ Withdrawal ${withdrawal._id} updated from ${oldStatus} to ${withdrawal.status}`);
+        console.log(`âœ… Withdrawal ${withdrawal._id} updated from ${oldStatus} to ${withdrawal.status}`);
 
         if (status === "SUCCESSFUL") {
           const user = await User.findById(withdrawal.user).select("email username");
@@ -583,13 +583,13 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           }
         }
       } else {
-        console.warn(`⚠️ Withdrawal not found for webhook:`, { id, reference });
+        console.warn(`âš ï¸ Withdrawal not found for webhook:`, { id, reference });
       }
     }
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Withdrawal webhook processing error:", err);
+    console.error("âŒ Withdrawal webhook processing error:", err);
     return res.sendStatus(200); // Always return 200 to prevent retries
   }
 };
@@ -643,7 +643,7 @@ export const verifyBankAccount = async (req, res) => {
       );
 
       if (response.data.status === "success") {
-        console.log(`✅ Account verified: ${response.data.data.account_name}`);
+        console.log(`âœ… Account verified: ${response.data.data.account_name}`);
         return res.json({
           success: true,
           account_name: response.data.data.account_name,
@@ -669,7 +669,7 @@ export const verifyBankAccount = async (req, res) => {
         });
       }
     } catch (flutterwaveError) {
-      console.error("❌ Flutterwave verification error:", flutterwaveError.response?.data || flutterwaveError.message);
+      console.error("âŒ Flutterwave verification error:", flutterwaveError.response?.data || flutterwaveError.message);
       
       // Special handling for fintech errors
       if (is_fintech || isOpay || isPalmpay) {
@@ -697,7 +697,7 @@ export const verifyBankAccount = async (req, res) => {
       throw flutterwaveError;
     }
   } catch (err) {
-    console.error("❌ Account verification error:", err);
+    console.error("âŒ Account verification error:", err);
     
     res.status(500).json({
       success: false,
@@ -711,7 +711,7 @@ export const verifyBankAccount = async (req, res) => {
    WITHDRAW FUNDS (LEGACY - FOR BACKWARD COMPATIBILITY)
 ===================================================== */
 export const withdrawFunds = async (req, res) => {
-  // 🚩 Feature flag: Disable withdrawals during Play Store review
+  // ðŸš© Feature flag: Disable withdrawals during Play Store review
   if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
     return res.status(403).json({
       success: false,
@@ -736,7 +736,7 @@ export const withdrawFunds = async (req, res) => {
     if (isNaN(numericAmount) || numericAmount < 100) {
       return res.status(400).json({
         success: false,
-        message: "Minimum withdrawal amount is ₦100",
+        message: "Minimum withdrawal amount is â‚¦100",
       });
     }
 
@@ -824,7 +824,7 @@ export const withdrawFunds = async (req, res) => {
       balance: user.mainBalance,
     });
   } catch (err) {
-    console.error("❌ WithdrawFunds Error:", err);
+    console.error("âŒ WithdrawFunds Error:", err);
     res.status(500).json({
       success: false,
       message: "Server error while processing withdrawal",
@@ -850,7 +850,7 @@ export const getWithdrawalHistory = async (req, res) => {
       count: withdrawals.length,
     });
   } catch (err) {
-    console.error("❌ GetWithdrawalHistory Error:", err);
+    console.error("âŒ GetWithdrawalHistory Error:", err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch withdrawal history",
@@ -876,7 +876,7 @@ export const getDepositHistory = async (req, res) => {
       count: deposits.length,
     });
   } catch (err) {
-    console.error("❌ GetDepositHistory Error:", err);
+    console.error("âŒ GetDepositHistory Error:", err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch deposit history",
@@ -914,7 +914,7 @@ export const getDepositStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Get deposit stats error:", error);
+    console.error("âŒ Get deposit stats error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch deposit statistics",
@@ -944,8 +944,12 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    const useStaticEnv = String(process.env.USE_STATIC_VIRTUAL_ACCOUNT || "").toLowerCase();
+    const disableStaticEnv = String(process.env.DISABLE_STATIC_VIRTUAL_ACCOUNT || "false").toLowerCase() === "true";
+    const useStaticVirtualAccount = useStaticEnv ? useStaticEnv === "true" : !disableStaticEnv;
+
     const existing = user.flutterwaveVirtualAccount || {};
-    if (existing.accountNumber && existing.bankName) {
+    if (useStaticVirtualAccount && existing.accountNumber && existing.bankName) {
       return res.json({
         success: true,
         account: existing,
@@ -954,7 +958,7 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
 
     const hasBvn = Boolean(String(user.bvn || "").trim());
     const hasNin = Boolean(String(user.nin || "").trim());
-    if (!hasBvn && !hasNin) {
+    if (useStaticVirtualAccount && !hasBvn && !hasNin) {
       return res.status(400).json({
         success: false,
         message: "Please add your BVN or NIN in profile to enable virtual account deposits.",
@@ -968,10 +972,10 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
 
     const payload = {
       email: user.email,
-      is_permanent: true,
+      is_permanent: useStaticVirtualAccount,
       account_name: user.username || user.email,
-      bvn: hasBvn ? user.bvn : undefined,
-      nin: !hasBvn && hasNin ? user.nin : undefined,
+      bvn: useStaticVirtualAccount && hasBvn ? user.bvn : undefined,
+      nin: useStaticVirtualAccount && !hasBvn && hasNin ? user.nin : undefined,
       tx_ref: `va_${user._id}_${Date.now()}`,
       narration: `BiggiData VA ${user.username || user.email}`,
     };
@@ -1002,21 +1006,29 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
       });
     }
 
+    const expiresAtRaw = data.expiration_date || data.expiry_date || data.expires_at || null;
+    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+    const safeExpiresAt = expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null;
+
     const account = {
       provider: "flutterwave",
       accountNumber: String(data.account_number || ""),
       bankName: String(data.bank_name || ""),
       accountName: String(data.account_name || user.username || user.email || ""),
       reference: String(data.flw_ref || data.reference || payload.tx_ref || ""),
+      mode: useStaticVirtualAccount ? "static" : "dynamic",
+      expiresAt: safeExpiresAt,
       createdAt: new Date(),
       updatedAt: new Date(),
       meta: data,
     };
 
-    user.flutterwaveVirtualAccount = account;
-    await user.save();
+    if (useStaticVirtualAccount) {
+      user.flutterwaveVirtualAccount = account;
+      await user.save();
+    }
 
-    return res.json({ success: true, account });
+    return res.json({ success: true, account, mode: account.mode });
   } catch (error) {
     console.error("Virtual account error:", error.response?.data || error.message);
     return res.status(500).json({
@@ -1025,4 +1037,6 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
     });
   }
 };
+
+
 
