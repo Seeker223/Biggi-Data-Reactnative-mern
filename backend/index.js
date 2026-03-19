@@ -486,6 +486,7 @@ if (process.env.NODE_ENV !== "production") {
   });
   app.get("/debug/routes", (req, res) => {
     const routes = [
+      { path: "/debug/flutterwave-key-mode", description: "Check active Flutterwave key mode (TEST/LIVE)" },
       { path: "/api/v1/auth", description: "Authentication routes" },
       { path: "/api/v1/users", description: "User management" },
       { path: "/api/v1/user", description: "User profile" },
