@@ -440,14 +440,15 @@ if (enableDebugRoutes) {
         timeout: 10000
       });
       
+      const usingTest =
+        String(process.env.FLUTTERWAVE_USE_TEST_KEYS || "false").toLowerCase() === "true";
+
       res.json({
         success: true,
         message: "âœ… Flutterwave API connection successful",
         status: response.status,
         bank_count: response.data.data ? response.data.data.length : 0,
-        mode: process.env.FLUTTERWAVE_SECRET_KEY.startsWith('FLWSECK_TEST') 
-          ? "TEST MODE" 
-          : "LIVE MODE",
+        mode: usingTest ? "TEST MODE" : "LIVE MODE",
         note: "If this fails, check your FLUTTERWAVE_SECRET_KEY"
       });
       
@@ -499,8 +500,12 @@ if (enableDebugRoutes) {
       },
     });
   });
+  app.get("/debug/webhook-health", (req, res) => {
+    return getWebhookHealth(req, res);
+  });
   app.get("/debug/routes", (req, res) => {
     const routes = [
+      { path: "/debug/webhook-health", description: "Latest webhook health payload (Flutterwave)" },
       { path: "/debug/flutterwave-key-mode", description: "Check active Flutterwave key mode (TEST/LIVE)" },
       { path: "/api/v1/auth", description: "Authentication routes" },
       { path: "/api/v1/users", description: "User management" },
