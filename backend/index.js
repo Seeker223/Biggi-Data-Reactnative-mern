@@ -40,6 +40,17 @@ app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
+// Lightweight debug status endpoint (safe in production)
+app.get("/debug/status", (req, res) => {
+  res.json({
+    success: true,
+    nodeEnv: process.env.NODE_ENV,
+    enableDebugRoutes:
+      process.env.NODE_ENV !== "production" ||
+      String(process.env.ENABLE_DEBUG_ROUTES || "false").toLowerCase() === "true",
+  });
+});
+
 /* ----------------------------------------
    ðŸ”Œ CONNECT MONGO WITH ENHANCED CONFIG
 ---------------------------------------- */
