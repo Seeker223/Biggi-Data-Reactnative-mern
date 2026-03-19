@@ -345,7 +345,7 @@ if (process.env.NODE_ENV !== "production") {
         flutterwave: flutterwaveKeyStatus,
         resend: resendKeyStatus,
       },
-      note: "Visit /debug/flutterwave-test to test Flutterwave connection or /debug/resend-test to test Resend"
+      note: "Visit /debug/flutterwave-test to test Flutterwave connection, /debug/flutterwave-key-mode for key mode, or /debug/resend-test to test Resend"
     });
   });
   
@@ -464,6 +464,26 @@ if (process.env.NODE_ENV !== "production") {
     }
   });
   
+  
+  // Flutterwave key mode debug endpoint
+  app.get("/debug/flutterwave-key-mode", (req, res) => {
+    const usingTest = String(process.env.FLUTTERWAVE_USE_TEST_KEYS || "false").toLowerCase() === "true";
+    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY || "";
+    const publicKey = process.env.FLUTTERWAVE_PUBLIC_KEY || "";
+    const webhookSecret = process.env.FLUTTERWAVE_WEBHOOK_SECRET || "";
+    const encryptionKey = process.env.FLUTTERWAVE_ENCRYPTION_KEY || "";
+
+    res.json({
+      success: true,
+      mode: usingTest ? "TEST" : "LIVE",
+      keys: {
+        secret: secretKey ? `Set (${secretKey.substring(0, 8)}...)` : "Not set",
+        public: publicKey ? `Set (${publicKey.substring(0, 8)}...)` : "Not set",
+        webhookSecret: webhookSecret ? "Set" : "Not set",
+        encryptionKey: encryptionKey ? "Set" : "Not set",
+      },
+    });
+  });
   app.get("/debug/routes", (req, res) => {
     const routes = [
       { path: "/api/v1/auth", description: "Authentication routes" },
@@ -743,6 +763,7 @@ server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 export default app;
+
 
 
 
