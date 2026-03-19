@@ -284,7 +284,11 @@ app.get("/debug/auth-routes-live", (req, res) => {
 /* ----------------------------------------
    DEBUG ROUTES (PROTECT IN PRODUCTION)
 ---------------------------------------- */
-if (process.env.NODE_ENV !== "production") {
+const enableDebugRoutes =
+  process.env.NODE_ENV !== "production" ||
+  String(process.env.ENABLE_DEBUG_ROUTES || "false").toLowerCase() === "true";
+
+if (enableDebugRoutes) {
   app.get("/debug/plans", async (req, res) => {
     try {
       const plans = await DataPlan.find();
