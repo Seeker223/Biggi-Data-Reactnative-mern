@@ -965,14 +965,15 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
       });
     }
 
-    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;
+    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;\r\n\r\n    const dynamicAmountEnv = Number(process.env.DYNAMIC_VIRTUAL_ACCOUNT_AMOUNT || 0);
+    const dynamicAmount = dynamicAmountEnv > 0 ? dynamicAmountEnv : 1;
     if (!secretKey) {
       return res.status(500).json({ success: false, message: "Flutterwave secret key missing" });
     }
 
     const payload = {
       email: user.email,
-      is_permanent: useStaticVirtualAccount,
+      is_permanent: useStaticVirtualAccount,\r\n      amount: useStaticVirtualAccount ? undefined : dynamicAmount,
       account_name: user.username || user.email,
       bvn: useStaticVirtualAccount && hasBvn ? user.bvn : undefined,
       nin: useStaticVirtualAccount && !hasBvn && hasNin ? user.nin : undefined,
@@ -998,7 +999,7 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
 
     const data = response?.data?.data || {};
     if (!data.account_number || !data.bank_name) {
-      const message = response?.data?.message || "Failed to create virtual account";
+      const message = response?.data?.message || "We are unable to process your request right now. Please try again shortly. Virtual account not ready yet. Please try again later.";
       return res.status(400).json({
         success: false,
         message,
@@ -1033,10 +1034,12 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
     console.error("Virtual account error:", error.response?.data || error.message);
     return res.status(500).json({
       success: false,
-      message: "Failed to create virtual account",
+      message: "We are unable to process your request right now. Please try again shortly. Virtual account not ready yet. Please try again later.",
     });
   }
 };
+
+
 
 
 
