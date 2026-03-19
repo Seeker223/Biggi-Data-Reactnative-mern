@@ -968,7 +968,8 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
     const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;
 
     const dynamicAmountEnv = Number(process.env.DYNAMIC_VIRTUAL_ACCOUNT_AMOUNT || 0);
-    const dynamicAmount = dynamicAmountEnv > 0 ? dynamicAmountEnv : 1;
+    const requestedAmount = Number(req.query?.amount || 0);
+    const dynamicAmount = requestedAmount > 0 ? Math.round(requestedAmount) : dynamicAmountEnv > 0 ? Math.round(dynamicAmountEnv) : 1;
     if (!secretKey) {
       return res.status(500).json({ success: false, message: "Flutterwave secret key missing" });
     }
@@ -1041,6 +1042,7 @@ export const getFlutterwaveVirtualAccount = async (req, res) => {
     });
   }
 };
+
 
 
 
