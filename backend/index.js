@@ -42,6 +42,25 @@ app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
+const useFlutterwaveTestKeys =
+  String(process.env.FLUTTERWAVE_USE_TEST_KEYS || "false").toLowerCase() === "true";
+
+if (useFlutterwaveTestKeys) {
+  process.env.FLUTTERWAVE_SECRET_KEY =
+    process.env.TEST_FLUTTERWAVE_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY;
+  process.env.FLUTTERWAVE_PUBLIC_KEY =
+    process.env.TEST_FLUTTERWAVE_PUBLIC_KEY || process.env.FLUTTERWAVE_PUBLIC_KEY;
+  process.env.VITE_FLUTTERWAVE_PUBLIC_KEY =
+    process.env.TEST_VITE_FLUTTERWAVE_PUBLIC_KEY ||
+    process.env.TEST_FLUTTERWAVE_PUBLIC_KEY ||
+    process.env.VITE_FLUTTERWAVE_PUBLIC_KEY ||
+    process.env.FLUTTERWAVE_PUBLIC_KEY;
+  process.env.FLUTTERWAVE_WEBHOOK_SECRET =
+    process.env.TEST_FLUTTERWAVE_WEBHOOK_SECRET || process.env.FLUTTERWAVE_WEBHOOK_SECRET;
+  process.env.FLUTTERWAVE_ENCRYPTION_KEY =
+    process.env.TEST_FLUTTERWAVE_ENCRYPTION_KEY || process.env.FLUTTERWAVE_ENCRYPTION_KEY;
+}
+
 /* ----------------------------------------
    ðŸ”Œ CONNECT MONGO WITH ENHANCED CONFIG
 ---------------------------------------- */
@@ -750,6 +769,7 @@ server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 export default app;
+
 
 
 
