@@ -10,6 +10,7 @@ import {
 } from "../controllers/flutterwaveController.js";
 
 import {
+  getVirtualAccount,
   flutterwaveWithdrawal,
   flutterwaveWithdrawWebhook,
   verifyBankAccount,
@@ -38,6 +39,9 @@ router.post(
   paymentLimiter,
   verifyFlutterwavePayment
 );
+
+// Static virtual account for bank transfer deposits
+router.get("/virtual-account", protect, getVirtualAccount);
 
 // Poll deposit status for a transaction
 router.get("/deposit-status/:tx_ref", protect, getDepositStatus);

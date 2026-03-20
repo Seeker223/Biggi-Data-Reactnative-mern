@@ -8,6 +8,20 @@ import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { handleProfitSweepWebhook } from "../utils/profitSweep.js";
 import { getDepositFeeSettings as fetchDepositFeeSettings } from "../utils/depositFee.js";
+
+const isStaticVirtualAccountEnabled = () => {
+  if (typeof FEATURE_FLAGS.USE_STATIC_VIRTUAL_ACCOUNT === "boolean") {
+    return FEATURE_FLAGS.USE_STATIC_VIRTUAL_ACCOUNT;
+  }
+  return !FEATURE_FLAGS.DISABLE_STATIC_VIRTUAL_ACCOUNT;
+};
+
+const splitName = (fullName = "") => {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first: "Biggi", last: "Data" };
+  if (parts.length === 1) return { first: parts[0], last: "User" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+};
 /* =====================================================
    GET USER BALANCE
 ===================================================== */
@@ -37,6 +51,123 @@ export const getUserBalance = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch balance",
+    });
+  }
+};
+
+/* =====================================================
+   VIRTUAL ACCOUNT (STATIC)
+===================================================== */
+export const getVirtualAccount = async (req, res) => {
+  try {
+    if (!isStaticVirtualAccountEnabled()) {
+      return res.status(200).json({
+        success: false,
+        mode: "dynamic",
+        disabled: true,
+        message: "Static virtual accounts are disabled. Use dynamic checkout.",
+      });
+    }
+
+    const user = await User.findById(req.user.id).select(
+      "email username phoneNumber bvn nin flutterwaveVirtualAccount"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const forceRefresh = String(req.query.refresh || "").toLowerCase() === "true";
+    const existing = user.flutterwaveVirtualAccount || {};
+    if (!forceRefresh && existing?.accountNumber) {
+      return res.json({
+        success: true,
+        mode: "static",
+        account: {
+          accountNumber: existing.accountNumber,
+          bankName: existing.bankName,
+          accountName: existing.accountName,
+          reference: existing.reference || "",
+          updatedAt: existing.updatedAt || existing.createdAt || null,
+        },
+      });
+    }
+
+    if (!process.env.FLUTTERWAVE_SECRET_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "Flutterwave secret key not configured",
+      });
+    }
+
+    if (!user.bvn && !user.nin) {
+      return res.status(400).json({
+        success: false,
+        message: "BVN or NIN is required to create a static virtual account.",
+      });
+    }
+
+    const { first, last } = splitName(user.username || user.email);
+    const txRef = `va_${user._id}_${Date.now()}`;
+    const payload = {
+      email: user.email,
+      tx_ref: txRef,
+      phonenumber: user.phoneNumber || undefined,
+      is_permanent: true,
+      firstname: first,
+      lastname: last,
+      narration: `Biggi Data ${user.username || user.email}`,
+      bvn: user.bvn || undefined,
+      nin: user.nin || undefined,
+    };
+
+    const response = await axios.post(
+      "https://api.flutterwave.com/v3/virtual-account-numbers",
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 20000,
+      }
+    );
+
+    if (response.data?.status !== "success") {
+      return res.status(500).json({
+        success: false,
+        message: response.data?.message || "Virtual account creation failed",
+        error: response.data,
+      });
+    }
+
+    const data = response.data?.data || {};
+    const account = {
+      accountNumber: data.account_number || "",
+      bankName: data.bank_name || "",
+      accountName: data.account_name || `${first} ${last}`.trim(),
+      reference: data.order_ref || txRef,
+      updatedAt: new Date().toISOString(),
+    };
+
+    user.flutterwaveVirtualAccount = {
+      provider: "flutterwave",
+      accountNumber: account.accountNumber,
+      bankName: account.bankName,
+      accountName: account.accountName,
+      reference: account.reference,
+      createdAt: existing?.createdAt || new Date(),
+      updatedAt: new Date(),
+      meta: data,
+    };
+    await user.save();
+
+    return res.json({ success: true, mode: "static", account });
+  } catch (error) {
+    console.error("Get virtual account error:", error?.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load virtual account",
+      error: error?.response?.data || error.message,
     });
   }
 };
