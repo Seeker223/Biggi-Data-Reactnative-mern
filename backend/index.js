@@ -6,6 +6,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import hpp from "hpp";
 import "dotenv/config";
+import path from "path";
 
 /* ---------------- CRON JOB ---------------- */
 import job from "./utils/cron.js";
@@ -168,6 +169,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+app.use("/assets", express.static(path.resolve("assets")));
 
 /* ----------------------------------------
    REQUEST LOGGING MIDDLEWARE

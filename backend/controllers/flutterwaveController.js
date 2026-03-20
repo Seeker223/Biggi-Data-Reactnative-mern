@@ -7,6 +7,7 @@ import { logWalletTransaction } from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
 /* =====================================================
    VERIFY FLUTTERWAVE PAYMENT (SDK → BACKEND)
 ===================================================== */
@@ -131,6 +132,21 @@ export const verifyFlutterwavePayment = async (req, res) => {
         await logPlatformDepositFee({ userId, reference: tx_ref, revenue: serviceCharge });
       }
 
+      await sendUserEmail({
+        userId,
+        type: "deposit",
+        email: user.email,
+        subject: "Deposit Successful",
+        title: "Deposit Successful",
+        bodyLines: [
+          "Your deposit has been credited to your wallet.",
+          `Amount credited: ${formatNaira(requestedAmount)}.`,
+          `Service charge: ${formatNaira(serviceCharge || 0)}.`,
+          `Total paid: ${formatNaira(paidAmount)}.`,
+          `Reference: ${tx_ref}.`,
+        ],
+      });
+
       console.log("✅ Wallet credited via verification API:", tx_ref);
 
       return res.json({
@@ -221,6 +237,8 @@ const deriveWalletCreditFromTotal = (totalAmount, feeSettings) => {
 
   return Math.max(0, estimate);
 };
+
+const formatNaira = (value) => `N${Number(value || 0).toLocaleString()}`;
 /* =====================================================
    FLUTTERWAVE WEBHOOK (PRIMARY WALLET CREDITING) - FIXED
 ===================================================== */
@@ -432,6 +450,21 @@ export const flutterwaveWebhook = async (req, res) => {
             revenue: serviceCharge,
           });
         }
+
+        await sendUserEmail({
+          userId,
+          type: "deposit",
+          email: user.email,
+          subject: "Deposit Successful",
+          title: "Deposit Successful",
+          bodyLines: [
+            "Your deposit has been credited to your wallet.",
+            `Amount credited: ${formatNaira(walletCredit)}.`,
+            `Service charge: ${formatNaira(serviceCharge || 0)}.`,
+            `Total paid: ${formatNaira(totalPaid)}.`,
+            `Reference: ${reference}.`,
+          ],
+        });
       }
     } catch (sessionError) {
       await session.abortTransaction();
@@ -683,6 +716,21 @@ export const reconcilePayment = async (req, res) => {
         if (serviceCharge > 0) {
           await logPlatformDepositFee({ userId, reference: tx_ref, revenue: serviceCharge });
         }
+
+        await sendUserEmail({
+          userId,
+          type: "deposit",
+          email: user.email,
+          subject: "Deposit Successful",
+          title: "Deposit Successful",
+          bodyLines: [
+            "Your deposit has been credited to your wallet.",
+            `Amount credited: ${formatNaira(requestedAmount)}.`,
+            `Service charge: ${formatNaira(serviceCharge || 0)}.`,
+            `Total paid: ${formatNaira(paidAmount)}.`,
+            `Reference: ${tx_ref}.`,
+          ],
+        });
       } catch (logError) {
         console.error("Wallet log error:", logError);
       }

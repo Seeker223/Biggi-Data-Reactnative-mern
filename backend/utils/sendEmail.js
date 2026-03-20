@@ -31,6 +31,17 @@ try {
 
 const getEnv = (key) => String(process.env[key] || "").trim();
 
+const getEmailLogoUrl = () => {
+  const direct =
+    getEnv("EMAIL_LOGO_URL") ||
+    getEnv("EMAIL_LOGO") ||
+    getEnv("LOGO_URL");
+  if (direct) return direct;
+  const baseUrl = getEnv("BASE_URL");
+  if (baseUrl) return `${baseUrl.replace(/\/+$/, "")}/assets/logo.png`;
+  return "";
+};
+
 const getSmtpConfig = () => {
   const host = getEnv("SMTP_HOST") || "smtp.gmail.com";
   const port = Number(getEnv("SMTP_PORT") || 465);
@@ -87,6 +98,7 @@ const sendEmail = async (options) => {
 
   try {
     // Create HTML email template
+    const logoUrl = getEmailLogoUrl();
     const html = `
       <!DOCTYPE html>
       <html>
@@ -99,6 +111,7 @@ const sendEmail = async (options) => {
           .container { max-width: 600px; background: white; border-radius: 12px; margin: auto; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
           .header { text-align: center; margin-bottom: 20px; }
           .logo { max-width: 150px; height: auto; }
+          .brand { font-size: 20px; font-weight: 700; color: #2b2d42; margin: 6px 0 0; }
           .otp-box { 
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -132,7 +145,8 @@ const sendEmail = async (options) => {
       <body>
         <div class="container">
           <div class="header">
-            <h2 style="color: #2b2d42;">Biggi Data</h2>
+            ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="Biggi Data" />` : ""}
+            <div class="brand">Biggi Data</div>
           </div>
           
           <p>Hi <strong>${options.username || options.email}</strong>,</p>
