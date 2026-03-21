@@ -1,6 +1,14 @@
-﻿import DepositFeeSettings from "../models/DepositFeeSettings.js";
+import DepositFeeSettings from "../models/DepositFeeSettings.js";
 import PlatformLedger from "../models/PlatformLedger.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
+
+const toNumberOrFallback = (value, fallback) => {
+  if (value === "" || value === null || value === undefined) return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const clampNonNegative = (value) => Math.max(0, Number(value || 0));
 
 export const getDepositFeeSettingsAdmin = async (req, res) => {
   try {
@@ -17,10 +25,10 @@ export const updateDepositFeeSettings = async (req, res) => {
     const settings = await getDepositFeeSettings();
     const payload = {
       enabled: req.body?.enabled !== undefined ? Boolean(req.body.enabled) : settings.enabled,
-      flatFee: Number(req.body?.flatFee ?? settings.flatFee),
-      percentFee: Number(req.body?.percentFee ?? settings.percentFee),
-      minFee: Number(req.body?.minFee ?? settings.minFee),
-      maxFee: Number(req.body?.maxFee ?? settings.maxFee),
+      flatFee: clampNonNegative(toNumberOrFallback(req.body?.flatFee, settings.flatFee)),
+      percentFee: clampNonNegative(toNumberOrFallback(req.body?.percentFee, settings.percentFee)),
+      minFee: clampNonNegative(toNumberOrFallback(req.body?.minFee, settings.minFee ?? 0)),
+      maxFee: clampNonNegative(toNumberOrFallback(req.body?.maxFee, settings.maxFee ?? 0)),
       updatedBy: req.user?.id || settings.updatedBy,
     };
 

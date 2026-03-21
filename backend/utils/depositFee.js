@@ -1,7 +1,7 @@
-﻿import DepositFeeSettings from "../models/DepositFeeSettings.js";
+import DepositFeeSettings from "../models/DepositFeeSettings.js";
 
 export const getDepositFeeSettings = async () => {
-  let settings = await DepositFeeSettings.findOne();
+  let settings = await DepositFeeSettings.findOne().sort({ updatedAt: -1, createdAt: -1 });
   if (!settings) {
     settings = await DepositFeeSettings.create({
       enabled: true,
