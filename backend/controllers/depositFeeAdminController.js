@@ -32,7 +32,11 @@ export const updateDepositFeeSettings = async (req, res) => {
       updatedBy: req.user?.id || settings.updatedBy,
     };
 
-    const updated = await DepositFeeSettings.findByIdAndUpdate(settings._id, { $set: payload }, { new: true });
+    const updated = await DepositFeeSettings.findOneAndUpdate(
+      {},
+      { $set: payload },
+      { new: true, upsert: true, sort: { updatedAt: -1, createdAt: -1 } }
+    );
     return res.json({ success: true, settings: updated });
   } catch (error) {
     console.error("Update deposit fee settings error:", error);
