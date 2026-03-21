@@ -175,7 +175,278 @@ export const runMonthlyRaffleDrawIfDue = async (rawMonth, options = {}) => {
   }
 };
 
+
 /* =====================================================
+   GET MONTHLY ELIGIBILITY
+===================================================== */
+export const getMonthlyEligibility = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select(
+      "monthlyDraws monthlyRaffleTickets"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const month = normalizeMonth(req.query?.month);
+    const monthlyDraw = (user.monthlyDraws || []).find((d) => d.month === month);
+    const purchases = Number(monthlyDraw?.purchasesCount || 0);
+    const required = 5;
+    const progress = Math.min(100, (purchases / required) * 100 || 0);
+    const isEligible = purchases >= required;
+
+    const ticketsThisMonth = (user.monthlyRaffleTickets || []).filter(
+      (t) => t.month === month
+    );
+    const unplayed = ticketsThisMonth.filter((t) => !t.played);
+    const played = ticketsThisMonth.filter((t) => t.played);
+
+    const now = new Date();
+    const monthEnd = getMonthEnd(month);
+    const daysLeft = Math.max(
+      0,
+      Math.ceil((monthEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    );
+
+    return res.json({
+      success: true,
+      eligibility: {
+        purchases,
+        required,
+        progress,
+        daysLeft,
+        isEligible,
+        raffleTicketsTotal: ticketsThisMonth.length,
+        raffleTicketsUnplayed: unplayed.length,
+        raffleTicketsPlayed: played.length,
+      },
+    });
+  } catch (error) {
+    console.error("Get monthly eligibility error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get monthly eligibility",
+    });
+  }
+};
+
+/* =====================================================
+   GET MONTHLY RAFFLE TICKETS
+===================================================== */
+export const getMonthlyRaffleTickets = async (req, res) => {
+  try {
+    const month = normalizeMonth(req.query?.month);
+    const user = await User.findById(req.user.id).select(
+      "username monthlyRaffleTickets"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const tickets = (user.monthlyRaffleTickets || [])
+      .filter((t) => t.month === month)
+      .map((t) => ({
+        id: t._id,
+        code: t.code,
+        month: t.month,
+        played: Boolean(t.played),
+        issuedAt: t.issuedAt,
+        playedAt: t.playedAt || null,
+      }));
+
+    return res.json({ success: true, month, tickets });
+  } catch (error) {
+    console.error("Get monthly raffle tickets error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get raffle tickets",
+    });
+  }
+};
+
+/* =====================================================
+   PLAY MONTHLY RAFFLE TICKET
+===================================================== */
+export const playMonthlyRaffleTicket = async (req, res) => {
+  try {
+    const month = normalizeMonth(req.body?.month);
+    if (isMonthClosed(month)) {
+      return res.status(400).json({
+        success: false,
+        message: "Monthly draw already closed for this month.",
+      });
+    }
+
+    const ticketId = String(req.body?.ticketId || "");
+    const code = String(req.body?.code || "").trim().toUpperCase();
+
+    const user = await User.findById(req.user.id).select("monthlyRaffleTickets email username");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const ticketsThisMonth = (user.monthlyRaffleTickets || []).filter(
+      (t) => t.month === month
+    );
+
+    const ticket = ticketsThisMonth.find((t) => {
+      if (ticketId) return String(t._id) === ticketId;
+      return String(t.code || "").toUpperCase() === code;
+    });
+
+    if (!ticket) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid raffle ticket",
+      });
+    }
+
+    if (ticket.played) {
+      return res.status(400).json({
+        success: false,
+        message: "This raffle ticket has already been played",
+      });
+    }
+
+    const entry = await MonthlyRaffleEntry.create({
+      month,
+      code: ticket.code,
+      user: user._id,
+    });
+
+    ticket.played = true;
+    ticket.playedAt = new Date();
+    user.addNotification({
+      type: "Monthly Draw",
+      status: "success",
+      message: `Ticket ${ticket.code} entered for Monthly Draw (${month}). Status: Pending until month end.`,
+    });
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Monthly raffle ticket entered",
+      entry: { id: entry._id, code: ticket.code, month },
+    });
+  } catch (error) {
+    if (Number(error?.code) === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "This raffle ticket code has already been used",
+      });
+    }
+    console.error("Play monthly raffle ticket error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to play raffle ticket",
+    });
+  }
+};
+
+/* =====================================================
+   GET MONTHLY WINNERS
+===================================================== */
+export const getMonthlyWinners = async (req, res) => {
+  try {
+    const month = normalizeMonth(req.query?.month);
+    await runMonthlyRaffleDrawIfDue(month);
+    const draw = await MonthlyRaffleDraw.findOne({ month }).lean();
+    const entries = await MonthlyRaffleEntry.find({ month })
+      .select("code status user")
+      .lean();
+    return res.json({
+      success: true,
+      month,
+      draw,
+      entries: entries.map((e) => ({
+        code: maskCode(e.code),
+        status: e.status,
+        user: e.user,
+      })),
+    });
+  } catch (error) {
+    console.error("Get monthly winners error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get monthly winners",
+    });
+  }
+};
+
+/* =====================================================
+   CLAIM MONTHLY REWARD
+===================================================== */
+export const claimMonthlyReward = async (req, res) => {
+  try {
+    if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
+      return res.status(403).json({
+        success: false,
+        message: "Monthly rewards are temporarily disabled for review.",
+      });
+    }
+
+    const month = normalizeMonth(req.body?.month);
+    await runMonthlyRaffleDrawIfDue(month);
+
+    const draw = await MonthlyRaffleDraw.findOne({ month });
+    if (!draw) {
+      return res.status(404).json({
+        success: false,
+        message: "No monthly draw result found for this month.",
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (String(draw.winnerUser) !== String(user._id)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the selected raffle ticket owner can claim this monthly reward.",
+      });
+    }
+
+    const claimed = await user.claimMonthlyReward(month);
+    if (!claimed) {
+      return res.status(400).json({
+        success: false,
+        message: "Monthly reward already claimed or unavailable.",
+      });
+    }
+
+    draw.claimed = true;
+    draw.claimedAt = new Date();
+    await draw.save();
+
+    user.addNotification({
+      type: "Monthly Draw",
+      status: "success",
+      amount: MONTHLY_WIN_PRIZE,
+      message: `Monthly draw reward claimed for ${month}: N${MONTHLY_WIN_PRIZE.toLocaleString()} added to reward balance.`,
+    });
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Monthly reward claimed successfully",
+      reward: {
+        month,
+        amount: MONTHLY_WIN_PRIZE,
+        claimedAt: draw.claimedAt,
+        winningCode: draw.winningCode,
+      },
+      balance: user.rewardBalance,
+    });
+  } catch (error) {
+    console.error("Claim monthly reward error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to claim monthly reward",
+    });
+  }
+};/* =====================================================
    TOP PURCHASES LEADERBOARD (MONTHLY)
 ===================================================== */
 export const getTopPurchasersLeaderboard = async (req, res) => {
@@ -271,6 +542,8 @@ export default {
   getTopPurchasersLeaderboard,
   getPreviousMonthString,
 };
+
+
 
 
 
