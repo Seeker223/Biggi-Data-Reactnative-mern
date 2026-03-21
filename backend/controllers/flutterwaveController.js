@@ -319,7 +319,15 @@ export const flutterwaveWebhook = async (req, res) => {
     }
 
     const { tx_ref, status, amount, id, currency } = data || {};
-    const reference = String(tx_ref || data?.reference || data?.id || "").trim();
+    const reference = String(
+      tx_ref ||
+        data?.reference ||
+        data?.flw_ref ||
+        data?.flwRef ||
+        data?.FlwRef ||
+        data?.id ||
+        ""
+    ).trim();
 
     if (!reference || !amount) {
       console.error("❌ Missing reference or amount in webhook");
@@ -330,6 +338,14 @@ export const flutterwaveWebhook = async (req, res) => {
       data?.meta?.virtual_account?.account_number ||
       data?.meta?.account_number ||
       data?.account_number ||
+      data?.accountNumber ||
+      "";
+
+    const accountId =
+      data?.account_id ||
+      data?.accountId ||
+      data?.AccountId ||
+      data?.account?.id ||
       "";
 
     const resolveUserIdFromRef = (ref) => {
@@ -345,6 +361,18 @@ export const flutterwaveWebhook = async (req, res) => {
         "flutterwaveVirtualAccount.accountNumber": accountNumber,
       }).select("_id");
       userId = userByAccount?._id?.toString() || null;
+    }
+
+    if (!userId && accountId) {
+      const userByAccountId = await User.findOne({
+        $or: [
+          { "flutterwaveVirtualAccount.meta.account_id": accountId },
+          { "flutterwaveVirtualAccount.meta.accountId": accountId },
+          { "flutterwaveVirtualAccount.meta.AccountId": accountId },
+          { "flutterwaveVirtualAccount.meta.id": accountId },
+        ],
+      }).select("_id");
+      userId = userByAccountId?._id?.toString() || null;
     }
 
     if (!userId && data?.customer?.email) {
