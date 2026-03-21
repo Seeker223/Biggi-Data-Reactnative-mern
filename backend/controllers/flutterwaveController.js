@@ -391,26 +391,33 @@ export const flutterwaveWebhook = async (req, res) => {
     let serviceCharge = 0;
     const totalPaid = Number(amount || 0);
 
-    // Atomic operation to prevent double crediting
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    // Atomic operation to prevent double crediting (falls back if transactions unavailable)
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch (txnError) {
+      session = null;
+      console.error("⚠️ Webhook transaction unavailable, falling back:", txnError?.message || txnError);
+    }
 
     try {
-      const user = await User.findById(userId).session(session);
+      const userQuery = User.findById(userId);
+      const user = session ? await userQuery.session(session) : await userQuery;
       if (!user) {
-        await session.abortTransaction();
+        if (session) await session.abortTransaction();
         console.error("❌ User not found for ID:", userId);
         return res.sendStatus(200);
       }
 
-      // Check for existing successful deposit
-      const existingDeposit = await Deposit.findOne({
+      const depositQuery = Deposit.findOne({
         reference,
         status: "successful",
-      }).session(session);
+      });
+      const existingDeposit = session ? await depositQuery.session(session) : await depositQuery;
 
       if (existingDeposit) {
-        await session.abortTransaction();
+        if (session) await session.abortTransaction();
         console.log("⚠️ Deposit already processed:", reference);
         return res.sendStatus(200);
       }
@@ -420,7 +427,7 @@ export const flutterwaveWebhook = async (req, res) => {
       serviceCharge = Math.max(0, Math.round(totalPaid - walletCredit));
 
       if (walletCredit <= 0) {
-        await session.abortTransaction();
+        if (session) await session.abortTransaction();
         console.log("⚠️ Unable to derive wallet credit from payment:", {
           reference,
           totalPaid,
@@ -442,13 +449,13 @@ export const flutterwaveWebhook = async (req, res) => {
           flutterwaveTransactionId: id,
           gatewayResponse: data,
         },
-        { upsert: true, new: true, session }
+        session ? { upsert: true, new: true, session } : { upsert: true, new: true }
       );
 
       if (status === "successful") {
         user.mainBalance = Number(user.mainBalance || 0) + walletCredit;
         user.totalDeposits = Number(user.totalDeposits || 0) + walletCredit;
-        await user.save({ session });
+        await user.save(session ? { session } : {});
         console.log("✅ Wallet credited via webhook:", {
           reference,
           walletCredit,
@@ -459,8 +466,10 @@ export const flutterwaveWebhook = async (req, res) => {
         console.log("❌ Payment failed via webhook:", { reference, status });
       }
 
-      await session.commitTransaction();
-      console.log("✅ Webhook transaction committed for:", reference);
+      if (session) {
+        await session.commitTransaction();
+        console.log("✅ Webhook transaction committed for:", reference);
+      }
 
       if (status === "successful") {
         await logWalletTransaction(
@@ -495,10 +504,10 @@ export const flutterwaveWebhook = async (req, res) => {
         });
       }
     } catch (sessionError) {
-      await session.abortTransaction();
+      if (session) await session.abortTransaction();
       console.error("❌ Webhook transaction failed:", sessionError);
     } finally {
-      session.endSession();
+      if (session) session.endSession();
     }
 
     return res.sendStatus(200);
