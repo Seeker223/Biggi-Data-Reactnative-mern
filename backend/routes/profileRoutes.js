@@ -7,6 +7,7 @@ import {
   getNotifications,
   markNotificationsAsRead,
   getReferrals,
+  getReferralLeaderboard,
   getTransactionSecurityStatus,
   setTransactionPin,
   disableTransactionPin,
@@ -23,6 +24,7 @@ router.put("/update-profile", protect, updateProfile);
 router.get("/notifications", protect, getNotifications);
 router.post("/notifications/read", protect, markNotificationsAsRead);
 router.get("/referrals", protect, getReferrals);
+router.get("/referrals/leaderboard", protect, getReferralLeaderboard);
 router.get("/transaction-security", protect, getTransactionSecurityStatus);
 router.post("/transaction-pin", protect, setTransactionPin);
 router.post("/transaction-pin/verify", protect, verifyTransactionPin);

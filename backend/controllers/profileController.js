@@ -1,4 +1,4 @@
-﻿import User from "../models/User.js";
+import User from "../models/User.js";
 import { notifyAdmins } from "../utils/notifyAdmins.js";
 
 // -----------------------------------------------
@@ -46,7 +46,7 @@ export const updateProfile = async (req, res) => {
         updates.userRole = normalizedRole;
       }
     }
-    delete updates.email; // (frontend doesnâ€™t update email)
+    delete updates.email; // (frontend doesn’t update email)
 
     if (updates.bvn) {
       const bvn = String(updates.bvn || "").replace(/\D/g, "").trim();
@@ -88,7 +88,7 @@ export const updateProfile = async (req, res) => {
 };
 
 // -----------------------------------------------
-// UPDATE AVATAR â€” your frontend uses FormData
+// UPDATE AVATAR — your frontend uses FormData
 // -----------------------------------------------
 export const updateAvatar = async (req, res) => {
   try {
@@ -209,7 +209,79 @@ export const getReferrals = async (req, res) => {
   }
 };
 
+
 // -----------------------------------------------
+// GET REFERRAL LEADERBOARD (MONTHLY)
+// -----------------------------------------------
+export const getReferralLeaderboard = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("referralCode username photo");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+
+    const rows = await User.aggregate([
+      {
+        $match: {
+          referredByCode: { $nin: [null, ""] },
+          createdAt: { $gte: start, $lt: end },
+        },
+      },
+      { $group: { _id: "$referredByCode", count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "referralCode",
+          as: "referrer",
+        },
+      },
+      { $unwind: "$referrer" },
+      {
+        $project: {
+          _id: 0,
+          referralCode: "$_id",
+          count: 1,
+          userId: "$referrer._id",
+          username: "$referrer.username",
+          photo: "$referrer.photo",
+          state: "$referrer.state",
+        },
+      },
+    ]);
+
+    const leaderboard = rows.map((row, index) => ({
+      ...row,
+      rank: index + 1,
+    }));
+
+    let myCount = 0;
+    if (user.referralCode) {
+      myCount = await User.countDocuments({
+        referredByCode: user.referralCode,
+        createdAt: { $gte: start, $lt: end },
+      });
+    }
+
+    return res.json({
+      success: true,
+      month: { start, end },
+      leaderboard,
+      myCount,
+      hasReferrals: myCount > 0,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch referral leaderboard",
+    });
+  }
+};// -----------------------------------------------
 // GET TRANSACTION SECURITY STATUS
 // -----------------------------------------------
 export const getTransactionSecurityStatus = async (req, res) => {
@@ -387,4 +459,5 @@ export const verifyTransactionPin = async (req, res) => {
     });
   }
 };
+
 
