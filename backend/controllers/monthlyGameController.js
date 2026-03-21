@@ -202,10 +202,9 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
         },
       },
       { $sort: { purchasesCount: -1, lastPurchaseDate: 1, _id: 1 } },
-      { $limit: 10 },
     ]);
 
-    const leaderboard = rows.map((row, index) => ({
+    const leaderboard = rows.slice(0, 10).map((row, index) => ({
       rank: index + 1,
       userId: row._id,
       username: row.username,
@@ -218,6 +217,20 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
     const mine = (user?.monthlyDraws || []).find((d) => d.month === month);
     const myPurchases = Number(mine?.purchasesCount || 0);
 
+    let myRank = null;
+    if (myPurchases >= threshold) {
+      const higher = rows.filter((row) => {
+        if (row.purchasesCount > myPurchases) return true;
+        if (row.purchasesCount < myPurchases) return false;
+        const rowDate = row.lastPurchaseDate ? new Date(row.lastPurchaseDate).getTime() : 0;
+        const myDate = mine?.lastPurchaseDate ? new Date(mine.lastPurchaseDate).getTime() : 0;
+        if (rowDate < myDate) return true;
+        if (rowDate > myDate) return false;
+        return String(row._id) < String(user._id);
+      }).length;
+      myRank = higher + 1;
+    }
+
     return res.json({
       success: true,
       month,
@@ -225,6 +238,7 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
       leaderboard,
       myPurchases,
       qualified: myPurchases >= threshold,
+      myRank,
     });
   } catch (error) {
     console.error("Top purchases leaderboard error:", error);
@@ -234,7 +248,6 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
     });
   }
 };
-
 /* =====================================================
    UPDATE MONTHLY PURCHASE COUNT
    Disabled: purchases and raffle tickets are updated automatically on real buy-data success.
@@ -258,6 +271,7 @@ export default {
   getTopPurchasersLeaderboard,
   getPreviousMonthString,
 };
+
 
 
 
