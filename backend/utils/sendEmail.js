@@ -39,9 +39,11 @@ const getEmailLogoUrl = () => {
     getEnv("SITE_URL") ||
     getEnv("FRONTEND_URL");
   if (direct) return direct;
+  const siteUrl = getEnv("SITE_URL") || getEnv("FRONTEND_URL");
+  if (siteUrl) return `${siteUrl.replace(/\/+$/, "")}/biggi-data-logo.png`;
   const baseUrl = getEnv("BASE_URL");
-  if (baseUrl) return `${baseUrl.replace(/\/+$/, "")}/assets/logo.png`;
-  return "https://biggidata.com.ng/assets/logo.png";
+  if (baseUrl) return `${baseUrl.replace(/\/+$/, "")}/biggi-data-logo.png`;
+  return "https://biggidata.com.ng/biggi-data-logo.png";
 };
 
 const getSmtpConfig = () => {
