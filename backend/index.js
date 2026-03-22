@@ -1,4 +1,4 @@
-﻿// backend/index.js - UPDATED WITH ENHANCED DEBUGGING & RESEND
+// backend/index.js - UPDATED WITH ENHANCED DEBUGGING & RESEND
 import express from "express";
 import mongoose from "mongoose";
 import helmet from "helmet";
@@ -30,7 +30,7 @@ import profitSweepAdminRoutes from "./routes/profitSweepAdminRoutes.js";
 import depositFeeAdminRoutes from "./routes/depositFeeAdminRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
-import DataPlan from "./models/DataPlan.js";
+import DataPlan from "./models/DataPlan.js";\nimport User from "./models/User.js";
 import { getWebhookHealth } from "./controllers/webhookHealthController.js";
 
 /* ---------------- ERROR HANDLER ---------------- */
@@ -54,12 +54,12 @@ app.get("/debug/status", (req, res) => {
 });
 
 /* ----------------------------------------
-   ðŸ”Œ CONNECT MONGO WITH ENHANCED CONFIG
+   🔌 CONNECT MONGO WITH ENHANCED CONFIG
 ---------------------------------------- */
 const connectDB = async () => {
   try {
     if (!process.env.MONGO_URI) {
-      console.error("âŒ MONGO_URI is not defined in environment variables");
+      console.error("❌ MONGO_URI is not defined in environment variables");
       process.exit(1);
     }
 
@@ -70,13 +70,13 @@ const connectDB = async () => {
       socketTimeoutMS: 45000,
     });
 
-    console.log("âœ… MongoDB Connected Successfully ðŸš€");
+    console.log("✅ MongoDB Connected Successfully 🚀");
     
     // Test connection
     await mongoose.connection.db.admin().ping();
-    console.log("âœ… MongoDB Ping Successful");
+    console.log("✅ MongoDB Ping Successful");
   } catch (err) {
-    console.error("âŒ MongoDB Connection Error:", err.message);
+    console.error("❌ MongoDB Connection Error:", err.message);
     process.exit(1);
   }
 };
@@ -87,19 +87,19 @@ connectDB();
    MONGOOSE CONNECTION EVENTS
 ---------------------------------------- */
 mongoose.connection.on("error", (err) => {
-  console.error("âŒ MongoDB Connection Error:", err);
+  console.error("❌ MongoDB Connection Error:", err);
 });
 
 mongoose.connection.on("disconnected", () => {
-  console.warn("âš ï¸ MongoDB Disconnected");
+  console.warn("⚠️ MongoDB Disconnected");
 });
 
 mongoose.connection.on("reconnected", () => {
-  console.log("âœ… MongoDB Reconnected");
+  console.log("✅ MongoDB Reconnected");
 });
 
 /* ----------------------------------------
-   ðŸš¨ CRITICAL: WEBHOOK ROUTE MUST COME BEFORE ANY OTHER MIDDLEWARE
+   🚨 CRITICAL: WEBHOOK ROUTE MUST COME BEFORE ANY OTHER MIDDLEWARE
    Flutterwave webhook requires raw body for signature verification
 ---------------------------------------- */
 app.post(
@@ -159,7 +159,7 @@ app.use((req, res, next) => {
       return res.status(200).end();
     }
   } else {
-    console.warn(`âš ï¸ CORS Blocked: ${origin}`);
+    console.warn(`⚠️ CORS Blocked: ${origin}`);
   }
   
   next();
@@ -178,11 +178,11 @@ app.use((req, res, next) => {
   const start = Date.now();
   const requestId = Math.random().toString(36).substring(7);
   
-  console.log(`ðŸ“¥ [${requestId}] ${req.method} ${req.url}`);
+  console.log(`📥 [${requestId}] ${req.method} ${req.url}`);
   
   res.on("finish", () => {
     const duration = Date.now() - start;
-    console.log(`ðŸ“¤ [${requestId}] ${req.method} ${req.url} ${res.statusCode} ${duration}ms`);
+    console.log(`📤 [${requestId}] ${req.method} ${req.url} ${res.statusCode} ${duration}ms`);
   });
   
   next();
@@ -317,25 +317,25 @@ if (enableDebugRoutes) {
     const safeEnv = {
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
-      MONGO_URI: process.env.MONGO_URI ? "âœ… Set" : "âŒ Not set",
+      MONGO_URI: process.env.MONGO_URI ? "✅ Set" : "❌ Not set",
       BASE_URL: process.env.BASE_URL || "Not set (using localhost:5000)",
       FLUTTERWAVE_SECRET_KEY: process.env.FLUTTERWAVE_SECRET_KEY 
-        ? `âœ… Set (${process.env.FLUTTERWAVE_SECRET_KEY.substring(0, 8)}...)` 
-        : "âŒ Not set",
+        ? `✅ Set (${process.env.FLUTTERWAVE_SECRET_KEY.substring(0, 8)}...)` 
+        : "❌ Not set",
       FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY 
-        ? `âœ… Set (${process.env.FLUTTERWAVE_PUBLIC_KEY.substring(0, 8)}...)` 
-        : "âŒ Not set",
+        ? `✅ Set (${process.env.FLUTTERWAVE_PUBLIC_KEY.substring(0, 8)}...)` 
+        : "❌ Not set",
       FLUTTERWAVE_WEBHOOK_SECRET: process.env.FLUTTERWAVE_WEBHOOK_SECRET 
-        ? "âœ… Set" 
-        : "âŒ Not set",
-      JWT_SECRET: process.env.JWT_SECRET ? "âœ… Set" : "âŒ Not set",
+        ? "✅ Set" 
+        : "❌ Not set",
+      JWT_SECRET: process.env.JWT_SECRET ? "✅ Set" : "❌ Not set",
       FLUTTERWAVE_ENCRYPTION_KEY: process.env.FLUTTERWAVE_ENCRYPTION_KEY 
-        ? "âœ… Set" 
-        : "âŒ Not set",
+        ? "✅ Set" 
+        : "❌ Not set",
       // Resend configuration
       RESEND_API_KEY: process.env.RESEND_API_KEY 
-        ? `âœ… Set (${process.env.RESEND_API_KEY.substring(0, 8)}...)` 
-        : "âŒ Not set",
+        ? `✅ Set (${process.env.RESEND_API_KEY.substring(0, 8)}...)` 
+        : "❌ Not set",
       RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || "Not set",
       RESEND_DOMAIN: process.env.RESEND_DOMAIN || "Not set",
     };
@@ -343,18 +343,18 @@ if (enableDebugRoutes) {
     // Check if Flutterwave keys look valid
     const flutterwaveKeyStatus = process.env.FLUTTERWAVE_SECRET_KEY 
       ? (process.env.FLUTTERWAVE_SECRET_KEY.startsWith('FLWSECK_TEST') 
-         ? "âš ï¸ TEST MODE" 
+         ? "⚠️ TEST MODE" 
          : process.env.FLUTTERWAVE_SECRET_KEY.startsWith('FLWSECK-')
-           ? "âœ… LIVE MODE" 
-           : "â“ UNKNOWN FORMAT")
-      : "âŒ MISSING";
+           ? "✅ LIVE MODE" 
+           : "❓ UNKNOWN FORMAT")
+      : "❌ MISSING";
     
     // Check if Resend key looks valid
     const resendKeyStatus = process.env.RESEND_API_KEY 
       ? (process.env.RESEND_API_KEY.startsWith('re_')
-         ? "âœ… VALID FORMAT" 
-         : "â“ UNKNOWN FORMAT")
-      : "âŒ MISSING";
+         ? "✅ VALID FORMAT" 
+         : "❓ UNKNOWN FORMAT")
+      : "❌ MISSING";
     
     res.json({ 
       success: true, 
@@ -386,7 +386,7 @@ if (enableDebugRoutes) {
       
       res.json({
         success: true,
-        message: "âœ… Resend API connection successful",
+        message: "✅ Resend API connection successful",
         status: "API key is valid",
         verified_domains: domains.data ? domains.data.length : 0,
         note: domains.data && domains.data.length > 0 
@@ -400,21 +400,21 @@ if (enableDebugRoutes) {
       if (error.message.includes('Unauthorized') || error.message.includes('Invalid API key')) {
         res.status(401).json({
           success: false,
-          message: "âŒ Resend API key is invalid",
+          message: "❌ Resend API key is invalid",
           error: error.message,
           action: "Check your RESEND_API_KEY in Resend dashboard"
         });
       } else if (error.message.includes('rate limit')) {
         res.status(429).json({
           success: false,
-          message: "âŒ Resend rate limit exceeded",
+          message: "❌ Resend rate limit exceeded",
           error: error.message,
           action: "Wait a few minutes and try again"
         });
       } else {
         res.status(500).json({
           success: false,
-          message: "âŒ Resend test failed",
+          message: "❌ Resend test failed",
           error: error.message,
           action: "Check your internet connection and Resend API key"
         });
@@ -448,7 +448,7 @@ if (enableDebugRoutes) {
 
       res.json({
         success: true,
-        message: "âœ… Flutterwave API connection successful",
+        message: "✅ Flutterwave API connection successful",
         status: response.status,
         bank_count: response.data.data ? response.data.data.length : 0,
         mode: usingTest ? "TEST MODE" : "LIVE MODE",
@@ -461,7 +461,7 @@ if (enableDebugRoutes) {
       if (error.response) {
         res.status(500).json({
           success: false,
-          message: "âŒ Flutterwave API test failed",
+          message: "❌ Flutterwave API test failed",
           status: error.response.status,
           error: error.response.data?.message || error.response.data,
           action: "Check your FLUTTERWAVE_SECRET_KEY and ensure it's valid"
@@ -469,14 +469,14 @@ if (enableDebugRoutes) {
       } else if (error.request) {
         res.status(500).json({
           success: false,
-          message: "âŒ Cannot reach Flutterwave servers",
+          message: "❌ Cannot reach Flutterwave servers",
           error: error.message,
           action: "Check your internet connection and firewall settings"
         });
       } else {
         res.status(500).json({
           success: false,
-          message: "âŒ Flutterwave test setup error",
+          message: "❌ Flutterwave test setup error",
           error: error.message
         });
       }
@@ -551,7 +551,7 @@ app.get("/api/v1/game/rules/daily", (req, res) => {
     success: true,
     rules: {
       title: "Weekly Draw Rules",
-      prize: "â‚¦2,000",
+      prize: "₦2,000",
       draw_time: "Results are released at month end",
       ticket_requirement: "1 ticket per play",
       ticket_source: "Free with data purchase",
@@ -568,7 +568,7 @@ app.get("/api/v1/game/rules/monthly", (req, res) => {
     success: true,
     rules: {
       title: "Monthly Draw Rules",
-      prize: "â‚¦5,000",
+      prize: "₦5,000",
       draw_time: "End of month (23:59)",
       eligibility: "5+ data purchases in the month",
       qualification: "Automatic with eligibility",
@@ -588,14 +588,14 @@ app.get("/api/v1/game/schedules", (req, res) => {
         time: "00:01",
         timezone: "WAT",
         recurring: "monthly",
-        prize: "â‚¦2,000",
+        prize: "₦2,000",
         next_draw: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 0, 0).toISOString(),
       },
       monthly: {
         time: "23:59",
         timezone: "WAT",
         recurring: "monthly",
-        prize: "â‚¦5,000",
+        prize: "₦5,000",
         next_draw: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 0, 0).toISOString(),
       },
     }
@@ -606,9 +606,9 @@ app.get("/api/v1/game/prizes/daily", (req, res) => {
   res.json({
     success: true,
     prizes: [
-      { match: "5 numbers", prize: "â‚¦2,000", winners: "1 per week" },
-      { match: "4 numbers", prize: "â‚¦500", winners: "5 per week" },
-      { match: "3 numbers", prize: "â‚¦200", winners: "10 per week" },
+      { match: "5 numbers", prize: "₦2,000", winners: "1 per week" },
+      { match: "4 numbers", prize: "₦500", winners: "5 per week" },
+      { match: "3 numbers", prize: "₦200", winners: "10 per week" },
     ]
   });
 });
@@ -617,8 +617,8 @@ app.get("/api/v1/game/prizes/monthly", (req, res) => {
   res.json({
     success: true,
     prizes: [
-      { type: "Grand Prize", prize: "â‚¦5,000", winners: "1 per month" },
-      { type: "Consolation", prize: "â‚¦1,000", winners: "5 per month" },
+      { type: "Grand Prize", prize: "₦5,000", winners: "1 per month" },
+      { type: "Consolation", prize: "₦1,000", winners: "5 per month" },
     ]
   });
 });
@@ -629,7 +629,7 @@ app.get("/api/v1/game/prizes/monthly", (req, res) => {
 if (process.env.NODE_ENV !== "production") {
   app.post("/test/webhook", express.raw({ type: "application/json" }), async (req, res) => {
     try {
-      console.log("ðŸ”§ Test webhook received:", {
+      console.log("🔧 Test webhook received:", {
         headers: req.headers,
         body: req.body.toString(),
       });
@@ -674,7 +674,7 @@ if (process.env.NODE_ENV !== "production") {
    404 HANDLER
 ---------------------------------------- */
 app.use((req, res) => {
-  console.warn(`âŒ 404 Route not found: ${req.method} ${req.originalUrl}`);
+  console.warn(`❌ 404 Route not found: ${req.method} ${req.originalUrl}`);
   if (process.env.NODE_ENV === "production") {
     return res.status(404).json({
       success: false,
@@ -712,30 +712,30 @@ app.use(errorHandler);
 ---------------------------------------- */
 const server = app.listen(PORT, HOST, () => {
   console.log(`
-  ðŸš€ Server Information:
+  🚀 Server Information:
   ======================
-  âœ… Environment: ${process.env.NODE_ENV || "development"}
-  âœ… Host: ${HOST}
-  âœ… Port: ${PORT}
-  âœ… MongoDB: ${mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"}
-  âœ… Email Service: ${process.env.RESEND_API_KEY ? "Resend API âœ…" : "Not configured âŒ"}
-  âœ… Webhook: http://${HOST}:${PORT}/api/v1/wallet/flutterwave-webhook
-  âœ… Health: http://${HOST}:${PORT}/health
-  âœ… Debug: http://${HOST}:${PORT}/debug/env
-  âœ… Resend Test: http://${HOST}:${PORT}/debug/resend-test
-  âœ… Flutterwave Test: http://${HOST}:${PORT}/debug/flutterwave-test
-  âœ… Version: 2.0.2
-  âœ… Time: ${new Date().toISOString()}
+  ✅ Environment: ${process.env.NODE_ENV || "development"}
+  ✅ Host: ${HOST}
+  ✅ Port: ${PORT}
+  ✅ MongoDB: ${mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"}
+  ✅ Email Service: ${process.env.RESEND_API_KEY ? "Resend API ✅" : "Not configured ❌"}
+  ✅ Webhook: http://${HOST}:${PORT}/api/v1/wallet/flutterwave-webhook
+  ✅ Health: http://${HOST}:${PORT}/health
+  ✅ Debug: http://${HOST}:${PORT}/debug/env
+  ✅ Resend Test: http://${HOST}:${PORT}/debug/resend-test
+  ✅ Flutterwave Test: http://${HOST}:${PORT}/debug/flutterwave-test
+  ✅ Version: 2.0.2
+  ✅ Time: ${new Date().toISOString()}
   `);
   
   if (job) {
-    console.log("âœ… Cron job initialized");
+    console.log("✅ Cron job initialized");
   }
   
   // Warn about missing Resend API key
   if (!process.env.RESEND_API_KEY) {
-    console.warn("âš ï¸  RESEND_API_KEY is not configured. Email sending will fail!");
-    console.log("ðŸ’¡ Set up Resend: https://resend.com");
+    console.warn("⚠️  RESEND_API_KEY is not configured. Email sending will fail!");
+    console.log("💡 Set up Resend: https://resend.com");
   }
 });
 
@@ -744,20 +744,20 @@ const server = app.listen(PORT, HOST, () => {
 ---------------------------------------- */
 const shutdown = async (signal) => {
   console.log(`
-âš ï¸  Received ${signal}. Starting graceful shutdown...`);
+⚠️  Received ${signal}. Starting graceful shutdown...`);
   
   try {
     server.close(() => {
-      console.log("âœ… HTTP server closed");
+      console.log("✅ HTTP server closed");
     });
     
     await mongoose.connection.close();
-    console.log("âœ… MongoDB connection closed");
+    console.log("✅ MongoDB connection closed");
     
-    console.log("âœ… Graceful shutdown completed");
+    console.log("✅ Graceful shutdown completed");
     process.exit(0);
   } catch (error) {
-    console.error("âŒ Error during shutdown:", error);
+    console.error("❌ Error during shutdown:", error);
     process.exit(1);
   }
 };
@@ -769,14 +769,14 @@ process.on("SIGINT", () => shutdown("SIGINT"));
    UNHANDLED ERROR HANDLING
 ---------------------------------------- */
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("âŒ Unhandled Rejection at:", promise, "reason:", reason);
+  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
   if (process.env.NODE_ENV === "production") {
     console.error("Continuing despite unhandled rejection");
   }
 });
 
 process.on("uncaughtException", (error) => {
-  console.error("âŒ Uncaught Exception:", error);
+  console.error("❌ Uncaught Exception:", error);
   if (process.env.NODE_ENV === "production") {
     console.error("Restarting due to uncaught exception");
     process.exit(1);
@@ -787,6 +787,7 @@ server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 export default app;
+
 
 
 

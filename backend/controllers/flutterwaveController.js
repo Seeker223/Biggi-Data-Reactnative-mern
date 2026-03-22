@@ -96,7 +96,7 @@ export const verifyFlutterwavePayment = async (req, res) => {
       }
 
       let deposit;
-      if (existingDeposit) {
+      if (existingDeposit && existingDeposit.status === "successful" && existingDeposit.credited) {
         existingDeposit.status = "successful";
         existingDeposit.flutterwaveTransactionId = payment.id;
         existingDeposit.gatewayResponse = payment;
@@ -250,26 +250,17 @@ export const flutterwaveWebhook = async (req, res) => {
       String(process.env.ENABLE_DEBUG_ROUTES || "false").toLowerCase() === "true";
     const allowDebugBypass = debugEnabled && String(req.query?.debug || "") === "1";
 
-    // DEBUG LOGGING - Keep for troubleshooting
-    console.log("📥 Webhook headers received:", JSON.stringify(req.headers, null, 2));
-
     if (!allowDebugBypass) {
       if (!signature || signature !== process.env.FLUTTERWAVE_WEBHOOK_SECRET) {
-        console.error("❌ Invalid webhook signature");
-        console.error("Expected:", process.env.FLUTTERWAVE_WEBHOOK_SECRET);
-        console.error("Received:", signature);
+        console.error("Invalid webhook signature");
         return res.sendStatus(401);
       }
-    } else {
-      console.log("🧪 Webhook debug bypass enabled");
     }
 
-    // Parse raw Buffer correctly (or accept JSON in debug)
     let payload;
     try {
       if (Buffer.isBuffer(req.body)) {
         const rawBodyString = req.body.toString("utf8");
-        console.log("📥 Raw webhook body:", rawBodyString);
         payload = JSON.parse(rawBodyString);
       } else if (typeof req.body === "string") {
         payload = JSON.parse(req.body);
@@ -279,22 +270,24 @@ export const flutterwaveWebhook = async (req, res) => {
         throw new Error("Unsupported webhook body");
       }
     } catch (parseError) {
-      console.error("❌ Failed to parse webhook body:", parseError.message);
-      console.error("Raw body type:", typeof req.body);
+      console.error("Failed to parse webhook body:", parseError.message);
       return res.sendStatus(400);
     }
 
-    const { event, data } = payload;
+    const { event, data } = payload || {};
 
-    console.log("✅ Webhook parsed successfully:", {
-      event,
-      tx_ref: data?.tx_ref,
-      status: data?.status,
-      amount: data?.amount,
-    });
+    let healthRecord = null;
+    const updateHealth = async (patch) => {
+      if (!healthRecord?._id) return;
+      try {
+        await WebhookHealth.findByIdAndUpdate(healthRecord._id, { $set: patch });
+      } catch (err) {
+        console.error("WebhookHealth update failed:", err.message);
+      }
+    };
 
     try {
-      await WebhookHealth.create({
+      healthRecord = await WebhookHealth.create({
         provider: "flutterwave",
         event: event || "",
         reference: data?.tx_ref || data?.reference || "",
@@ -307,14 +300,19 @@ export const flutterwaveWebhook = async (req, res) => {
         customerEmail: data?.customer?.email || "",
         status: data?.status || "",
         raw: payload,
+        resolvedUserId: "",
+        resolutionMethod: "",
+        walletCredit: 0,
+        serviceCharge: 0,
+        processed: false,
+        note: "",
       });
     } catch (healthError) {
-      console.error("⚠️ WebhookHealth write failed:", healthError.message);
+      console.error("WebhookHealth write failed:", healthError.message);
     }
 
-    // Ignore irrelevant events
     if (event !== "charge.completed") {
-      console.log(`ℹ️ Ignoring event: ${event}`);
+      await updateHealth({ note: "ignored_event" });
       return res.sendStatus(200);
     }
 
@@ -330,7 +328,7 @@ export const flutterwaveWebhook = async (req, res) => {
     ).trim();
 
     if (!reference || !amount) {
-      console.error("❌ Missing reference or amount in webhook");
+      await updateHealth({ note: "missing_reference_or_amount" });
       return res.sendStatus(200);
     }
 
@@ -354,13 +352,16 @@ export const flutterwaveWebhook = async (req, res) => {
       return candidate || null;
     };
 
+    let resolutionMethod = "";
     let userId = resolveUserIdFromRef(reference);
+    if (userId) resolutionMethod = "reference";
 
     if (!userId && accountNumber) {
       const userByAccount = await User.findOne({
         "flutterwaveVirtualAccount.accountNumber": accountNumber,
       }).select("_id");
       userId = userByAccount?._id?.toString() || null;
+      if (userId) resolutionMethod = "accountNumber";
     }
 
     if (!userId && accountId) {
@@ -373,6 +374,7 @@ export const flutterwaveWebhook = async (req, res) => {
         ],
       }).select("_id");
       userId = userByAccountId?._id?.toString() || null;
+      if (userId) resolutionMethod = "accountId";
     }
 
     if (!userId && data?.customer?.email) {
@@ -380,10 +382,15 @@ export const flutterwaveWebhook = async (req, res) => {
         email: String(data.customer.email).toLowerCase(),
       }).select("_id");
       userId = userByEmail?._id?.toString() || null;
+      if (userId) resolutionMethod = "email";
+    }
+
+    if (userId) {
+      await updateHealth({ resolvedUserId: userId, resolutionMethod });
     }
 
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-      console.error("❌ Unable to resolve user for webhook:", { reference, accountNumber });
+      await updateHealth({ note: "user_not_found" });
       return res.sendStatus(200);
     }
 
@@ -391,14 +398,12 @@ export const flutterwaveWebhook = async (req, res) => {
     let serviceCharge = 0;
     const totalPaid = Number(amount || 0);
 
-    // Atomic operation to prevent double crediting (falls back if transactions unavailable)
     let session = null;
     try {
       session = await mongoose.startSession();
       session.startTransaction();
     } catch (txnError) {
       session = null;
-      console.error("⚠️ Webhook transaction unavailable, falling back:", txnError?.message || txnError);
     }
 
     try {
@@ -406,19 +411,21 @@ export const flutterwaveWebhook = async (req, res) => {
       const user = session ? await userQuery.session(session) : await userQuery;
       if (!user) {
         if (session) await session.abortTransaction();
-        console.error("❌ User not found for ID:", userId);
+        await updateHealth({ note: "user_not_found" });
         return res.sendStatus(200);
       }
 
-      const depositQuery = Deposit.findOne({
-        reference,
-        status: "successful",
-      });
+      const depositQuery = Deposit.findOne({ reference });
       const existingDeposit = session ? await depositQuery.session(session) : await depositQuery;
 
-      if (existingDeposit) {
+      if (existingDeposit && existingDeposit.status === "successful" && existingDeposit.credited) {
         if (session) await session.abortTransaction();
-        console.log("⚠️ Deposit already processed:", reference);
+        await updateHealth({
+          processed: true,
+          note: "already_processed",
+          walletCredit: Number(existingDeposit.amount || 0),
+          serviceCharge: Number(existingDeposit.serviceCharge || 0),
+        });
         return res.sendStatus(200);
       }
 
@@ -428,9 +435,10 @@ export const flutterwaveWebhook = async (req, res) => {
 
       if (walletCredit <= 0) {
         if (session) await session.abortTransaction();
-        console.log("⚠️ Unable to derive wallet credit from payment:", {
-          reference,
-          totalPaid,
+        await updateHealth({
+          note: "wallet_credit_zero",
+          walletCredit: walletCredit || 0,
+          serviceCharge: serviceCharge || 0,
         });
         return res.sendStatus(200);
       }
@@ -448,6 +456,8 @@ export const flutterwaveWebhook = async (req, res) => {
           channel: "flutterwave",
           flutterwaveTransactionId: id,
           gatewayResponse: data,
+          credited: status === "successful",
+          creditedAt: status === "successful" ? new Date() : null,
         },
         session ? { upsert: true, new: true, session } : { upsert: true, new: true }
       );
@@ -456,36 +466,20 @@ export const flutterwaveWebhook = async (req, res) => {
         user.mainBalance = Number(user.mainBalance || 0) + walletCredit;
         user.totalDeposits = Number(user.totalDeposits || 0) + walletCredit;
         await user.save(session ? { session } : {});
-        console.log("✅ Wallet credited via webhook:", {
-          reference,
-          walletCredit,
-          serviceCharge,
-          userId,
-        });
+        await updateHealth({ processed: true, walletCredit, serviceCharge, note: "credited" });
       } else {
-        console.log("❌ Payment failed via webhook:", { reference, status });
+        await updateHealth({ processed: false, note: "payment_failed" });
       }
 
       if (session) {
         await session.commitTransaction();
-        console.log("✅ Webhook transaction committed for:", reference);
       }
 
       if (status === "successful") {
-        await logWalletTransaction(
-          userId,
-          "deposit",
-          walletCredit,
-          reference,
-          "success"
-        );
+        await logWalletTransaction(userId, "deposit", walletCredit, reference, "success");
 
         if (serviceCharge > 0) {
-          await logPlatformDepositFee({
-            userId,
-            reference,
-            revenue: serviceCharge,
-          });
+          await logPlatformDepositFee({ userId, reference, revenue: serviceCharge });
         }
 
         await sendUserEmail({
@@ -505,15 +499,14 @@ export const flutterwaveWebhook = async (req, res) => {
       }
     } catch (sessionError) {
       if (session) await session.abortTransaction();
-      console.error("❌ Webhook transaction failed:", sessionError);
+      await updateHealth({ note: "transaction_failed" });
     } finally {
       if (session) session.endSession();
     }
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("🔥 Webhook processing error:", err);
-    // Always return 200 to prevent Flutterwave from retrying
+    console.error("Webhook processing error:", err);
     return res.sendStatus(200);
   }
 };
@@ -818,6 +811,24 @@ export const reconcilePayment = async (req, res) => {
     });
   }
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

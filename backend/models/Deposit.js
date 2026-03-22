@@ -1,4 +1,4 @@
-﻿// backend/models/Deposit.js
+// backend/models/Deposit.js
 import mongoose from "mongoose";
 
 const depositSchema = new mongoose.Schema(
@@ -60,6 +60,17 @@ const depositSchema = new mongoose.Schema(
     gatewayResponse: {
       type: Object,
       default: {},
+    },
+
+    credited: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    creditedAt: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }
