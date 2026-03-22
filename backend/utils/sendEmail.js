@@ -35,11 +35,13 @@ const getEmailLogoUrl = () => {
   const direct =
     getEnv("EMAIL_LOGO_URL") ||
     getEnv("EMAIL_LOGO") ||
-    getEnv("LOGO_URL");
+    getEnv("LOGO_URL") ||
+    getEnv("SITE_URL") ||
+    getEnv("FRONTEND_URL");
   if (direct) return direct;
   const baseUrl = getEnv("BASE_URL");
   if (baseUrl) return `${baseUrl.replace(/\/+$/, "")}/assets/logo.png`;
-  return "";
+  return "https://biggidata.com.ng/assets/logo.png";
 };
 
 const getSmtpConfig = () => {
