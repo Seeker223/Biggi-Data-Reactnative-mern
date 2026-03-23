@@ -108,9 +108,16 @@ export const buyData = async (req, res) => {
     const providerPlanCode = mapZenipointPlanCode(plan);
     const payload = { mobile_no, plan_id: providerPlanCode, reference };
 
-    // Deduct user balance (optimistic)
-    user.mainBalance -= amount;
-    await user.save();
+    // Deduct user balance atomically (prevents double-spend on concurrent requests)
+    const deductedUser = await User.findOneAndUpdate(
+      { _id: userId, mainBalance: { $gte: amount } },
+      { $inc: { mainBalance: -amount } },
+      { new: true }
+    );
+    if (!deductedUser) {
+      return res.status(400).json({ success: false, msg: "Insufficient balance" });
+    }
+    const balanceUser = deductedUser;
 
     // Sync wallet balance and log pending purchase
     await syncWalletBalance(userId);
@@ -130,8 +137,7 @@ export const buyData = async (req, res) => {
       console.log("Zenipoint raw response:", zenResponse);
     } catch (apiErr) {
       // Refund on network/API error
-      user.mainBalance += amount;
-      await user.save();
+      await User.findByIdAndUpdate(userId, { $inc: { mainBalance: amount } });
       await syncWalletBalance(userId);
       await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
         action: "data_purchase",
@@ -166,8 +172,7 @@ export const buyData = async (req, res) => {
     // If simulated fallback
     if (zenResponse?.mode === "LOCAL_TEST_MODE") {
       if (isProd) {
-        user.mainBalance += amount;
-        await user.save();
+        await User.findByIdAndUpdate(userId, { $inc: { mainBalance: amount } });
         await syncWalletBalance(userId);
         await logWalletTransaction(userId, "purchase", amount, reference, "failed");
         await sendUserEmail({
@@ -191,8 +196,8 @@ export const buyData = async (req, res) => {
       await logWalletTransaction(userId, "purchase", amount, reference, "simulated");
 
       // Add ticket for simulated purchase
-      user.tickets = (user.tickets || 0) + 1;
-      await user.updateMonthlyPurchase();
+      balanceUser.tickets = (balanceUser.tickets || 0) + 1;
+      await balanceUser.updateMonthlyPurchase();
 
       return res.status(200).json({
         success: true,
@@ -200,8 +205,8 @@ export const buyData = async (req, res) => {
         reference,
         providerPlanCode,
         plan,
-        newBalance: user.mainBalance,
-        tickets: user.tickets,
+        newBalance: balanceUser.mainBalance,
+        tickets: balanceUser.tickets,
         zenipoint: zenResponse,
       });
     }
@@ -243,9 +248,9 @@ export const buyData = async (req, res) => {
       });
 
       // Add ticket reward
-      user.tickets = (user.tickets || 0) + 1; // Or plan.ticketReward if variable
+      balanceUser.tickets = (balanceUser.tickets || 0) + 1; // Or plan.ticketReward if variable
       // Update monthly progress and issue raffle ticket every 5 purchases
-      await user.updateMonthlyPurchase();
+      await balanceUser.updateMonthlyPurchase();
 
       await sendUserEmail({
         userId: userId,
@@ -269,14 +274,13 @@ export const buyData = async (req, res) => {
         providerAmount,
         plan,
         zenipoint: zenResponse,
-        newBalance: user.mainBalance,
-        tickets: user.tickets,
+        newBalance: balanceUser.mainBalance,
+        tickets: balanceUser.tickets,
       });
     }
 
     // Zenipoint rejected (e.g., insufficient zeni wallet) => refund and log failed
-    user.mainBalance += amount;
-    await user.save();
+    await User.findByIdAndUpdate(userId, { $inc: { mainBalance: amount } });
     await syncWalletBalance(userId);
     await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
       action: "data_purchase",
