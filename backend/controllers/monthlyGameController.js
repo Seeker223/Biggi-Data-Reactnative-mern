@@ -452,14 +452,14 @@ export const claimMonthlyReward = async (req, res) => {
 export const getTopPurchasersLeaderboard = async (req, res) => {
   try {
     const month = normalizeMonth(req.query?.month);
-    const threshold = 10;
+    const minPurchases = 1;\n    const limit = 10;
 
     const rows = await User.aggregate([
       { $unwind: "$monthlyDraws" },
       {
         $match: {
           "monthlyDraws.month": month,
-          "monthlyDraws.purchasesCount": { $gte: threshold },
+          "monthlyDraws.purchasesCount": { $gte: minPurchases },
         },
       },
       {
@@ -475,7 +475,7 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
       { $sort: { purchasesCount: -1, lastPurchaseDate: 1, _id: 1 } },
     ]);
 
-    const leaderboard = rows.slice(0, 10).map((row, index) => ({
+    const leaderboard = rows.slice(0, limit).map((row, index) => ({
       rank: index + 1,
       userId: row._id,
       username: row.username,
@@ -489,7 +489,7 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
     const myPurchases = Number(mine?.purchasesCount || 0);
 
     let myRank = null;
-    if (myPurchases >= threshold) {
+    if (myPurchases >= minPurchases) {
       const higher = rows.filter((row) => {
         if (row.purchasesCount > myPurchases) return true;
         if (row.purchasesCount < myPurchases) return false;
@@ -542,6 +542,7 @@ export default {
   getTopPurchasersLeaderboard,
   getPreviousMonthString,
 };
+
 
 
 

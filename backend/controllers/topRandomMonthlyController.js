@@ -1,8 +1,8 @@
-﻿import User from "../models/User.js";
+import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { sendUserEmail } from "../utils/transactionalEmail.js";
 
-const TOP_RANDOM_MAX_WINNERS = 10;
+const TOP_RANDOM_MAX_WINNERS = 30;\nconst TOP_RANDOM_MIN_PURCHASES = 25;
 const TOP_RANDOM_PRIZE = 10000;
 
 const getCurrentMonthString = () => {
@@ -54,7 +54,7 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
     type: "Referral Reward",
     status: "success",
     amount: bonus,
-    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned â‚¦${bonus.toLocaleString()}.`,
+    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned ₦${bonus.toLocaleString()}.`,
   });
 
   await referrer.save();
@@ -70,7 +70,7 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
     monthlyDraws: {
       $elemMatch: {
         month,
-        purchasesCount: { $gt: 0 },
+        purchasesCount: { $gte: TOP_RANDOM_MIN_PURCHASES },
       },
     },
   }).select("_id username topRandomMonthlyPicks notificationItems notifications");
@@ -128,7 +128,7 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
       type: "Top Random Monthly Picks",
       status: "success",
       amount: TOP_RANDOM_PRIZE,
-      message: `You were selected in Top Random Monthly Picks for ${month}. Claim â‚¦${TOP_RANDOM_PRIZE.toLocaleString()} reward.`,
+      message: `You were selected in Top Random Monthly Picks for ${month}. Claim ₦${TOP_RANDOM_PRIZE.toLocaleString()} reward.`,
     });
 
     await user.save();
@@ -326,7 +326,7 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
       type: "Top Random Monthly Picks",
       status: "success",
       amount,
-      message: `Top Random Monthly reward of â‚¦${amount.toLocaleString()} claimed for ${month}.`,
+      message: `Top Random Monthly reward of ₦${amount.toLocaleString()} claimed for ${month}.`,
     });
 
     await user.save();
@@ -360,5 +360,6 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
     });
   }
 };
+
 
 
