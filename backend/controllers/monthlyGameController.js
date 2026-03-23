@@ -452,7 +452,8 @@ export const claimMonthlyReward = async (req, res) => {
 export const getTopPurchasersLeaderboard = async (req, res) => {
   try {
     const month = normalizeMonth(req.query?.month);
-    const minPurchases = 1;\n    const limit = 10;
+    const minPurchases = 1;
+    const limit = 10;
 
     const rows = await User.aggregate([
       { $unwind: "$monthlyDraws" },
@@ -542,6 +543,7 @@ export default {
   getTopPurchasersLeaderboard,
   getPreviousMonthString,
 };
+
 
 
 
