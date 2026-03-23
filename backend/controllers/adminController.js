@@ -3,7 +3,12 @@ import Deposit from "../models/Deposit.js";
 import Withdraw from "../models/withdrawModel.js";
 import Wallet from "../models/Wallet.js";
 import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
-import { logWalletTransaction } from "../utils/wallet.js";
+import {
+  logWalletTransaction,
+  logWalletTransactionWithMeta,
+  updateWalletTransactionStatus,
+  ensureWalletBalanceMatch,
+} from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
 import { sendUserEmail } from "../utils/transactionalEmail.js";
@@ -439,6 +444,9 @@ export const updateAdminUser = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    const prevMainBalance = Number(user.mainBalance || 0);
+    const prevRewardBalance = Number(user.rewardBalance || 0);
+
     const payload = { ...req.body };
     const allowed = [
       "username",
@@ -485,6 +493,42 @@ export const updateAdminUser = async (req, res) => {
     }
 
     await user.save();
+    const nextMainBalance = Number(user.mainBalance || 0);
+    const nextRewardBalance = Number(user.rewardBalance || 0);
+    if (nextMainBalance !== prevMainBalance) {
+      const delta = Number(nextMainBalance - prevMainBalance);
+      const txType = delta >= 0 ? "deposit" : "withdraw";
+      await logWalletTransactionWithMeta(
+        user._id,
+        txType,
+        Math.abs(delta),
+        `admin_adjust_${user._id}_${Date.now()}`,
+        "admin_adjustment",
+        {
+          action: "admin_balance_adjustment",
+          previousBalance: prevMainBalance,
+          newBalance: nextMainBalance,
+          delta,
+        }
+      );
+      await ensureWalletBalanceMatch(user._id, "admin_user_update");
+    }
+    if (nextRewardBalance !== prevRewardBalance) {
+      const delta = Number(nextRewardBalance - prevRewardBalance);
+      await logWalletTransactionWithMeta(
+        user._id,
+        "redeem",
+        Math.abs(delta),
+        `admin_reward_adjust_${user._id}_${Date.now()}`,
+        "admin_adjustment_reward",
+        {
+          action: "admin_reward_adjustment",
+          previousBalance: prevRewardBalance,
+          newBalance: nextRewardBalance,
+          delta,
+        }
+      );
+    }
     const safeUser = await User.findById(user._id).select(USER_PUBLIC_SELECT);
     return res.status(200).json({
       success: true,
@@ -645,7 +689,16 @@ export const assignUnmatchedDeposit = async (req, res) => {
       ],
     });
 
-    await logWalletTransaction(user._id, "deposit", creditedAmount, reference, "success");
+    const updated = await updateWalletTransactionStatus(
+      user._id,
+      reference,
+      "success",
+      { action: "deposit", channel: "manual_reconciliation" }
+    );
+    if (!updated) {
+      await logWalletTransaction(user._id, "deposit", creditedAmount, reference, "success");
+    }
+    await ensureWalletBalanceMatch(user._id, "admin_manual_deposit");
     if (serviceCharge > 0) {
       await logPlatformDepositFee({ userId: user._id, reference, revenue: serviceCharge });
     }
