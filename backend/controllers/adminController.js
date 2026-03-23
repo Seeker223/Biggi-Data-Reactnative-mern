@@ -54,7 +54,7 @@ export const getAdminDashboard = async (req, res) => {
     if (["true", "false"].includes(verified)) filter.isVerified = verified === "true";
     if (state) filter.state = state;
 
-    const [totalUsers, usersRaw, aggregates, stateBreakdownRaw] = await Promise.all([
+    const [totalUsers, usersRaw, aggregates, stateBreakdownRaw, referralAgg] = await Promise.all([
       User.countDocuments(filter),
       User.find(filter)
         .sort(userSort)
@@ -97,11 +97,31 @@ export const getAdminDashboard = async (req, res) => {
         },
         { $sort: { count: -1, _id: 1 } },
       ]),
+      User.aggregate([
+        { $match: { referredByCode: { $ne: null, $ne: "" } } },
+        {
+          $group: {
+            _id: "$referredByCode",
+            count: { $sum: 1 },
+            referrals: {
+              $push: {
+                _id: "$_id",
+                username: "$username",
+                email: "$email",
+                phoneNumber: "$phoneNumber",
+                createdAt: "$createdAt",
+              },
+            },
+          },
+        },
+        { $sort: { count: -1, _id: 1 } },
+        { $limit: 20 },
+      ]),
     ]);
 
     const userIds = usersRaw.map((u) => u._id);
 
-    const [deposits, withdrawals, wallets, topBuyers, topWinners] = await Promise.all([
+    const [deposits, withdrawals, wallets, topBuyers, topWinners, referrers] = await Promise.all([
       Deposit.find({ user: { $in: userIds } })
         .sort({ createdAt: -1 })
         .limit(500)
@@ -124,6 +144,11 @@ export const getAdminDashboard = async (req, res) => {
         .sort({ totalWins: -1, totalPrizeWon: -1 })
         .limit(100)
         .select("username email photo role userRole totalWins totalPrizeWon")
+        .lean(),
+      User.find({
+        referralCode: { $in: (referralAgg || []).map((row) => row?._id).filter(Boolean) },
+      })
+        .select("username email photo role userRole referralCode")
         .lean(),
     ]);
 
@@ -271,6 +296,20 @@ export const getAdminDashboard = async (req, res) => {
     });
 
     const summaryBase = aggregates?.[0] || {};
+    const referrerMap = new Map((referrers || []).map((u) => [String(u.referralCode || ""), u]));
+    const referralLeaderboard = (referralAgg || []).map((row, index) => {
+      const referrer = referrerMap.get(String(row?._id || "")) || null;
+      const referrals = Array.isArray(row?.referrals)
+        ? row.referrals.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        : [];
+      return {
+        rank: index + 1,
+        referralCode: row?._id || "",
+        referralsTotal: Number(row?.count || 0),
+        referrer,
+        referrals,
+      };
+    });
     const response = {
       success: true,
       summary: {
@@ -312,6 +351,7 @@ export const getAdminDashboard = async (req, res) => {
           totalWins: toNum(u.totalWins),
           totalPrizeWon: toNum(u.totalPrizeWon),
         })),
+        referralLeaderboard,
       },
       stateBreakdown: (stateBreakdownRaw || []).map((row) => ({
         state: row?._id || "Unknown",
