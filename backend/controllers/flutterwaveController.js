@@ -3,7 +3,10 @@ import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import WebhookHealth from "../models/WebhookHealth.js";
-import { logWalletTransaction } from "../utils/wallet.js";
+import {
+  logWalletTransaction,
+  updateWalletTransactionStatus,
+} from "../utils/wallet.js";
 import { logPlatformDepositFee } from "../utils/platformLedger.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
@@ -120,13 +123,21 @@ export const verifyFlutterwavePayment = async (req, res) => {
       user.totalDeposits += Number(requestedAmount);
       await user.save();
 
-      await logWalletTransaction(
+      const updated = await updateWalletTransactionStatus(
         userId,
-        "deposit",
-        requestedAmount,
         tx_ref,
-        "success"
+        "success",
+        { action: "deposit", channel: "flutterwave" }
       );
+      if (!updated) {
+        await logWalletTransaction(
+          userId,
+          "deposit",
+          requestedAmount,
+          tx_ref,
+          "success"
+        );
+      }
 
       if (serviceCharge > 0) {
         await logPlatformDepositFee({ userId, reference: tx_ref, revenue: serviceCharge });
@@ -476,7 +487,15 @@ export const flutterwaveWebhook = async (req, res) => {
       }
 
       if (status === "successful") {
-        await logWalletTransaction(userId, "deposit", walletCredit, reference, "success");
+        const updated = await updateWalletTransactionStatus(
+          userId,
+          reference,
+          "success",
+          { action: "deposit", channel: "flutterwave", webhook: true }
+        );
+        if (!updated) {
+          await logWalletTransaction(userId, "deposit", walletCredit, reference, "success");
+        }
 
         if (serviceCharge > 0) {
           await logPlatformDepositFee({ userId, reference, revenue: serviceCharge });
@@ -735,13 +754,21 @@ export const reconcilePayment = async (req, res) => {
       await session.commitTransaction();
 
       try {
-        await logWalletTransaction(
+        const updated = await updateWalletTransactionStatus(
           userId,
-          "deposit",
-          requestedAmount,
           tx_ref,
-          "success"
+          "success",
+          { action: "deposit", channel: "flutterwave", reconcile: true }
         );
+        if (!updated) {
+          await logWalletTransaction(
+            userId,
+            "deposit",
+            requestedAmount,
+            tx_ref,
+            "success"
+          );
+        }
 
         if (serviceCharge > 0) {
           await logPlatformDepositFee({ userId, reference: tx_ref, revenue: serviceCharge });

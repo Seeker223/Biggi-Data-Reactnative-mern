@@ -3,7 +3,11 @@ import Withdraw from "../models/withdrawModel.js";
 import Deposit from "../models/Deposit.js";
 import axios from "axios";
 import mongoose from "mongoose";
-import { logWalletTransaction } from "../utils/wallet.js";
+import {
+  logWalletTransaction,
+  updateWalletTransactionStatus,
+  ensureWalletBalanceMatch,
+} from "../utils/wallet.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { handleProfitSweepWebhook } from "../utils/profitSweep.js";
@@ -643,18 +647,27 @@ export const flutterwaveWithdrawWebhook = async (req, res) => {
           if (user) {
             user.mainBalance += withdrawal.amount;
             await user.save();
+            await ensureWalletBalanceMatch(withdrawal.user, "withdraw_refund");
             console.log(`ðŸ’° Refunded â‚¦${withdrawal.amount} to user ${withdrawal.user}`);
           }
         }
 
-        // Update wallet transaction log
-        await logWalletTransaction(
+        // Update wallet transaction log (pending -> success/failed)
+        const updated = await updateWalletTransactionStatus(
           withdrawal.user,
-          "withdraw",
-          withdrawal.amount,
           withdrawal.reference,
-          status === "SUCCESSFUL" ? "success" : "failed"
+          status === "SUCCESSFUL" ? "success" : "failed",
+          { action: "withdraw", channel: "flutterwave", webhook: true }
         );
+        if (!updated) {
+          await logWalletTransaction(
+            withdrawal.user,
+            "withdraw",
+            withdrawal.amount,
+            withdrawal.reference,
+            status === "SUCCESSFUL" ? "success" : "failed"
+          );
+        }
 
         console.log(`âœ… Withdrawal ${withdrawal._id} updated from ${oldStatus} to ${withdrawal.status}`);
       } else {
