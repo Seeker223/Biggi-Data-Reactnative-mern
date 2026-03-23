@@ -6,6 +6,8 @@ import {
   logWalletTransaction,
   logWalletTransactionWithMeta,
   syncWalletBalance,
+  updateWalletTransactionStatus,
+  ensureWalletBalanceMatch,
 } from "../utils/wallet.js";
 import { verifyTransactionAuthorization } from "../utils/transactionAuth.js";
 import { logPlatformDataPurchase } from "../utils/platformLedger.js";
@@ -139,15 +141,34 @@ export const buyData = async (req, res) => {
       // Refund on network/API error
       await User.findByIdAndUpdate(userId, { $inc: { mainBalance: amount } });
       await syncWalletBalance(userId);
-      await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
-        action: "data_purchase",
-        plan_id: plan.plan_id,
-        providerPlanCode,
-        network: plan.network,
-        category: plan.category,
-        mobile_no,
-        error: apiErr?.message || apiErr?.response?.data || "Zenipoint request failed",
-      });
+      const updated = await updateWalletTransactionStatus(
+        userId,
+        reference,
+        "failed",
+        {
+          action: "data_purchase",
+          plan_id: plan.plan_id,
+          providerPlanCode,
+          network: plan.network,
+          category: plan.category,
+          mobile_no,
+          error: apiErr?.message || apiErr?.response?.data || "Zenipoint request failed",
+          refundApplied: true,
+        }
+      );
+      if (!updated) {
+        await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
+          action: "data_purchase",
+          plan_id: plan.plan_id,
+          providerPlanCode,
+          network: plan.network,
+          category: plan.category,
+          mobile_no,
+          error: apiErr?.message || apiErr?.response?.data || "Zenipoint request failed",
+          refundApplied: true,
+        });
+      }
+      await ensureWalletBalanceMatch(userId, "data_purchase_refund");
 
       await sendUserEmail({
         userId: userId,
@@ -174,7 +195,34 @@ export const buyData = async (req, res) => {
       if (isProd) {
         await User.findByIdAndUpdate(userId, { $inc: { mainBalance: amount } });
         await syncWalletBalance(userId);
-        await logWalletTransaction(userId, "purchase", amount, reference, "failed");
+        const updated = await updateWalletTransactionStatus(
+          userId,
+          reference,
+          "failed",
+          {
+            action: "data_purchase",
+            plan_id: plan.plan_id,
+            providerPlanCode,
+            network: plan.network,
+            category: plan.category,
+            mobile_no,
+            mode: "LOCAL_TEST_MODE",
+            refundApplied: true,
+          }
+        );
+        if (!updated) {
+          await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
+            action: "data_purchase",
+            plan_id: plan.plan_id,
+            providerPlanCode,
+            network: plan.network,
+            category: plan.category,
+            mobile_no,
+            mode: "LOCAL_TEST_MODE",
+            refundApplied: true,
+          });
+        }
+        await ensureWalletBalanceMatch(userId, "data_purchase_refund_local_test");
         await sendUserEmail({
           userId: userId,
           type: "data_purchase_failed",
@@ -193,7 +241,18 @@ export const buyData = async (req, res) => {
         });
       }
 
-      await logWalletTransaction(userId, "purchase", amount, reference, "simulated");
+      const updated = await updateWalletTransactionStatus(
+        userId,
+        reference,
+        "simulated",
+        { action: "data_purchase", mode: "LOCAL_TEST_MODE" }
+      );
+      if (!updated) {
+        await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "simulated", {
+          action: "data_purchase",
+          mode: "LOCAL_TEST_MODE",
+        });
+      }
 
       // Add ticket for simulated purchase
       balanceUser.tickets = (balanceUser.tickets || 0) + 1;
@@ -217,10 +276,8 @@ export const buyData = async (req, res) => {
       const priceMismatch =
         providerAmount !== null && Number.isFinite(providerAmount) && providerAmount !== amount;
 
-      await logWalletTransactionWithMeta(
+      const updated = await updateWalletTransactionStatus(
         userId,
-        "purchase",
-        amount,
         reference,
         priceMismatch ? "success_price_mismatch" : "success",
         {
@@ -235,6 +292,26 @@ export const buyData = async (req, res) => {
           priceMismatch,
         }
       );
+      if (!updated) {
+        await logWalletTransactionWithMeta(
+          userId,
+          "purchase",
+          amount,
+          reference,
+          priceMismatch ? "success_price_mismatch" : "success",
+          {
+            action: "data_purchase",
+            plan_id: plan.plan_id,
+            providerPlanCode,
+            network: plan.network,
+            category: plan.category,
+            mobile_no,
+            providerAmount,
+            expectedAmount: amount,
+            priceMismatch,
+          }
+        );
+      }
 
       // Persist platform revenue/cost/profit so BiggiData margin is auditable.
       await logPlatformDataPurchase({
@@ -282,16 +359,36 @@ export const buyData = async (req, res) => {
     // Zenipoint rejected (e.g., insufficient zeni wallet) => refund and log failed
     await User.findByIdAndUpdate(userId, { $inc: { mainBalance: amount } });
     await syncWalletBalance(userId);
-    await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
-      action: "data_purchase",
-      plan_id: plan.plan_id,
-      providerPlanCode,
-      network: plan.network,
-      category: plan.category,
-      mobile_no,
-      zenipointStatus: zenResponse?.status || zenResponse?.code || "rejected",
-      zenipointMessage: zenResponse?.message || "",
-    });
+    const updated = await updateWalletTransactionStatus(
+      userId,
+      reference,
+      "failed",
+      {
+        action: "data_purchase",
+        plan_id: plan.plan_id,
+        providerPlanCode,
+        network: plan.network,
+        category: plan.category,
+        mobile_no,
+        zenipointStatus: zenResponse?.status || zenResponse?.code || "rejected",
+        zenipointMessage: zenResponse?.message || "",
+        refundApplied: true,
+      }
+    );
+    if (!updated) {
+      await logWalletTransactionWithMeta(userId, "purchase", amount, reference, "failed", {
+        action: "data_purchase",
+        plan_id: plan.plan_id,
+        providerPlanCode,
+        network: plan.network,
+        category: plan.category,
+        mobile_no,
+        zenipointStatus: zenResponse?.status || zenResponse?.code || "rejected",
+        zenipointMessage: zenResponse?.message || "",
+        refundApplied: true,
+      });
+    }
+    await ensureWalletBalanceMatch(userId, "data_purchase_refund_rejected");
 
     await sendUserEmail({
       userId: userId,
