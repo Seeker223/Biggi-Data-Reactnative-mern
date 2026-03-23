@@ -2,7 +2,8 @@ import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { sendUserEmail } from "../utils/transactionalEmail.js";
 
-const TOP_RANDOM_MAX_WINNERS = 30;\nconst TOP_RANDOM_MIN_PURCHASES = 25;
+const TOP_RANDOM_MAX_WINNERS = 30;
+const TOP_RANDOM_MIN_PURCHASES = 25;
 const TOP_RANDOM_PRIZE = 10000;
 
 const getCurrentMonthString = () => {
@@ -360,6 +361,7 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
     });
   }
 };
+
 
 
 
