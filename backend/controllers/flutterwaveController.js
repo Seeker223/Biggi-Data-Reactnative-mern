@@ -579,13 +579,16 @@ export const getDepositStatus = async (req, res) => {
       const payment = response.data?.data;
       
       if (payment && payment.status === "successful") {
+        const paidAmount = Number(payment.amount || 0);
+        const feeSettings = await getDepositFeeSettings();
+        const serviceCharge = computeDepositFee(paidAmount, feeSettings);
         await Deposit.findOneAndUpdate(
           { reference: tx_ref },
           {
             user: userId,
-            amount: requestedAmount,
-          serviceCharge,
-          totalAmount: paidAmount,
+            amount: paidAmount,
+            serviceCharge,
+            totalAmount: paidAmount,
             reference: tx_ref,
             status: "pending",
             channel: "flutterwave",
@@ -598,17 +601,20 @@ export const getDepositStatus = async (req, res) => {
         return res.json({
           success: true,
           status: "pending",
-          amount: requestedAmount,
+          amount: paidAmount,
           serviceCharge,
           totalAmount: paidAmount,
           message: "Payment received. Authorization required to credit wallet.",
           balance: 0,
         });
       } else if (payment) {
+        const paidAmount = Number(payment.amount || 0);
+        const feeSettings = await getDepositFeeSettings();
+        const serviceCharge = computeDepositFee(paidAmount, feeSettings);
         return res.json({ 
           success: true,
           status: payment.status || "pending",
-          amount: requestedAmount,
+          amount: paidAmount,
           serviceCharge,
           totalAmount: paidAmount,
           balance: 0
