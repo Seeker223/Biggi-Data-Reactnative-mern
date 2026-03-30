@@ -32,6 +32,9 @@ import depositFeeAdminRoutes from "./routes/depositFeeAdminRoutes.js";
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
 import User from "./models/User.js";
+import Deposit from "./models/Deposit.js";
+import Wallet from "./models/Wallet.js";
+import WebhookHealth from "./models/WebhookHealth.js";
 import { getWebhookHealth } from "./controllers/webhookHealthController.js";
 
 /* ---------------- ERROR HANDLER ---------------- */
@@ -506,6 +509,62 @@ if (enableDebugRoutes) {
   });
   app.get("/debug/webhook-health", (req, res) => {
     return getWebhookHealth(req, res);
+  });
+  app.get("/debug/deposit-trace", async (req, res) => {
+    try {
+      const email = String(req.query?.email || "").trim().toLowerCase();
+      const ref = String(req.query?.ref || "").trim();
+      if (!email && !ref) {
+        return res.status(400).json({
+          success: false,
+          message: "email or ref is required",
+        });
+      }
+
+      let user = null;
+      if (email) {
+        user = await User.findOne({ email }).select("email username mainBalance");
+      }
+
+      const userId = user?._id ? String(user._id) : null;
+      const depositQuery = ref
+        ? { reference: ref }
+        : userId
+          ? { user: userId }
+          : {};
+      const deposits = Object.keys(depositQuery).length
+        ? await Deposit.find(depositQuery).sort({ createdAt: -1 }).limit(10).lean()
+        : [];
+
+      const wallet = userId
+        ? await Wallet.findOne({ userId, type: "main" }).lean()
+        : null;
+
+      const walletTx = wallet?.transactions
+        ? wallet.transactions
+            .filter((t) => (ref ? t.reference === ref : true))
+            .slice(-10)
+        : [];
+
+      const webhook = ref
+        ? await WebhookHealth.findOne({ reference: ref }).sort({ createdAt: -1 }).lean()
+        : null;
+
+      return res.json({
+        success: true,
+        user: user
+          ? { id: user._id, email: user.email, username: user.username, mainBalance: user.mainBalance }
+          : null,
+        deposits,
+        wallet: wallet
+          ? { balance: wallet.balance, lastUpdated: wallet.lastUpdated, transactions: walletTx }
+          : null,
+        webhook,
+      });
+    } catch (error) {
+      console.error("Deposit trace error:", error);
+      return res.status(500).json({ success: false, message: "Failed to trace deposit" });
+    }
   });
   app.get("/debug/routes", (req, res) => {
     const routes = [
