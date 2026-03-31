@@ -560,6 +560,9 @@ export const getDepositStatus = async (req, res) => {
         serviceCharge: deposit.serviceCharge || 0,
         totalAmount: deposit.totalAmount || deposit.amount,
         createdAt: deposit.createdAt,
+        credited: Boolean(deposit.credited),
+        creditedAt: deposit.creditedAt || null,
+        alreadyCredited: Boolean(deposit.credited && deposit.status === "successful"),
         balance: user?.mainBalance || 0
       });
     }
@@ -605,6 +608,8 @@ export const getDepositStatus = async (req, res) => {
           serviceCharge,
           totalAmount: paidAmount,
           message: "Payment received. Authorization required to credit wallet.",
+          credited: false,
+          alreadyCredited: false,
           balance: 0,
         });
       } else if (payment) {
@@ -617,6 +622,8 @@ export const getDepositStatus = async (req, res) => {
           amount: paidAmount,
           serviceCharge,
           totalAmount: paidAmount,
+          credited: false,
+          alreadyCredited: false,
           balance: 0
         });
       }
