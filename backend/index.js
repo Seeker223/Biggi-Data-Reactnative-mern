@@ -510,6 +510,23 @@ if (enableDebugRoutes) {
   app.get("/debug/webhook-health", (req, res) => {
     return getWebhookHealth(req, res);
   });
+  app.get("/debug/generate-tx-ref", async (req, res) => {
+    try {
+      const email = String(req.query?.email || "").trim().toLowerCase();
+      const userId = String(req.query?.userId || "").trim();
+      let user = null;
+      if (userId) user = await User.findById(userId).select("_id");
+      if (!user && email) user = await User.findOne({ email }).select("_id");
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      const tx_ref = `va_${user._id}_${Date.now()}`;
+      return res.json({ success: true, tx_ref, userId: String(user._id) });
+    } catch (error) {
+      console.error("Generate tx_ref error:", error);
+      return res.status(500).json({ success: false, message: "Failed to generate tx_ref" });
+    }
+  });
   app.get("/debug/deposit-trace", async (req, res) => {
     try {
       const email = String(req.query?.email || "").trim().toLowerCase();
