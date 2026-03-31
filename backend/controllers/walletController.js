@@ -103,10 +103,10 @@ export const getVirtualAccount = async (req, res) => {
       });
     }
 
-    if (!user.bvn && !user.nin) {
+    if (!user.nin) {
       return res.status(400).json({
         success: false,
-        message: "BVN or NIN is required to create a static virtual account.",
+        message: "NIN is required to create a static virtual account.",
       });
     }
 
@@ -120,7 +120,6 @@ export const getVirtualAccount = async (req, res) => {
       firstname: first,
       lastname: last,
       narration: `Biggi Data ${user.username || user.email}`,
-      bvn: user.bvn || undefined,
       nin: user.nin || undefined,
     };
 
