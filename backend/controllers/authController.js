@@ -84,7 +84,7 @@ export const register = async (req, res) => {
     if (!normalizedUsername || !normalizedEmail || !password || !normalizedState || !parsedBirthDate || !normalizedPhone) {
       return res.status(400).json({ 
         success: false, 
-        error: "Username, email, password, phone number, state, and valid birth date are required" 
+        error: "Username, email, password, phone number, state, valid birth date, and NIN are required" 
       });
     }
 
@@ -120,6 +120,9 @@ export const register = async (req, res) => {
 
     const normalizedBvn = String(bvn || "").replace(/\D/g, "").trim() || null;
     const normalizedNin = String(nin || "").replace(/\D/g, "").trim() || null;
+    if (!normalizedNin) {
+      return res.status(400).json({ success: false, error: "NIN is required" });
+    }
     if (normalizedBvn && !/^\d{11}$/.test(normalizedBvn)) {
       return res.status(400).json({ success: false, error: "BVN must be 11 digits" });
     }
@@ -685,3 +688,5 @@ export const logout = async (req, res) => {
     });
   }
 };
+
+
