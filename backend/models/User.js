@@ -293,6 +293,8 @@ const UserSchema = new mongoose.Schema(
     topRandomMonthlyPicks: [TopRandomMonthlyPickSchema],
     currentMonthPurchases: { type: Number, default: 0 },
     currentMonthEligible: { type: Boolean, default: false },
+    currentWeekPurchases: { type: Number, default: 0 },
+    currentWeekKey: { type: String, default: null },
     
     /* ---------------- STATISTICS ---------------- */
     totalWins: { type: Number, default: 0 },
@@ -407,6 +409,22 @@ UserSchema.methods.getCurrentMonthString = function() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
 
+/* ==========================================
+   METHOD: GET CURRENT WEEK STRING (ISO)
+========================================== */
+UserSchema.methods.getCurrentWeekKey = function() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  const weekNo =
+    1 +
+    Math.round(
+      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
+    );
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+};
+
 const generateRaffleCode = () => {
   // 6 random uppercase alphanumeric characters
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid ambiguous 0/1/O/I
@@ -465,6 +483,20 @@ UserSchema.methods.updateMonthlyPurchase = function() {
   // Update data bundle count
   this.dataBundleCount += 1;
   
+  return this.save();
+};
+
+/* ==========================================
+   METHOD: UPDATE WEEKLY PURCHASE
+========================================== */
+UserSchema.methods.updateWeeklyPurchase = function() {
+  const currentWeek = this.getCurrentWeekKey();
+  if (this.currentWeekKey !== currentWeek) {
+    this.currentWeekKey = currentWeek;
+    this.currentWeekPurchases = 1;
+  } else {
+    this.currentWeekPurchases = Number(this.currentWeekPurchases || 0) + 1;
+  }
   return this.save();
 };
 

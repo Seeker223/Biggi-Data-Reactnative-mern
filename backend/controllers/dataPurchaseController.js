@@ -254,9 +254,24 @@ export const buyData = async (req, res) => {
         });
       }
 
-      // Add ticket for simulated purchase
-      balanceUser.tickets = (balanceUser.tickets || 0) + 1;
-      await balanceUser.updateMonthlyPurchase();
+      const isMerchantRole = String(balanceUser?.userRole || "").toLowerCase() === "merchant";
+      let updatedPurchaseUser = await balanceUser.updateMonthlyPurchase();
+      updatedPurchaseUser = await updatedPurchaseUser.updateWeeklyPurchase();
+      const weeklyPurchases = Number(updatedPurchaseUser.currentWeekPurchases || 0);
+      if (isMerchantRole) {
+        if (weeklyPurchases > 0 && weeklyPurchases % 7 === 0) {
+          updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
+          updatedPurchaseUser.addNotification({
+            type: "Weekly Game Ticket",
+            status: "success",
+            message: "You earned 1 weekly game ticket for completing 7 purchases this week.",
+          });
+          await updatedPurchaseUser.save();
+        }
+      } else {
+        updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
+        await updatedPurchaseUser.save();
+      }
 
       return res.status(200).json({
         success: true,
@@ -265,7 +280,7 @@ export const buyData = async (req, res) => {
         providerPlanCode,
         plan,
         newBalance: balanceUser.mainBalance,
-        tickets: balanceUser.tickets,
+        tickets: updatedPurchaseUser.tickets,
         zenipoint: zenResponse,
       });
     }
@@ -324,10 +339,25 @@ export const buyData = async (req, res) => {
         zenipoint: zenResponse,
       });
 
-      // Add ticket reward
-      balanceUser.tickets = (balanceUser.tickets || 0) + 1; // Or plan.ticketReward if variable
-      // Update monthly progress and issue raffle ticket every 5 purchases
-      await balanceUser.updateMonthlyPurchase();
+      const isMerchantRole = String(balanceUser?.userRole || "").toLowerCase() === "merchant";
+      let updatedPurchaseUser = await balanceUser.updateMonthlyPurchase();
+      updatedPurchaseUser = await updatedPurchaseUser.updateWeeklyPurchase();
+      const weeklyPurchases = Number(updatedPurchaseUser.currentWeekPurchases || 0);
+      if (isMerchantRole) {
+        if (weeklyPurchases > 0 && weeklyPurchases % 7 === 0) {
+          updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
+          updatedPurchaseUser.addNotification({
+            type: "Weekly Game Ticket",
+            status: "success",
+            message: "You earned 1 weekly game ticket for completing 7 purchases this week.",
+          });
+          await updatedPurchaseUser.save();
+        }
+      } else {
+        // Private users: 1 ticket per purchase
+        updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
+        await updatedPurchaseUser.save();
+      }
 
       await sendUserEmail({
         userId: userId,
@@ -352,7 +382,7 @@ export const buyData = async (req, res) => {
         plan,
         zenipoint: zenResponse,
         newBalance: balanceUser.mainBalance,
-        tickets: balanceUser.tickets,
+        tickets: updatedPurchaseUser.tickets,
       });
     }
 
@@ -417,4 +447,3 @@ export const buyData = async (req, res) => {
     });
   }
 };
-
