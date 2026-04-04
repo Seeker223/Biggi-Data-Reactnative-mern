@@ -1,6 +1,7 @@
-﻿import User from "../models/User.js";
+import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import WeeklyLetterDrawResult from "../models/WeeklyLetterDrawResult.js";
+import MerchantWeeklyCardDrawResult from "../models/MerchantWeeklyCardDrawResult.js";
 import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const getMonthEnd = (date) => {
@@ -13,9 +14,45 @@ const getMonthKey = (date) => {
   return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`;
 };
 
+const getWeekKey = (date) => {
+  const d = date instanceof Date ? new Date(date) : new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  const weekNo =
+    1 +
+    Math.round(
+      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
+    );
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+};
+
+const getWeekStart = (date) => {
+  const d = date instanceof Date ? new Date(date) : new Date(date);
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const getWeekEnd = (date) => {
+  const start = getWeekStart(date);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+};
+
 const generateWinningNumbers = () => {
   const nums = new Set();
   while (nums.size < 5) nums.add(Math.floor(Math.random() * 52) + 1);
+  return [...nums];
+};
+
+const generateMerchantCardLetters = () => {
+  const nums = new Set();
+  while (nums.size < 9) nums.add(Math.floor(Math.random() * 26) + 1);
   return [...nums];
 };
 
@@ -39,6 +76,37 @@ const getOrCreateMonthlyResult = async (monthKey) => {
     }
     throw err;
   }
+};
+
+const getOrCreateWeeklyCardResult = async (weekKey) => {
+  const existing = await MerchantWeeklyCardDrawResult.findOne({ week: weekKey }).lean();
+  if (existing?.letters?.length === 9 && existing?.winningNumbers?.length === 3) return existing;
+
+  const letters = generateMerchantCardLetters();
+  const winningGroupIndex = Math.floor(Math.random() * 3);
+  const winningNumbers = letters.slice(winningGroupIndex * 3, winningGroupIndex * 3 + 3);
+
+  try {
+    const created = await MerchantWeeklyCardDrawResult.create({
+      week: weekKey,
+      letters,
+      winningGroupIndex,
+      winningNumbers,
+      generatedAt: new Date(),
+    });
+    return created.toObject();
+  } catch (err) {
+    if (err?.code === 11000) {
+      const retry = await MerchantWeeklyCardDrawResult.findOne({ week: weekKey }).lean();
+      if (retry?.letters?.length === 9) return retry;
+    }
+    throw err;
+  }
+};
+
+const isSameSet = (a, b) => {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((value) => b.includes(value));
 };
 
 const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
@@ -69,7 +137,7 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
     type: "Referral Reward",
     status: "success",
     amount: bonus,
-    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned â‚¦${bonus.toLocaleString()}.`,
+    message: `${winner.username || "Your referral"} won ${gameLabel}. You earned ₦${bonus.toLocaleString()}.`,
   });
 
   await referrer.save();
@@ -77,22 +145,25 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
 };
 
 // ---------------------------------------------------
-// ðŸŽ® PLAY DAILY GAME (User selects 5 numbers)
+// 🎮 PLAY DAILY GAME (User selects 5 numbers)
 // ---------------------------------------------------
 export const playDailyGame = async (req, res) => {
   try {
     const userId = req.user.id;
     const { numbers } = req.body;
 
-    if (!numbers || !Array.isArray(numbers) || numbers.length !== 5) {
-      return res.status(400).json({
-        success: false,
-        message: "You must select exactly 5 letters",
-      });
-    }
-
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const isMerchantRole = String(user?.userRole || "").toLowerCase() === "merchant";
+    const requiredCount = isMerchantRole ? 3 : 5;
+
+    if (!numbers || !Array.isArray(numbers) || numbers.length !== requiredCount) {
+      return res.status(400).json({
+        success: false,
+        message: `You must select exactly ${requiredCount} letters`,
+      });
+    }
 
     // Must have at least 1 ticket
     if (user.tickets <= 0) {
@@ -105,38 +176,49 @@ export const playDailyGame = async (req, res) => {
     // Deduct ticket
     user.tickets -= 1;
 
+    const drawKey = isMerchantRole ? getWeekKey(new Date()) : getMonthKey(new Date());
+    const gameType = isMerchantRole ? "merchant_card" : "weekly_number";
+
     // Save play entry
     user.dailyNumberDraw.push({
       numbers,
+      gameType,
+      drawKey,
       result: [],
       isWinner: false,
       playedAt: new Date(),
     });
 
     user.addNotification({
-      type: "Weekly Draw",
+      type: isMerchantRole ? "Weekly Card Game" : "Weekly Draw",
       status: "success",
-      message: "Weekly draw entry submitted successfully. Results are released at month end.",
+      message: isMerchantRole
+        ? "Weekly card game entry submitted successfully. Results are released at week end."
+        : "Weekly draw entry submitted successfully. Results are released at month end.",
     });
 
     await user.save();
 
     await sendUserEmail({
       userId: userId,
-      type: "weekly_entry",
+      type: isMerchantRole ? "weekly_card_entry" : "weekly_entry",
       email: user.email,
-      subject: "Weekly Draw Entry Submitted",
-      title: "Weekly Draw Entry Submitted",
+      subject: isMerchantRole ? "Weekly Card Entry Submitted" : "Weekly Draw Entry Submitted",
+      title: isMerchantRole ? "Weekly Card Entry Submitted" : "Weekly Draw Entry Submitted",
       bodyLines: [
-        "Your weekly draw entry has been submitted successfully.",
-        "Results are released at month end.",
+        isMerchantRole
+          ? "Your weekly card entry has been submitted successfully."
+          : "Your weekly draw entry has been submitted successfully.",
+        isMerchantRole ? "Results are released at week end." : "Results are released at month end.",
       ],
     });
 
 
     return res.status(200).json({
       success: true,
-      message: "Your letters were submitted successfully. Results are released at month end.",
+      message: isMerchantRole
+        ? "Your letters were submitted successfully. Results are released at week end."
+        : "Your letters were submitted successfully. Results are released at month end.",
       tickets: user.tickets,
     });
   } catch (error) {
@@ -257,7 +339,7 @@ export const claimDailyReward = async (req, res) => {
 };
 
 // ---------------------------------------------------
-// ðŸŽ¯ GENERATE WINNING NUMBERS & EVALUATE WINNERS
+// 🎯 GENERATE WINNING NUMBERS & EVALUATE WINNERS
 // ---------------------------------------------------
 export const generateDailyWinningNumbers = async () => {
   try {
@@ -272,6 +354,30 @@ export const generateDailyWinningNumbers = async () => {
         if (!Array.isArray(entry?.result) || entry.result.length > 0) continue;
 
         const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now());
+        const isMerchantEntry = entry.gameType === "merchant_card";
+        if (isMerchantEntry) {
+          const weekEnd = getWeekEnd(playedAt);
+          if (Date.now() < weekEnd.getTime()) continue;
+
+          const weekKey = entry.drawKey || getWeekKey(playedAt);
+          const weeklyCard = await getOrCreateWeeklyCardResult(weekKey);
+          const winningNumbers = weeklyCard?.winningNumbers || [];
+
+          entry.result = winningNumbers;
+          entry.isWinner = isSameSet(entry.numbers, winningNumbers);
+          updated = true;
+
+          const playedAtLabel = entry?.playedAt
+            ? new Date(entry.playedAt).toLocaleDateString()
+            : "this week";
+          if (entry.isWinner) {
+            emailLines.push(`Great news! Your weekly card entry from ${playedAtLabel} is a WINNER.`);
+          } else {
+            emailLines.push(`Your weekly card entry from ${playedAtLabel} did not win this time.`);
+          }
+          continue;
+        }
+
         const monthEnd = getMonthEnd(playedAt);
         if (Date.now() < monthEnd.getTime()) continue;
 
@@ -390,6 +496,46 @@ export const getWeeklyWinners = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch weekly winners",
+    });
+  }
+};
+
+// ---------------------------------------------------
+// GET MERCHANT WEEKLY CARD DATA (letters + reveal)
+// ---------------------------------------------------
+export const getMerchantWeeklyCard = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId).select("userRole");
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const isMerchantRole = String(user?.userRole || "").toLowerCase() === "merchant";
+    if (!isMerchantRole) {
+      return res.status(403).json({
+        success: false,
+        message: "Only merchants can access weekly card data.",
+      });
+    }
+
+    const weekKey = getWeekKey(new Date());
+    const weeklyCard = await getOrCreateWeeklyCardResult(weekKey);
+    const weekEnd = getWeekEnd(new Date());
+    const revealReady = Date.now() >= weekEnd.getTime();
+
+    return res.status(200).json({
+      success: true,
+      week: weekKey,
+      revealAt: weekEnd.toISOString(),
+      letters: weeklyCard?.letters || [],
+      revealReady,
+      winningGroupIndex: revealReady ? weeklyCard?.winningGroupIndex : null,
+      winningNumbers: revealReady ? weeklyCard?.winningNumbers || [] : [],
+    });
+  } catch (error) {
+    console.log("Get merchant weekly card error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch weekly card data",
     });
   }
 };

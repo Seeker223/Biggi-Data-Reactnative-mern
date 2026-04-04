@@ -28,3 +28,6 @@
 [2026-03-17T18:46:04.834Z] RESEND_ERROR: ❌ Resend email error for baduntobi2024@gmail.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
 [2026-03-17T18:46:04.836Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
     at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-04T00:38:22.490Z] RESEND_ERROR: ❌ Resend email error for baduntobi2024@gmail.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-04T00:38:22.494Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)

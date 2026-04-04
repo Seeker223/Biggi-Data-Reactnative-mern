@@ -12,15 +12,22 @@ const DailyGameSchema = new mongoose.Schema({
     type: [Number],
     required: true,
     validate: {
-      validator: (v) => v.length === 5,
-      message: "Daily game selection must contain exactly 5 numbers",
+      validator: (v) => Array.isArray(v) && (v.length === 3 || v.length === 5),
+      message: "Daily game selection must contain exactly 3 or 5 numbers",
     },
   },
+  gameType: {
+    type: String,
+    enum: ["weekly_number", "merchant_card"],
+    default: "weekly_number",
+  },
+  drawKey: { type: String, default: null },
   result: { type: [Number], default: [] },
   isWinner: { type: Boolean, default: false },
   prizeAmount: { type: Number, default: 10000 },
   claimed: { type: Boolean, default: false },
   claimedAt: { type: Date, default: null },
+  playedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
 });
 
