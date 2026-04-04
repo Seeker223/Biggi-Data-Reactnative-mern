@@ -30,12 +30,35 @@ const ensureReferralCode = async (user) => {
 const parseBirthDate = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return null;
-  const match = raw.match(/^(\d{2})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year2 = Number(match[3]);
-  const year = year2 >= 50 ? 1900 + year2 : 2000 + year2;
+
+  // Accept DD-MM-YY, DD-MM-YYYY, or YYYY-MM-DD
+  let day;
+  let month;
+  let year;
+
+  const short = raw.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if (short) {
+    day = Number(short[1]);
+    month = Number(short[2]);
+    const year2 = Number(short[3]);
+    year = year2 >= 50 ? 1900 + year2 : 2000 + year2;
+  }
+
+  const long = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!day && long) {
+    day = Number(long[1]);
+    month = Number(long[2]);
+    year = Number(long[3]);
+  }
+
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!day && iso) {
+    year = Number(iso[1]);
+    month = Number(iso[2]);
+    day = Number(iso[3]);
+  }
+
+  if (!day || !month || !year) return null;
   const date = new Date(Date.UTC(year, month - 1, day));
   if (Number.isNaN(date.getTime())) return null;
   if (date.getUTCDate() !== day || date.getUTCMonth() !== month - 1) return null;
@@ -688,5 +711,6 @@ export const logout = async (req, res) => {
     });
   }
 };
+
 
 
