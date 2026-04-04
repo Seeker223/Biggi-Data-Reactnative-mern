@@ -44,6 +44,25 @@ const getWeekEnd = (date) => {
   return end;
 };
 
+const getWeekRangeFromKey = (weekKey) => {
+  if (!/^\d{4}-W\d{2}$/.test(String(weekKey || ""))) {
+    const now = new Date();
+    return { week: getWeekKey(now), start: getWeekStart(now), end: getWeekEnd(now) };
+  }
+  const [yearStr, weekStr] = String(weekKey).split("-W");
+  const year = Number(yearStr);
+  const week = Number(weekStr);
+  const jan4 = new Date(year, 0, 4);
+  const day = (jan4.getDay() + 6) % 7;
+  const weekStart = new Date(jan4);
+  weekStart.setDate(jan4.getDate() - day + (week - 1) * 7);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  return { week: `${year}-W${String(week).padStart(2, "0")}`, start: weekStart, end: weekEnd };
+};
+
 const generateWinningNumbers = () => {
   const nums = new Set();
   while (nums.size < 5) nums.add(Math.floor(Math.random() * 52) + 1);
@@ -349,6 +368,8 @@ export const generateDailyWinningNumbers = async () => {
     for (const user of users) {
       let updated = false;
       const emailLines = [];
+      let hasMerchantResult = false;
+      let hasWeeklyDrawResult = false;
 
       for (const entry of user.dailyNumberDraw || []) {
         if (!Array.isArray(entry?.result) || entry.result.length > 0) continue;
@@ -375,6 +396,7 @@ export const generateDailyWinningNumbers = async () => {
           } else {
             emailLines.push(`Your weekly card entry from ${playedAtLabel} did not win this time.`);
           }
+          hasMerchantResult = true;
           continue;
         }
 
@@ -402,17 +424,28 @@ export const generateDailyWinningNumbers = async () => {
         } else {
           emailLines.push(`Your weekly draw entry from ${playedAtLabel} did not win this time.`);
         }
+        hasWeeklyDrawResult = true;
       }
 
       if (updated) {
         await user.save();
         if (emailLines.length) {
+          const subject = hasMerchantResult && hasWeeklyDrawResult
+            ? "Weekly Game Results"
+            : hasMerchantResult
+            ? "Weekly Card Result"
+            : "Weekly Draw Result";
+          const title = hasMerchantResult && hasWeeklyDrawResult
+            ? "Weekly Game Results"
+            : hasMerchantResult
+            ? "Weekly Card Result"
+            : "Weekly Draw Result";
           await sendUserEmail({
             userId: user._id,
             type: "weekly_result",
             email: user.email,
-            subject: "Weekly Draw Result",
-            title: "Weekly Draw Result",
+            subject,
+            title,
             bodyLines: emailLines,
           });
         }
@@ -496,6 +529,85 @@ export const getWeeklyWinners = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch weekly winners",
+    });
+  }
+};
+
+// ---------------------------------------------------
+// GET MERCHANT WEEKLY CARD WINNERS (per week)
+// ---------------------------------------------------
+export const getMerchantWeeklyWinners = async (req, res) => {
+  try {
+    const rawWeek = String(req.query?.week || "").trim(); // "YYYY-WW"
+    const { week, start, end } = getWeekRangeFromKey(rawWeek);
+    const revealReady = Date.now() >= end.getTime();
+
+    if (!revealReady) {
+      return res.status(200).json({
+        success: true,
+        week,
+        revealAt: end.toISOString(),
+        revealReady: false,
+        count: 0,
+        winners: [],
+      });
+    }
+
+    const winners = await User.aggregate([
+      { $unwind: "$dailyNumberDraw" },
+      {
+        $match: {
+          "dailyNumberDraw.gameType": "merchant_card",
+          "dailyNumberDraw.isWinner": true,
+          "dailyNumberDraw.createdAt": { $gte: start, $lt: end },
+        },
+      },
+      { $sort: { "dailyNumberDraw.createdAt": -1 } },
+      {
+        $group: {
+          _id: "$_id",
+          username: { $first: "$username" },
+          email: { $first: "$email" },
+          photo: { $first: "$photo" },
+          gameId: { $first: "$dailyNumberDraw._id" },
+          createdAt: { $first: "$dailyNumberDraw.createdAt" },
+          playedAt: { $first: "$dailyNumberDraw.playedAt" },
+          numbers: { $first: "$dailyNumberDraw.numbers" },
+          result: { $first: "$dailyNumberDraw.result" },
+          prizeAmount: { $first: "$dailyNumberDraw.prizeAmount" },
+          claimed: { $first: "$dailyNumberDraw.claimed" },
+          claimedAt: { $first: "$dailyNumberDraw.claimedAt" },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $limit: 100 },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      week,
+      revealAt: end.toISOString(),
+      revealReady: true,
+      count: winners.length,
+      winners: winners.map((w) => ({
+        userId: w._id,
+        username: w.username,
+        email: w.email,
+        photo: w.photo || null,
+        gameId: w.gameId,
+        createdAt: w.createdAt || w.playedAt || null,
+        numbers: w.numbers || [],
+        result: w.result || [],
+        prizeAmount: Number(w.prizeAmount || 10000),
+        claimed: Boolean(w.claimed),
+        claimedAt: w.claimedAt || null,
+      })),
+    });
+  } catch (error) {
+    console.log("Get merchant weekly winners error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch merchant weekly winners",
     });
   }
 };
