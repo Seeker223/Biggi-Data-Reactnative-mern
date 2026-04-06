@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import Withdraw from "../models/withdrawModel.js";
+import DepositCreditLog from "../models/DepositCreditLog.js";
 import Wallet from "../models/Wallet.js";
 import UnmatchedDeposit from "../models/UnmatchedDeposit.js";
 import {
@@ -808,6 +809,45 @@ export const assignUnmatchedDeposit = async (req, res) => {
       success: false,
       message: "Failed to assign deposit",
       error: error.message,
+    });
+  }
+};
+
+// ---------------------------------------------------
+// ADMIN: DEPOSIT CREDIT LOGS
+// ---------------------------------------------------
+export const getDepositCreditLogs = async (req, res) => {
+  try {
+    const email = String(req.query?.email || "").trim().toLowerCase();
+    const reference = String(req.query?.reference || "").trim();
+    const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 50)));
+
+    const query = {};
+    if (reference) query.reference = reference;
+
+    if (email) {
+      const user = await User.findOne({ email }).select("_id");
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+      query.user = user._id;
+    }
+
+    const logs = await DepositCreditLog.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.json({
+      success: true,
+      count: logs.length,
+      logs,
+    });
+  } catch (error) {
+    console.error("Get deposit credit logs error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load deposit credit logs",
     });
   }
 };
