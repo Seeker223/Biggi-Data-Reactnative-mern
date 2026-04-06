@@ -27,6 +27,34 @@ const safeSlice = (arr, max = 10) => (Array.isArray(arr) ? arr.slice(0, max) : [
 const USER_PUBLIC_SELECT =
   "-password -transactionPinHash -refreshToken -refreshTokenExpiresAt -refreshTokenRememberMe -__v";
 
+const getLatestTransaction = (wallet) => {
+  const txs = Array.isArray(wallet?.transactions) ? wallet.transactions : [];
+  if (!txs.length) return null;
+  return [...txs].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0] || null;
+};
+
+const resolvePreviousMainBalance = (currentBalance, wallet) => {
+  const latest = getLatestTransaction(wallet);
+  if (!latest) return null;
+  const metaPrev = latest?.meta?.previousBalance;
+  if (Number.isFinite(Number(metaPrev))) {
+    return Number(metaPrev);
+  }
+  const amount = Number(latest?.amount ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const status = String(latest?.status || "").toLowerCase();
+  if (!["success", "successful", "credited", "completed"].includes(status)) return null;
+  const type = String(latest?.type || "").toLowerCase();
+  const signMap = {
+    deposit: 1,
+    withdraw: -1,
+    purchase: -1,
+    refund: 1,
+  };
+  if (!Object.prototype.hasOwnProperty.call(signMap, type)) return null;
+  return Number(currentBalance) - signMap[type] * amount;
+};
+
 export const getAdminDashboard = async (req, res) => {
   try {
     const page = Math.max(1, toInt(req.query.page, 1));
@@ -196,6 +224,10 @@ export const getAdminDashboard = async (req, res) => {
         historyLimit
       );
 
+      const currentMainBalance = toNum(user.mainBalance);
+      const previousMainBalance = resolvePreviousMainBalance(currentMainBalance, wallet);
+      const latestBalanceEvent = getLatestTransaction(wallet);
+
       const totalBalance = toNum(user.mainBalance) + toNum(user.rewardBalance);
       const totalGameWins = dailyWins + monthlyWins + topRandomWins;
       const totalGamePlays = dailyPlays + monthlyEntries + topRandomEntries;
@@ -224,7 +256,9 @@ export const getAdminDashboard = async (req, res) => {
           updatedAt: user.updatedAt,
         },
         balances: {
-          mainBalance: toNum(user.mainBalance),
+          mainBalance: currentMainBalance,
+          previousMainBalance,
+          previousMainBalanceAt: latestBalanceEvent?.date || null,
           rewardBalance: toNum(user.rewardBalance),
           totalBalance,
           totalDeposits: toNum(user.totalDeposits),
