@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import WebhookHealth from "../models/WebhookHealth.js";
+import DepositCreditLog from "../models/DepositCreditLog.js";
 import {
   logWalletTransaction,
   updateWalletTransactionStatus,
@@ -58,6 +59,13 @@ export const verifyFlutterwavePayment = async (req, res) => {
           reference: tx_ref,
           user: userId,
           amount: Number(existingDeposit.amount || 0),
+        });
+        await DepositCreditLog.create({
+          user: userId,
+          reference: tx_ref,
+          amount: Number(existingDeposit.amount || 0),
+          source: "verify",
+          note: "already_credited",
         });
       }
       return res.json({
@@ -450,6 +458,13 @@ export const flutterwaveWebhook = async (req, res) => {
           user: userId,
           amount: Number(existingDeposit.amount || 0),
         });
+        await DepositCreditLog.create({
+          user: userId,
+          reference,
+          amount: Number(existingDeposit.amount || 0),
+          source: "webhook",
+          note: "already_credited",
+        });
         if (session) await session.abortTransaction();
         await updateHealth({
           processed: true,
@@ -695,6 +710,13 @@ export const reconcilePayment = async (req, res) => {
           reference: tx_ref,
           user: userId,
           amount: Number(existingDeposit.amount || 0),
+        });
+        await DepositCreditLog.create({
+          user: userId,
+          reference: tx_ref,
+          amount: Number(existingDeposit.amount || 0),
+          source: "reconcile",
+          note: "already_credited",
         });
       }
       return res.json({
