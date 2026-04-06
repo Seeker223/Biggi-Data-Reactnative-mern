@@ -2,20 +2,38 @@ import User from "../models/User.js";
 import { FEATURE_FLAGS } from "../config/featureFlags.js";
 import { sendUserEmail } from "../utils/transactionalEmail.js";
 
-const TOP_RANDOM_MAX_WINNERS = 30;
-const TOP_RANDOM_MIN_PURCHASES = 25;
+const TOP_RANDOM_MAX_WINNERS = 10;
+const TOP_RANDOM_MIN_PURCHASES = 7;
 const TOP_RANDOM_PRIZE = 10000;
 
-const getCurrentMonthString = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+const getCurrentWeekKey = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  const weekNo =
+    1 +
+    Math.round(
+      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
+    );
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 };
 
-const isValidMonthString = (month = "") => /^\d{4}-\d{2}$/.test(month);
+const isValidWeekString = (week = "") => /^\d{4}-W\d{2}$/.test(week);
 
-const getMonthEnd = (month) => {
-  const [year, monthNum] = String(month).split("-").map(Number);
-  return new Date(year, monthNum, 0, 23, 59, 59, 999);
+const getWeekEnd = (week) => {
+  const [yearStr, weekStr] = String(week).split("-W");
+  const year = Number(yearStr);
+  const weekNum = Number(weekStr);
+  const jan4 = new Date(year, 0, 4);
+  const day = (jan4.getDay() + 6) % 7;
+  const weekStart = new Date(jan4);
+  weekStart.setDate(jan4.getDate() - day + (weekNum - 1) * 7);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  return weekEnd;
 };
 
 const shuffle = (arr = []) => {
@@ -62,19 +80,15 @@ const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
   return bonus;
 };
 
-const runTopRandomMonthlyDrawIfNeeded = async (month) => {
+const runTopRandomWeeklyDrawIfNeeded = async (week) => {
   const now = Date.now();
-  const monthEnd = getMonthEnd(month).getTime();
-  const drawReady = now >= monthEnd;
+  const weekEnd = getWeekEnd(week).getTime();
+  const drawReady = now >= weekEnd;
 
   const eligibleUsers = await User.find({
-    monthlyDraws: {
-      $elemMatch: {
-        month,
-        purchasesCount: { $gte: TOP_RANDOM_MIN_PURCHASES },
-      },
-    },
-  }).select("_id username topRandomMonthlyPicks notificationItems notifications");
+    currentWeekKey: week,
+    currentWeekPurchases: { $gte: TOP_RANDOM_MIN_PURCHASES },
+  }).select("_id username topRandomMonthlyPicks notificationItems notifications currentWeekPurchases currentWeekKey");
 
   const eligibleCount = eligibleUsers.length;
   const maxWinnersForMonth = Math.min(TOP_RANDOM_MAX_WINNERS, eligibleCount);
@@ -82,7 +96,7 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
   const existingWinnerUsers = await User.find({
     topRandomMonthlyPicks: {
       $elemMatch: {
-        month,
+        month: week,
         isWinner: true,
       },
     },
@@ -106,7 +120,7 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
   const selectedUsers = shuffle(candidateUsers).slice(0, remainingSlots);
 
   for (const user of selectedUsers) {
-    const existingPick = (user.topRandomMonthlyPicks || []).find((pick) => pick.month === month);
+    const existingPick = (user.topRandomMonthlyPicks || []).find((pick) => pick.month === week);
 
     if (existingPick) {
       existingPick.isWinner = true;
@@ -116,7 +130,7 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
       existingPick.selectedAt = new Date();
     } else {
       user.topRandomMonthlyPicks.push({
-        month,
+        month: week,
         isWinner: true,
         prizeAmount: TOP_RANDOM_PRIZE,
         claimed: false,
@@ -126,10 +140,10 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
     }
 
     user.addNotification({
-      type: "Top Random Monthly Picks",
+      type: "Top Random Weekly Picks",
       status: "success",
       amount: TOP_RANDOM_PRIZE,
-      message: `You were selected in Top Random Monthly Picks for ${month}. Claim ₦${TOP_RANDOM_PRIZE.toLocaleString()} reward.`,
+      message: `You were selected in Top Random Weekly Picks for ${week}. Claim ₦${TOP_RANDOM_PRIZE.toLocaleString()} reward.`,
     });
 
     await user.save();
@@ -137,10 +151,10 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
       userId: user._id,
       type: "top_random_win",
       email: user.email,
-      subject: "Top Random Monthly Picks",
+      subject: "Top Random Weekly Picks",
       title: "You Were Selected",
       bodyLines: [
-        `You were selected for Top Random Monthly Picks (${month}).`,
+        `You were selected for Top Random Weekly Picks (${week}).`,
         `Reward: N${TOP_RANDOM_PRIZE.toLocaleString()}.`,
         "You can claim your reward now.",
       ],
@@ -148,7 +162,7 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
     await awardReferralReward({
       winner: user,
       prizeAmount: TOP_RANDOM_PRIZE,
-      gameLabel: "Top Random Monthly Picks",
+      gameLabel: "Top Random Weekly Picks",
     });
   }
 
@@ -163,37 +177,44 @@ const runTopRandomMonthlyDrawIfNeeded = async (month) => {
 
 export const getTopRandomMonthlyStatus = async (req, res) => {
   try {
-    const month = String(req.query.month || getCurrentMonthString());
-    if (!isValidMonthString(month)) {
+    const week = String(req.query.week || getCurrentWeekKey());
+    if (!isValidWeekString(week)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid month format. Use YYYY-MM.",
+        message: "Invalid week format. Use YYYY-WW.",
       });
     }
 
-    const drawMeta = await runTopRandomMonthlyDrawIfNeeded(month);
+    const drawMeta = await runTopRandomWeeklyDrawIfNeeded(week);
     const user = await User.findById(req.user.id).select(
-      "username photo monthlyDraws topRandomMonthlyPicks rewardBalance"
+      "username photo topRandomMonthlyPicks rewardBalance currentWeekPurchases currentWeekKey"
     );
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const monthlyPurchase = (user.monthlyDraws || []).find((m) => m.month === month);
-    const purchasesCount = Number(monthlyPurchase?.purchasesCount || 0);
-    const hasBoughtForMonth = purchasesCount > 0;
+    const purchasesCount =
+      user.currentWeekKey === week ? Number(user.currentWeekPurchases || 0) : 0;
+    const hasBoughtForWeek = purchasesCount > 0;
 
-    const myPick = (user.topRandomMonthlyPicks || []).find((pick) => pick.month === month);
+    const myPick = (user.topRandomMonthlyPicks || []).find((pick) => pick.month === week);
     const isWinner = Boolean(myPick?.isWinner);
     const claimed = Boolean(myPick?.claimed);
     const claimable = isWinner && !claimed;
+    const remaining = Math.max(0, TOP_RANDOM_MIN_PURCHASES - purchasesCount);
+    const progress = TOP_RANDOM_MIN_PURCHASES
+      ? Math.min(100, (purchasesCount / TOP_RANDOM_MIN_PURCHASES) * 100)
+      : 0;
 
     return res.json({
       success: true,
-      month,
+      week,
       prizeAmount: TOP_RANDOM_PRIZE,
       maxWinners: TOP_RANDOM_MAX_WINNERS,
+      required: TOP_RANDOM_MIN_PURCHASES,
+      remaining,
+      progress,
       drawReady: drawMeta.drawReady,
       drawCompleted: drawMeta.winnersCount >= drawMeta.maxWinnersForMonth && drawMeta.maxWinnersForMonth > 0,
       eligibleUsersCount: drawMeta.eligibleCount,
@@ -202,7 +223,7 @@ export const getTopRandomMonthlyStatus = async (req, res) => {
         username: user.username,
         photo: user.photo || null,
         purchasesCount,
-        hasBoughtForMonth,
+        hasBoughtForWeek,
         isWinner,
         claimed,
         claimable,
@@ -211,30 +232,30 @@ export const getTopRandomMonthlyStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get Top Random Monthly status error:", error);
+    console.error("Get Top Random Weekly status error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to load Top Random Monthly status",
+      message: "Failed to load Top Random Weekly status",
     });
   }
 };
 
 export const getTopRandomMonthlyWinners = async (req, res) => {
   try {
-    const month = String(req.query.month || getCurrentMonthString());
-    if (!isValidMonthString(month)) {
+    const week = String(req.query.week || getCurrentWeekKey());
+    if (!isValidWeekString(week)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid month format. Use YYYY-MM.",
+        message: "Invalid week format. Use YYYY-WW.",
       });
     }
 
-    await runTopRandomMonthlyDrawIfNeeded(month);
+    await runTopRandomWeeklyDrawIfNeeded(week);
 
     const winners = await User.find({
       topRandomMonthlyPicks: {
         $elemMatch: {
-          month,
+          month: week,
           isWinner: true,
         },
       },
@@ -243,14 +264,14 @@ export const getTopRandomMonthlyWinners = async (req, res) => {
     const items = winners
       .map((user) => {
         const pick = (user.topRandomMonthlyPicks || []).find(
-          (entry) => entry.month === month && entry.isWinner
+          (entry) => entry.month === week && entry.isWinner
         );
         if (!pick) return null;
         return {
           userId: user._id,
           username: user.username,
           photo: user.photo || null,
-          month,
+          week,
           amount: Number(pick.prizeAmount || TOP_RANDOM_PRIZE),
           claimed: Boolean(pick.claimed),
           claimedAt: pick.claimedAt || null,
@@ -262,17 +283,17 @@ export const getTopRandomMonthlyWinners = async (req, res) => {
 
     return res.json({
       success: true,
-      month,
+      week,
       winners: items,
       count: items.length,
       maxWinners: TOP_RANDOM_MAX_WINNERS,
       prizeAmount: TOP_RANDOM_PRIZE,
     });
   } catch (error) {
-    console.error("Get Top Random Monthly winners error:", error);
+    console.error("Get Top Random Weekly winners error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to load Top Random Monthly winners",
+      message: "Failed to load Top Random Weekly winners",
     });
   }
 };
@@ -281,31 +302,31 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
   if (FEATURE_FLAGS.DISABLE_GAME_AND_REDEEM) {
     return res.status(403).json({
       success: false,
-      message: "Top Random Monthly reward claiming is temporarily disabled for review.",
+      message: "Top Random Weekly reward claiming is temporarily disabled for review.",
     });
   }
 
   try {
-    const month = String(req.body?.month || getCurrentMonthString());
-    if (!isValidMonthString(month)) {
+    const week = String(req.body?.week || getCurrentWeekKey());
+    if (!isValidWeekString(week)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid month format. Use YYYY-MM.",
+        message: "Invalid week format. Use YYYY-WW.",
       });
     }
 
-    await runTopRandomMonthlyDrawIfNeeded(month);
+    await runTopRandomWeeklyDrawIfNeeded(week);
 
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const pick = (user.topRandomMonthlyPicks || []).find((entry) => entry.month === month);
+    const pick = (user.topRandomMonthlyPicks || []).find((entry) => entry.month === week);
     if (!pick || !pick.isWinner) {
       return res.status(400).json({
         success: false,
-        message: "You are not a winner for this month",
+        message: "You are not a winner for this week",
       });
     }
 
@@ -324,10 +345,10 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
     user.totalWins = Number(user.totalWins || 0) + 1;
 
     user.addNotification({
-      type: "Top Random Monthly Picks",
+      type: "Top Random Weekly Picks",
       status: "success",
       amount,
-      message: `Top Random Monthly reward of ₦${amount.toLocaleString()} claimed for ${month}.`,
+      message: `Top Random Weekly reward of ₦${amount.toLocaleString()} claimed for ${week}.`,
     });
 
     await user.save();
@@ -339,25 +360,25 @@ export const claimTopRandomMonthlyReward = async (req, res) => {
       subject: "Reward Claimed",
       title: "Top Random Reward Claimed",
       bodyLines: [
-        `You claimed N${Number(amount).toLocaleString()} for ${month}.`,
+        `You claimed N${Number(amount).toLocaleString()} for ${week}.`,
         "Your reward balance has been updated.",
       ],
     });
 
     return res.json({
       success: true,
-      message: "Top Random Monthly reward claimed successfully",
-      month,
+      message: "Top Random Weekly reward claimed successfully",
+      week,
       claimedAmount: amount,
       rewardBalance: user.rewardBalance,
       mainBalance: user.mainBalance,
       claimedAt: pick.claimedAt,
     });
   } catch (error) {
-    console.error("Claim Top Random Monthly reward error:", error);
+    console.error("Claim Top Random Weekly reward error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to claim Top Random Monthly reward",
+      message: "Failed to claim Top Random Weekly reward",
     });
   }
 };

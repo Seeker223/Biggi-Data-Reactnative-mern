@@ -2,13 +2,13 @@ import mongoose from "mongoose";
 
 const MerchantWeeklyCardDrawResultSchema = new mongoose.Schema(
   {
-    // Format: "YYYY-WW" (ISO week)
-    week: {
+    // Format: "YYYY-MM"
+    month: {
       type: String,
       required: true,
       unique: true,
       index: true,
-      match: [/^\d{4}-W\d{2}$/, "Invalid week format (expected YYYY-WW)"],
+      match: [/^\d{4}-\d{2}$/, "Invalid month format (expected YYYY-MM)"],
     },
     letters: {
       type: [Number],

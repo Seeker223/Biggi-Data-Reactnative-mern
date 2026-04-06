@@ -257,14 +257,14 @@ export const buyData = async (req, res) => {
       const isMerchantRole = String(balanceUser?.userRole || "").toLowerCase() === "merchant";
       let updatedPurchaseUser = await balanceUser.updateMonthlyPurchase();
       updatedPurchaseUser = await updatedPurchaseUser.updateWeeklyPurchase();
-      const weeklyPurchases = Number(updatedPurchaseUser.currentWeekPurchases || 0);
       if (isMerchantRole) {
-        if (weeklyPurchases > 0 && weeklyPurchases % 7 === 0) {
+        const monthlyPurchases = Number(updatedPurchaseUser.currentMonthPurchases || 0);
+        if (monthlyPurchases > 0 && monthlyPurchases % 25 === 0) {
           updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
           updatedPurchaseUser.addNotification({
-            type: "Weekly Game Ticket",
+            type: "Monthly Game Ticket",
             status: "success",
-            message: "You earned 1 weekly game ticket for completing 7 purchases this week.",
+            message: "You earned 1 monthly game ticket for completing 25 purchases this month.",
           });
           await updatedPurchaseUser.save();
         }
@@ -342,14 +342,14 @@ export const buyData = async (req, res) => {
       const isMerchantRole = String(balanceUser?.userRole || "").toLowerCase() === "merchant";
       let updatedPurchaseUser = await balanceUser.updateMonthlyPurchase();
       updatedPurchaseUser = await updatedPurchaseUser.updateWeeklyPurchase();
-      const weeklyPurchases = Number(updatedPurchaseUser.currentWeekPurchases || 0);
       if (isMerchantRole) {
-        if (weeklyPurchases > 0 && weeklyPurchases % 7 === 0) {
+        const monthlyPurchases = Number(updatedPurchaseUser.currentMonthPurchases || 0);
+        if (monthlyPurchases > 0 && monthlyPurchases % 25 === 0) {
           updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
           updatedPurchaseUser.addNotification({
-            type: "Weekly Game Ticket",
+            type: "Monthly Game Ticket",
             status: "success",
-            message: "You earned 1 weekly game ticket for completing 7 purchases this week.",
+            message: "You earned 1 monthly game ticket for completing 25 purchases this month.",
           });
           await updatedPurchaseUser.save();
         }

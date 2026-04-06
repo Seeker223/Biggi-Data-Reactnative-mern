@@ -14,53 +14,17 @@ const getMonthKey = (date) => {
   return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`;
 };
 
-const getWeekKey = (date) => {
-  const d = date instanceof Date ? new Date(date) : new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-  const week1 = new Date(d.getFullYear(), 0, 4);
-  const weekNo =
-    1 +
-    Math.round(
-      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
-    );
-  return `${d.getFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-};
-
-const getWeekStart = (date) => {
-  const d = date instanceof Date ? new Date(date) : new Date(date);
-  const day = d.getDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
-const getWeekEnd = (date) => {
-  const start = getWeekStart(date);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-  return end;
-};
-
-const getWeekRangeFromKey = (weekKey) => {
-  if (!/^\d{4}-W\d{2}$/.test(String(weekKey || ""))) {
+const getMonthRangeFromKey = (monthKey) => {
+  if (!/^\d{4}-\d{2}$/.test(String(monthKey || ""))) {
     const now = new Date();
-    return { week: getWeekKey(now), start: getWeekStart(now), end: getWeekEnd(now) };
+    return { month: getMonthKey(now), start: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), end: getMonthEnd(now) };
   }
-  const [yearStr, weekStr] = String(weekKey).split("-W");
+  const [yearStr, monthStr] = String(monthKey).split("-");
   const year = Number(yearStr);
-  const week = Number(weekStr);
-  const jan4 = new Date(year, 0, 4);
-  const day = (jan4.getDay() + 6) % 7;
-  const weekStart = new Date(jan4);
-  weekStart.setDate(jan4.getDate() - day + (week - 1) * 7);
-  weekStart.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-  return { week: `${year}-W${String(week).padStart(2, "0")}`, start: weekStart, end: weekEnd };
+  const monthIndex = Number(monthStr) - 1;
+  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+  return { month: `${year}-${String(monthIndex + 1).padStart(2, "0")}`, start, end };
 };
 
 const generateWinningNumbers = () => {
@@ -97,8 +61,8 @@ const getOrCreateMonthlyResult = async (monthKey) => {
   }
 };
 
-const getOrCreateWeeklyCardResult = async (weekKey) => {
-  const existing = await MerchantWeeklyCardDrawResult.findOne({ week: weekKey }).lean();
+const getOrCreateWeeklyCardResult = async (monthKey) => {
+  const existing = await MerchantWeeklyCardDrawResult.findOne({ month: monthKey }).lean();
   if (existing?.letters?.length === 9 && existing?.winningNumbers?.length === 3) return existing;
 
   const letters = generateMerchantCardLetters();
@@ -107,7 +71,7 @@ const getOrCreateWeeklyCardResult = async (weekKey) => {
 
   try {
     const created = await MerchantWeeklyCardDrawResult.create({
-      week: weekKey,
+      month: monthKey,
       letters,
       winningGroupIndex,
       winningNumbers,
@@ -116,7 +80,7 @@ const getOrCreateWeeklyCardResult = async (weekKey) => {
     return created.toObject();
   } catch (err) {
     if (err?.code === 11000) {
-      const retry = await MerchantWeeklyCardDrawResult.findOne({ week: weekKey }).lean();
+      const retry = await MerchantWeeklyCardDrawResult.findOne({ month: monthKey }).lean();
       if (retry?.letters?.length === 9) return retry;
     }
     throw err;
@@ -195,7 +159,7 @@ export const playDailyGame = async (req, res) => {
     // Deduct ticket
     user.tickets -= 1;
 
-    const drawKey = isMerchantRole ? getWeekKey(new Date()) : getMonthKey(new Date());
+    const drawKey = getMonthKey(new Date());
     const gameType = isMerchantRole ? "merchant_card" : "weekly_number";
 
     // Save play entry
@@ -209,10 +173,10 @@ export const playDailyGame = async (req, res) => {
     });
 
     user.addNotification({
-      type: isMerchantRole ? "Weekly Card Game" : "Weekly Draw",
+      type: isMerchantRole ? "Monthly Card Game" : "Weekly Draw",
       status: "success",
       message: isMerchantRole
-        ? "Weekly card game entry submitted successfully. Results are released at week end."
+        ? "Monthly card game entry submitted successfully. Results are released at month end."
         : "Weekly draw entry submitted successfully. Results are released at month end.",
     });
 
@@ -220,15 +184,15 @@ export const playDailyGame = async (req, res) => {
 
     await sendUserEmail({
       userId: userId,
-      type: isMerchantRole ? "weekly_card_entry" : "weekly_entry",
+      type: isMerchantRole ? "monthly_card_entry" : "weekly_entry",
       email: user.email,
-      subject: isMerchantRole ? "Weekly Card Entry Submitted" : "Weekly Draw Entry Submitted",
-      title: isMerchantRole ? "Weekly Card Entry Submitted" : "Weekly Draw Entry Submitted",
+      subject: isMerchantRole ? "Monthly Card Entry Submitted" : "Weekly Draw Entry Submitted",
+      title: isMerchantRole ? "Monthly Card Entry Submitted" : "Weekly Draw Entry Submitted",
       bodyLines: [
         isMerchantRole
-          ? "Your weekly card entry has been submitted successfully."
+          ? "Your monthly card entry has been submitted successfully."
           : "Your weekly draw entry has been submitted successfully.",
-        isMerchantRole ? "Results are released at week end." : "Results are released at month end.",
+        isMerchantRole ? "Results are released at month end." : "Results are released at month end.",
       ],
     });
 
@@ -236,7 +200,7 @@ export const playDailyGame = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: isMerchantRole
-        ? "Your letters were submitted successfully. Results are released at week end."
+        ? "Your letters were submitted successfully. Results are released at month end."
         : "Your letters were submitted successfully. Results are released at month end.",
       tickets: user.tickets,
     });
@@ -377,11 +341,11 @@ export const generateDailyWinningNumbers = async () => {
         const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now());
         const isMerchantEntry = entry.gameType === "merchant_card";
         if (isMerchantEntry) {
-          const weekEnd = getWeekEnd(playedAt);
-          if (Date.now() < weekEnd.getTime()) continue;
+          const monthEnd = getMonthEnd(playedAt);
+          if (Date.now() < monthEnd.getTime()) continue;
 
-          const weekKey = entry.drawKey || getWeekKey(playedAt);
-          const weeklyCard = await getOrCreateWeeklyCardResult(weekKey);
+          const monthKey = entry.drawKey || getMonthKey(playedAt);
+          const weeklyCard = await getOrCreateWeeklyCardResult(monthKey);
           const winningNumbers = weeklyCard?.winningNumbers || [];
 
           entry.result = winningNumbers;
@@ -390,11 +354,11 @@ export const generateDailyWinningNumbers = async () => {
 
           const playedAtLabel = entry?.playedAt
             ? new Date(entry.playedAt).toLocaleDateString()
-            : "this week";
+            : "this month";
           if (entry.isWinner) {
-            emailLines.push(`Great news! Your weekly card entry from ${playedAtLabel} is a WINNER.`);
+            emailLines.push(`Great news! Your monthly card entry from ${playedAtLabel} is a WINNER.`);
           } else {
-            emailLines.push(`Your weekly card entry from ${playedAtLabel} did not win this time.`);
+            emailLines.push(`Your monthly card entry from ${playedAtLabel} did not win this time.`);
           }
           hasMerchantResult = true;
           continue;
@@ -431,14 +395,14 @@ export const generateDailyWinningNumbers = async () => {
         await user.save();
         if (emailLines.length) {
           const subject = hasMerchantResult && hasWeeklyDrawResult
-            ? "Weekly Game Results"
+            ? "Game Results"
             : hasMerchantResult
-            ? "Weekly Card Result"
+            ? "Monthly Card Result"
             : "Weekly Draw Result";
           const title = hasMerchantResult && hasWeeklyDrawResult
-            ? "Weekly Game Results"
+            ? "Game Results"
             : hasMerchantResult
-            ? "Weekly Card Result"
+            ? "Monthly Card Result"
             : "Weekly Draw Result";
           await sendUserEmail({
             userId: user._id,
@@ -538,14 +502,14 @@ export const getWeeklyWinners = async (req, res) => {
 // ---------------------------------------------------
 export const getMerchantWeeklyWinners = async (req, res) => {
   try {
-    const rawWeek = String(req.query?.week || "").trim(); // "YYYY-WW"
-    const { week, start, end } = getWeekRangeFromKey(rawWeek);
+    const rawMonth = String(req.query?.month || "").trim(); // "YYYY-MM"
+    const { month, start, end } = getMonthRangeFromKey(rawMonth);
     const revealReady = Date.now() >= end.getTime();
 
     if (!revealReady) {
       return res.status(200).json({
         success: true,
-        week,
+        month,
         revealAt: end.toISOString(),
         revealReady: false,
         count: 0,
@@ -585,7 +549,7 @@ export const getMerchantWeeklyWinners = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      week,
+      month,
       revealAt: end.toISOString(),
       revealReady: true,
       count: winners.length,
@@ -629,15 +593,15 @@ export const getMerchantWeeklyCard = async (req, res) => {
       });
     }
 
-    const weekKey = getWeekKey(new Date());
-    const weeklyCard = await getOrCreateWeeklyCardResult(weekKey);
-    const weekEnd = getWeekEnd(new Date());
-    const revealReady = Date.now() >= weekEnd.getTime();
+    const monthKey = getMonthKey(new Date());
+    const weeklyCard = await getOrCreateWeeklyCardResult(monthKey);
+    const monthEnd = getMonthEnd(new Date());
+    const revealReady = Date.now() >= monthEnd.getTime();
 
     return res.status(200).json({
       success: true,
-      week: weekKey,
-      revealAt: weekEnd.toISOString(),
+      month: monthKey,
+      revealAt: monthEnd.toISOString(),
       letters: weeklyCard?.letters || [],
       revealReady,
       winningGroupIndex: revealReady ? weeklyCard?.winningGroupIndex : null,
