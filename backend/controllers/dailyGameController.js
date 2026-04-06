@@ -138,8 +138,9 @@ export const playDailyGame = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    const isMerchantRole = String(user?.userRole || "").toLowerCase() === "merchant";
-    const requiredCount = isMerchantRole ? 3 : 5;
+    const role = String(user?.userRole || "").toLowerCase();
+    const isCardGameRole = role === "merchant" || role === "private";
+    const requiredCount = isCardGameRole ? 3 : 5;
 
     if (!numbers || !Array.isArray(numbers) || numbers.length !== requiredCount) {
       return res.status(400).json({
@@ -160,7 +161,7 @@ export const playDailyGame = async (req, res) => {
     user.tickets -= 1;
 
     const drawKey = getMonthKey(new Date());
-    const gameType = isMerchantRole ? "merchant_card" : "weekly_number";
+    const gameType = isCardGameRole ? "monthly_card" : "weekly_number";
 
     // Save play entry
     user.dailyNumberDraw.push({
@@ -173,9 +174,9 @@ export const playDailyGame = async (req, res) => {
     });
 
     user.addNotification({
-      type: isMerchantRole ? "Monthly Card Game" : "Weekly Draw",
+      type: isCardGameRole ? "Monthly Card Game" : "Weekly Draw",
       status: "success",
-      message: isMerchantRole
+      message: isCardGameRole
         ? "Monthly card game entry submitted successfully. Results are released at month end."
         : "Weekly draw entry submitted successfully. Results are released at month end.",
     });
@@ -184,22 +185,22 @@ export const playDailyGame = async (req, res) => {
 
     await sendUserEmail({
       userId: userId,
-      type: isMerchantRole ? "monthly_card_entry" : "weekly_entry",
+      type: isCardGameRole ? "monthly_card_entry" : "weekly_entry",
       email: user.email,
-      subject: isMerchantRole ? "Monthly Card Entry Submitted" : "Weekly Draw Entry Submitted",
-      title: isMerchantRole ? "Monthly Card Entry Submitted" : "Weekly Draw Entry Submitted",
+      subject: isCardGameRole ? "Monthly Card Entry Submitted" : "Weekly Draw Entry Submitted",
+      title: isCardGameRole ? "Monthly Card Entry Submitted" : "Weekly Draw Entry Submitted",
       bodyLines: [
-        isMerchantRole
+        isCardGameRole
           ? "Your monthly card entry has been submitted successfully."
           : "Your weekly draw entry has been submitted successfully.",
-        isMerchantRole ? "Results are released at month end." : "Results are released at month end.",
+        isCardGameRole ? "Results are released at month end." : "Results are released at month end.",
       ],
     });
 
 
     return res.status(200).json({
       success: true,
-      message: isMerchantRole
+      message: isCardGameRole
         ? "Your letters were submitted successfully. Results are released at month end."
         : "Your letters were submitted successfully. Results are released at month end.",
       tickets: user.tickets,
@@ -339,7 +340,8 @@ export const generateDailyWinningNumbers = async () => {
         if (!Array.isArray(entry?.result) || entry.result.length > 0) continue;
 
         const playedAt = new Date(entry.createdAt || entry.playedAt || Date.now());
-        const isMerchantEntry = entry.gameType === "merchant_card";
+        const isMerchantEntry =
+          entry.gameType === "merchant_card" || entry.gameType === "monthly_card";
         if (isMerchantEntry) {
           const monthEnd = getMonthEnd(playedAt);
           if (Date.now() < monthEnd.getTime()) continue;

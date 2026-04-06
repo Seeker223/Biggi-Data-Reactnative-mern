@@ -269,8 +269,16 @@ export const buyData = async (req, res) => {
           await updatedPurchaseUser.save();
         }
       } else {
-        updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
-        await updatedPurchaseUser.save();
+        const monthlyPurchases = Number(updatedPurchaseUser.currentMonthPurchases || 0);
+        if (monthlyPurchases > 0 && monthlyPurchases % 5 === 0) {
+          updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
+          updatedPurchaseUser.addNotification({
+            type: "Monthly Game Ticket",
+            status: "success",
+            message: "You earned 1 monthly game ticket for completing 5 purchases this month.",
+          });
+          await updatedPurchaseUser.save();
+        }
       }
 
       return res.status(200).json({
@@ -355,8 +363,16 @@ export const buyData = async (req, res) => {
         }
       } else {
         // Private users: 1 ticket per purchase
-        updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
-        await updatedPurchaseUser.save();
+        const monthlyPurchases = Number(updatedPurchaseUser.currentMonthPurchases || 0);
+        if (monthlyPurchases > 0 && monthlyPurchases % 5 === 0) {
+          updatedPurchaseUser.tickets = (updatedPurchaseUser.tickets || 0) + 1;
+          updatedPurchaseUser.addNotification({
+            type: "Monthly Game Ticket",
+            status: "success",
+            message: "You earned 1 monthly game ticket for completing 5 purchases this month.",
+          });
+          await updatedPurchaseUser.save();
+        }
       }
 
       await sendUserEmail({

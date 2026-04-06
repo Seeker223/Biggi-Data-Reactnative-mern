@@ -18,7 +18,7 @@ const DailyGameSchema = new mongoose.Schema({
   },
   gameType: {
     type: String,
-    enum: ["weekly_number", "merchant_card"],
+    enum: ["weekly_number", "merchant_card", "monthly_card"],
     default: "weekly_number",
   },
   drawKey: { type: String, default: null },
