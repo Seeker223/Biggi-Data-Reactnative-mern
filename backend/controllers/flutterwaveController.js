@@ -53,6 +53,13 @@ export const verifyFlutterwavePayment = async (req, res) => {
     const existingDeposit = await Deposit.findOne({ reference: tx_ref, user: userId });
     
     if (existingDeposit && existingDeposit.status === "successful") {
+      if (existingDeposit.credited) {
+        console.warn("⚠️ Deposit already credited (verify):", {
+          reference: tx_ref,
+          user: userId,
+          amount: Number(existingDeposit.amount || 0),
+        });
+      }
       return res.json({
         success: true,
         message: "Payment already processed",
@@ -116,12 +123,20 @@ export const verifyFlutterwavePayment = async (req, res) => {
           channel: "flutterwave",
           flutterwaveTransactionId: payment.id,
           gatewayResponse: payment,
+          credited: true,
+          creditedAt: new Date(),
         });
       }
 
       user.mainBalance += Number(requestedAmount);
       user.totalDeposits += Number(requestedAmount);
       await user.save();
+
+      if (deposit && !deposit.credited) {
+        deposit.credited = true;
+        deposit.creditedAt = new Date();
+        await deposit.save();
+      }
 
       const updated = await updateWalletTransactionStatus(
         userId,
@@ -430,6 +445,11 @@ export const flutterwaveWebhook = async (req, res) => {
       const existingDeposit = session ? await depositQuery.session(session) : await depositQuery;
 
       if (existingDeposit && existingDeposit.status === "successful" && existingDeposit.credited) {
+        console.warn("⚠️ Webhook already credited:", {
+          reference,
+          user: userId,
+          amount: Number(existingDeposit.amount || 0),
+        });
         if (session) await session.abortTransaction();
         await updateHealth({
           processed: true,
@@ -670,6 +690,13 @@ export const reconcilePayment = async (req, res) => {
     });
 
     if (existingDeposit && existingDeposit.status === "successful") {
+      if (existingDeposit.credited) {
+        console.warn("⚠️ Deposit already credited (reconcile):", {
+          reference: tx_ref,
+          user: userId,
+          amount: Number(existingDeposit.amount || 0),
+        });
+      }
       return res.json({
         success: true,
         message: "Payment already processed",
@@ -755,6 +782,8 @@ export const reconcilePayment = async (req, res) => {
           channel: "flutterwave",
           flutterwaveTransactionId: payment.id,
           gatewayResponse: payment,
+          credited: true,
+          creditedAt: new Date(),
         },
         { upsert: true, new: true, session }
       );
