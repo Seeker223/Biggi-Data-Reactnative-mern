@@ -440,17 +440,17 @@ export const flutterwaveWebhook = async (req, res) => {
       session = null;
     }
 
-    try {
+    const runWebhookCredit = async (activeSession = null) => {
       const userQuery = User.findById(userId);
-      const user = session ? await userQuery.session(session) : await userQuery;
+      const user = activeSession ? await userQuery.session(activeSession) : await userQuery;
       if (!user) {
-        if (session) await session.abortTransaction();
+        if (activeSession) await activeSession.abortTransaction();
         await updateHealth({ note: "user_not_found" });
         return res.sendStatus(200);
       }
 
       const depositQuery = Deposit.findOne({ reference });
-      const existingDeposit = session ? await depositQuery.session(session) : await depositQuery;
+      const existingDeposit = activeSession ? await depositQuery.session(activeSession) : await depositQuery;
 
       if (existingDeposit && existingDeposit.status === "successful" && existingDeposit.credited) {
         console.warn("⚠️ Webhook already credited:", {
@@ -465,7 +465,7 @@ export const flutterwaveWebhook = async (req, res) => {
           source: "webhook",
           note: "already_credited",
         });
-        if (session) await session.abortTransaction();
+        if (activeSession) await activeSession.abortTransaction();
         await updateHealth({
           processed: true,
           note: "already_processed",
@@ -480,7 +480,7 @@ export const flutterwaveWebhook = async (req, res) => {
       serviceCharge = Math.max(0, Math.round(totalPaid - walletCredit));
 
       if (walletCredit <= 0) {
-        if (session) await session.abortTransaction();
+        if (activeSession) await activeSession.abortTransaction();
         await updateHealth({
           note: "wallet_credit_zero",
           walletCredit: walletCredit || 0,
@@ -505,20 +505,20 @@ export const flutterwaveWebhook = async (req, res) => {
           credited: status === "successful",
           creditedAt: status === "successful" ? new Date() : null,
         },
-        session ? { upsert: true, new: true, session } : { upsert: true, new: true }
+        activeSession ? { upsert: true, new: true, session: activeSession } : { upsert: true, new: true }
       );
 
       if (status === "successful") {
         user.mainBalance = Number(user.mainBalance || 0) + walletCredit;
         user.totalDeposits = Number(user.totalDeposits || 0) + walletCredit;
-        await user.save(session ? { session } : {});
+        await user.save(activeSession ? { session: activeSession } : {});
         await updateHealth({ processed: true, walletCredit, serviceCharge, note: "credited" });
       } else {
         await updateHealth({ processed: false, note: "payment_failed" });
       }
 
-      if (session) {
-        await session.commitTransaction();
+      if (activeSession) {
+        await activeSession.commitTransaction();
       }
 
       if (status === "successful") {
@@ -551,9 +551,31 @@ export const flutterwaveWebhook = async (req, res) => {
           ],
         });
       }
+
+      return res.sendStatus(200);
+    };
+
+    try {
+      return await runWebhookCredit(session);
     } catch (sessionError) {
-      if (session) await session.abortTransaction();
-      await updateHealth({ note: "transaction_failed" });
+      if (session) {
+        await session.abortTransaction();
+      }
+      const message = String(sessionError?.message || "unknown_error");
+      const shouldRetryWithoutSession =
+        Boolean(session) &&
+        /Transaction numbers are only allowed|replica set|mongos|not supported by this topology/i.test(message);
+      if (shouldRetryWithoutSession) {
+        try {
+          session = null;
+          return await runWebhookCredit(null);
+        } catch (fallbackError) {
+          await updateHealth({ note: `transaction_failed:${String(fallbackError?.message || "unknown_error")}` });
+          return res.sendStatus(200);
+        }
+      }
+      await updateHealth({ note: `transaction_failed:${message}` });
+      return res.sendStatus(200);
     } finally {
       if (session) session.endSession();
     }
