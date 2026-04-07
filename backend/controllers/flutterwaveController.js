@@ -555,8 +555,29 @@ export const flutterwaveWebhook = async (req, res) => {
       return res.sendStatus(200);
     };
 
+    const tryRunWithRetry = async (activeSession) => {
+      const retryable = /write conflict|yielding is disabled/i;
+      const maxAttempts = 3;
+      const delays = [150, 300, 500];
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          return await runWebhookCredit(activeSession);
+        } catch (err) {
+          const message = String(err?.message || "unknown_error");
+          const isRetryable = retryable.test(message);
+          if (!isRetryable || attempt === maxAttempts) {
+            throw err;
+          }
+          const delayMs = delays[Math.min(attempt - 1, delays.length - 1)];
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+      return res.sendStatus(200);
+    };
+
     try {
-      return await runWebhookCredit(session);
+      return await tryRunWithRetry(session);
     } catch (sessionError) {
       if (session) {
         await session.abortTransaction();
@@ -565,21 +586,10 @@ export const flutterwaveWebhook = async (req, res) => {
       const shouldRetryWithoutSession =
         Boolean(session) &&
         /Transaction numbers are only allowed|replica set|mongos|not supported by this topology/i.test(message);
-      const isWriteConflict = /write conflict|yielding is disabled/i.test(message);
       if (shouldRetryWithoutSession) {
         try {
           session = null;
-          return await runWebhookCredit(null);
-        } catch (fallbackError) {
-          await updateHealth({ note: `transaction_failed:${String(fallbackError?.message || "unknown_error")}` });
-          return res.sendStatus(200);
-        }
-      }
-      if (isWriteConflict) {
-        try {
-          session = null;
-          await new Promise((resolve) => setTimeout(resolve, 150));
-          return await runWebhookCredit(null);
+          return await tryRunWithRetry(null);
         } catch (fallbackError) {
           await updateHealth({ note: `transaction_failed:${String(fallbackError?.message || "unknown_error")}` });
           return res.sendStatus(200);
