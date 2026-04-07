@@ -21,6 +21,7 @@ import {
   getUserBalance,
   getDepositStats,
   getDepositFeeSettings,
+  getWalletTransactions,
 } from "../controllers/walletController.js";
 
 const router = express.Router();
@@ -105,6 +106,9 @@ router.get("/deposit-fee-settings", protect, getDepositFeeSettings);
 ================================ */
 // Get user's current balance
 router.get("/balance", protect, getUserBalance);
+
+// Get wallet transactions (optional ?type=purchase)
+router.get("/transactions", protect, getWalletTransactions);
 
 // Redeem reward balance into main balance
 router.post("/redeem", protect, paymentLimiter, redeemRewards);

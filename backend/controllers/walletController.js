@@ -60,6 +60,38 @@ export const getUserBalance = async (req, res) => {
 };
 
 /* =====================================================
+   GET WALLET TRANSACTIONS (OPTIONAL FILTER)
+===================================================== */
+export const getWalletTransactions = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const type = String(req.query?.type || "").trim().toLowerCase();
+    const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
+
+    const Wallet = (await import("../models/Wallet.js")).default;
+    const wallet = await Wallet.findOne({ userId, type: "main" }).lean();
+    const transactions = Array.isArray(wallet?.transactions) ? wallet.transactions : [];
+    const filtered = type ? transactions.filter((t) => String(t?.type || "").toLowerCase() === type) : transactions;
+
+    const sorted = filtered
+      .slice()
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+      .slice(0, limit);
+
+    return res.json({
+      success: true,
+      transactions: sorted,
+    });
+  } catch (error) {
+    console.error("Get wallet transactions error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch wallet transactions",
+    });
+  }
+};
+
+/* =====================================================
    VIRTUAL ACCOUNT (STATIC)
 ===================================================== */
 export const getVirtualAccount = async (req, res) => {
