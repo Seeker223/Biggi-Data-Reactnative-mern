@@ -565,9 +565,20 @@ export const flutterwaveWebhook = async (req, res) => {
       const shouldRetryWithoutSession =
         Boolean(session) &&
         /Transaction numbers are only allowed|replica set|mongos|not supported by this topology/i.test(message);
+      const isWriteConflict = /write conflict|yielding is disabled/i.test(message);
       if (shouldRetryWithoutSession) {
         try {
           session = null;
+          return await runWebhookCredit(null);
+        } catch (fallbackError) {
+          await updateHealth({ note: `transaction_failed:${String(fallbackError?.message || "unknown_error")}` });
+          return res.sendStatus(200);
+        }
+      }
+      if (isWriteConflict) {
+        try {
+          session = null;
+          await new Promise((resolve) => setTimeout(resolve, 150));
           return await runWebhookCredit(null);
         } catch (fallbackError) {
           await updateHealth({ note: `transaction_failed:${String(fallbackError?.message || "unknown_error")}` });
