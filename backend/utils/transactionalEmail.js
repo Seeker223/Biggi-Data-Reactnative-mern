@@ -51,16 +51,22 @@ const canSendByRateLimit = async ({ userId, email, limit }) => {
 };
 
 export const sendUserEmail = async ({ email, subject, title, bodyLines, type = "generic", userId = null }) => {
-  if (!email) return;
+  if (!email) {
+    return { success: false, skipped: true, reason: "missing_email" };
+  }
   try {
     const settings = await getSettings();
-    if (!isAllowedBySettings(settings, type)) return;
+    if (!isAllowedBySettings(settings, type)) {
+      return { success: false, skipped: true, reason: "type_disabled" };
+    }
     const allowed = await canSendByRateLimit({
       userId,
       email,
       limit: settings?.rateLimitPerHour,
     });
-    if (!allowed) return;
+    if (!allowed) {
+      return { success: false, skipped: true, reason: "rate_limited" };
+    }
 
     await sendEmail({
       email,
@@ -76,7 +82,9 @@ export const sendUserEmail = async ({ email, subject, title, bodyLines, type = "
       email: String(email || "").toLowerCase(),
       type: String(type || "generic"),
     });
+    return { success: true };
   } catch (err) {
     console.error("Email send failed:", err?.message || err);
+    return { success: false, skipped: false, reason: err?.message || "send_failed" };
   }
 };

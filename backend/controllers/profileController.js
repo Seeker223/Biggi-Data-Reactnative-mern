@@ -484,7 +484,7 @@ export const requestTransactionPinReset = async (req, res) => {
     user.transactionPinResetExpires = new Date(Date.now() + PIN_RESET_TTL_MS);
     await user.save({ validateBeforeSave: false });
 
-    await sendUserEmail({
+    const emailResult = await sendUserEmail({
       userId: user._id,
       type: "transaction_pin_reset",
       email: user.email,
@@ -496,6 +496,18 @@ export const requestTransactionPinReset = async (req, res) => {
         "This code expires in 10 minutes.",
       ],
     });
+
+    if (!emailResult?.success) {
+      return res.status(500).json({
+        success: false,
+        message:
+          emailResult?.reason === "type_disabled"
+            ? "Email sending for PIN reset is disabled. Contact support."
+            : emailResult?.reason === "rate_limited"
+            ? "Too many attempts. Please try again later."
+            : "Email service not configured. Please contact support.",
+      });
+    }
 
     return res.json({
       success: true,
