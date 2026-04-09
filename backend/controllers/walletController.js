@@ -60,6 +60,33 @@ export const getUserBalance = async (req, res) => {
 };
 
 /* =====================================================
+   GENERATE TX_REF (DYNAMIC CHECKOUT HELPER)
+===================================================== */
+export const generateTxRef = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Not authorized" });
+    }
+
+    const base = `va_${userId}_${Date.now()}`;
+    const random = Math.floor(Math.random() * 1000);
+    const tx_ref = `${base}${random ? `_${random}` : ""}`;
+
+    return res.json({
+      success: true,
+      tx_ref,
+    });
+  } catch (error) {
+    console.error("Generate tx_ref error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate tx_ref",
+    });
+  }
+};
+
+/* =====================================================
    GET WALLET TRANSACTIONS (OPTIONAL FILTER)
 ===================================================== */
 export const getWalletTransactions = async (req, res) => {

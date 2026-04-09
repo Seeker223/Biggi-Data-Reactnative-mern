@@ -22,6 +22,7 @@ import {
   getDepositStats,
   getDepositFeeSettings,
   getWalletTransactions,
+  generateTxRef,
 } from "../controllers/walletController.js";
 
 const router = express.Router();
@@ -106,6 +107,9 @@ router.get("/deposit-fee-settings", protect, getDepositFeeSettings);
 ================================ */
 // Get user's current balance
 router.get("/balance", protect, getUserBalance);
+
+// Generate a unique tx_ref for dynamic checkout (helper)
+router.get("/generate-tx-ref", protect, generateTxRef);
 
 // Get wallet transactions (optional ?type=purchase)
 router.get("/transactions", protect, getWalletTransactions);
