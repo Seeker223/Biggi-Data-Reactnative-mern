@@ -12,6 +12,8 @@ import {
   setTransactionPin,
   disableTransactionPin,
   verifyTransactionPin,
+  requestTransactionPinReset,
+  confirmTransactionPinReset,
 } from "../controllers/profileController.js";
 
 const router = Router();
@@ -29,6 +31,8 @@ router.get("/transaction-security", protect, getTransactionSecurityStatus);
 router.post("/transaction-pin", protect, setTransactionPin);
 router.post("/transaction-pin/verify", protect, verifyTransactionPin);
 router.delete("/transaction-pin", protect, disableTransactionPin);
+router.post("/transaction-pin/reset/request", protect, requestTransactionPinReset);
+router.post("/transaction-pin/reset/confirm", protect, confirmTransactionPinReset);
 
 router.put(
   "/update-avatar",

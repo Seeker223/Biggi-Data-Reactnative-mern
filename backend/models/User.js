@@ -308,6 +308,8 @@ const UserSchema = new mongoose.Schema(
       select: false,
       default: null,
     },
+    transactionPinResetOtpHash: { type: String, default: null, select: false },
+    transactionPinResetExpires: { type: Date, default: null, select: false },
     
     resetPasswordToken: String,
     resetPasswordExpire: Date,

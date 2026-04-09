@@ -1,5 +1,12 @@
+import crypto from "crypto";
 import User from "../models/User.js";
 import { notifyAdmins } from "../utils/notifyAdmins.js";
+import { sendUserEmail } from "../utils/transactionalEmail.js";
+
+const PIN_RESET_TTL_MS = 10 * 60 * 1000;
+const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+const hashOtp = (otp) =>
+  crypto.createHash("sha256").update(String(otp)).digest("hex");
 
 // -----------------------------------------------
 // UPDATE PROFILE (name, phone, birthdate, etc)
@@ -456,6 +463,121 @@ export const verifyTransactionPin = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: err.message || "Failed to verify transaction PIN",
+    });
+  }
+};
+
+// -----------------------------------------------
+// REQUEST TRANSACTION PIN RESET (EMAIL OTP)
+// -----------------------------------------------
+export const requestTransactionPinReset = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select(
+      "+transactionPinResetOtpHash +transactionPinResetExpires"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const otp = generateOtp();
+    user.transactionPinResetOtpHash = hashOtp(otp);
+    user.transactionPinResetExpires = new Date(Date.now() + PIN_RESET_TTL_MS);
+    await user.save({ validateBeforeSave: false });
+
+    await sendUserEmail({
+      userId: user._id,
+      type: "transaction_pin_reset",
+      email: user.email,
+      subject: "Reset Transaction PIN",
+      title: "Reset Transaction PIN",
+      bodyLines: [
+        "Use the 6-digit code below to reset your transaction PIN:",
+        otp,
+        "This code expires in 10 minutes.",
+      ],
+    });
+
+    return res.json({
+      success: true,
+      message: "Reset code sent to your email",
+      expiresInSeconds: Math.floor(PIN_RESET_TTL_MS / 1000),
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to request PIN reset",
+    });
+  }
+};
+
+// -----------------------------------------------
+// CONFIRM TRANSACTION PIN RESET
+// -----------------------------------------------
+export const confirmTransactionPinReset = async (req, res) => {
+  try {
+    const otp = String(req.body?.otp || "").trim();
+    const newPin = String(req.body?.pin || "").trim();
+
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: "6-digit reset code is required",
+      });
+    }
+    if (!/^\d{4}$/.test(newPin)) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction PIN must be exactly 4 digits",
+      });
+    }
+
+    const user = await User.findById(req.user.id).select(
+      "+transactionPinResetOtpHash +transactionPinResetExpires +transactionPinHash"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!user.transactionPinResetOtpHash || !user.transactionPinResetExpires) {
+      return res.status(400).json({
+        success: false,
+        message: "No active reset request. Please request a new code.",
+      });
+    }
+    if (new Date(user.transactionPinResetExpires).getTime() < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: "Reset code expired. Please request a new code.",
+      });
+    }
+
+    const isMatch = user.transactionPinResetOtpHash === hashOtp(otp);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid reset code",
+      });
+    }
+
+    await user.setTransactionPin(newPin);
+    user.transactionPinResetOtpHash = null;
+    user.transactionPinResetExpires = null;
+    user.addNotification({
+      type: "Security",
+      status: "success",
+      message: "Transaction PIN reset successfully.",
+    });
+    await user.save({ validateBeforeSave: false });
+
+    return res.json({
+      success: true,
+      message: "Transaction PIN reset successfully",
+      transactionPinEnabled: true,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reset transaction PIN",
     });
   }
 };
