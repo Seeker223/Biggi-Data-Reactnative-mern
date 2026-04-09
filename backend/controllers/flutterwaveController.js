@@ -387,10 +387,9 @@ export const flutterwaveWebhook = async (req, res) => {
     };
 
     let resolutionMethod = "";
-    let userId = resolveUserIdFromRef(reference);
-    if (userId) resolutionMethod = "reference";
+    let userId = null;
 
-    if (!userId && accountNumber) {
+    if (accountNumber) {
       const userByAccount = await User.findOne({
         "flutterwaveVirtualAccount.accountNumber": accountNumber,
       }).select("_id");
@@ -409,6 +408,11 @@ export const flutterwaveWebhook = async (req, res) => {
       }).select("_id");
       userId = userByAccountId?._id?.toString() || null;
       if (userId) resolutionMethod = "accountId";
+    }
+
+    if (!userId) {
+      userId = resolveUserIdFromRef(reference);
+      if (userId) resolutionMethod = "reference";
     }
 
     if (!userId && data?.customer?.email) {
