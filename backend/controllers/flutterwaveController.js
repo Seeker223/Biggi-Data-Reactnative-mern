@@ -516,7 +516,8 @@ export const flutterwaveWebhook = async (req, res) => {
         user.mainBalance = Number(user.mainBalance || 0) + walletCredit;
         user.totalDeposits = Number(user.totalDeposits || 0) + walletCredit;
         await user.save(activeSession ? { session: activeSession } : {});
-        await updateHealth({ processed: true, walletCredit, serviceCharge, note: "credited" });
+        const creditedNote = resolutionMethod ? `credited_${resolutionMethod}` : "credited";
+        await updateHealth({ processed: true, walletCredit, serviceCharge, note: creditedNote });
       } else {
         await updateHealth({ processed: false, note: "payment_failed" });
       }
