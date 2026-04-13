@@ -47,7 +47,13 @@ export const updateProfile = async (req, res) => {
 
     if (updates.userRole) {
       const normalizedRole = String(updates.userRole).toLowerCase().trim();
-      if (!["private", "merchant"].includes(normalizedRole)) {
+      if (normalizedRole === "private") {
+        return res.status(400).json({
+          success: false,
+          message: "Private accounts are not available. Please choose merchant.",
+        });
+      }
+      if (!["merchant"].includes(normalizedRole)) {
         delete updates.userRole;
       } else {
         updates.userRole = normalizedRole;
