@@ -133,6 +133,7 @@ const allowedOrigins = [
   "https://biggi-data-frontend.vercel.app",
   "https://biggidata.com.ng",
   "https://www.biggidata.com.ng",
+  "https://biggi-house.vercel.app"
 ];
 
 const isPrivateLanOrigin = (origin = "") => {
