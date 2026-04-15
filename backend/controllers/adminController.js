@@ -851,3 +851,68 @@ export const getDepositCreditLogs = async (req, res) => {
     });
   }
 };
+
+export const getMerchantDataPurchases = async (req, res) => {
+  try {
+    const from = req.query?.from ? new Date(String(req.query.from)) : null;
+    const to = req.query?.to ? new Date(String(req.query.to)) : null;
+
+    const fromDate = from && !Number.isNaN(from.getTime()) ? from : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const toDate = to && !Number.isNaN(to.getTime()) ? to : new Date();
+
+    const merchants = await User.find({ userRole: "merchant" }).select("_id username phoneNumber");
+    const merchantIds = merchants.map((m) => m._id);
+
+    const rows = await Wallet.aggregate([
+      { $match: { userId: { $in: merchantIds }, type: "main" } },
+      { $unwind: "$transactions" },
+      {
+        $match: {
+          "transactions.type": "purchase",
+          "transactions.meta.action": "data_purchase",
+          "transactions.status": { $in: ["success", "success_price_mismatch", "simulated"] },
+          "transactions.date": { $gte: fromDate, $lte: toDate },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          merchantUserId: "$userId",
+          amount: "$transactions.amount",
+          status: "$transactions.status",
+          date: "$transactions.date",
+          reference: "$transactions.reference",
+          phoneNumber: "$transactions.meta.mobile_no",
+          network: "$transactions.meta.network",
+          planId: "$transactions.meta.plan_id",
+        },
+      },
+      { $sort: { date: -1 } },
+      { $limit: 500 },
+    ]);
+
+    const merchantMap = new Map(merchants.map((m) => [String(m._id), m]));
+
+    res.json({
+      success: true,
+      from: fromDate,
+      to: toDate,
+      purchases: rows.map((row) => {
+        const merchant = merchantMap.get(String(row.merchantUserId));
+        return {
+          ...row,
+          merchant: merchant
+            ? {
+                id: String(merchant._id),
+                username: merchant.username,
+                phoneNumber: merchant.phoneNumber,
+              }
+            : { id: String(row.merchantUserId) },
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Merchant data purchases error:", error);
+    res.status(500).json({ success: false, message: "Failed to load merchant purchases" });
+  }
+};

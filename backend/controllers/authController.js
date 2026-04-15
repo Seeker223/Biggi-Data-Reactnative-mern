@@ -91,6 +91,15 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const isVerificationDisabled = () =>
   ["1", "true", "yes"].includes(String(process.env.DISABLE_EMAIL_VERIFICATION || "").toLowerCase());
 
+const getRequiredAppFromOrigin = (origin = "") => {
+  const lower = String(origin || "").toLowerCase();
+  if (!lower) return null;
+  if (lower.includes("biggi-house.vercel.app")) return "biggi_house";
+  if (lower.includes("biggidata.com.ng") || lower.includes("biggi-data-frontend.vercel.app"))
+    return "biggi_data";
+  return null;
+};
+
 // =====================================================
 // REGISTER (NO OTP, NO EMAIL VERIFICATION)
 // =====================================================
@@ -164,6 +173,20 @@ export const register = async (req, res) => {
       nin: normalizedNin || undefined,
       referralCode: uniqueReferralCode,
       referredByCode: normalizedReferralCode,
+      userRole: String(req.body?.userRole || "").toLowerCase() === "merchant" ? "merchant" : "private",
+      allowedApps: (() => {
+        const origin = String(req.headers.origin || "");
+        const header = String(req.headers["x-client-app"] || "");
+        const fromBiggiHouse =
+          header.toLowerCase().includes("biggi-house") || origin.toLowerCase().includes("biggi-house.vercel.app");
+        const requestedRole = String(req.body?.userRole || "").toLowerCase();
+        const apps = fromBiggiHouse ? ["biggi_house"] : ["biggi_data"];
+        if (requestedRole === "merchant") {
+          if (!apps.includes("biggi_data")) apps.push("biggi_data");
+          if (!apps.includes("biggi_house")) apps.push("biggi_house");
+        }
+        return apps;
+      })(),
       isVerified: isVerificationDisabled(),
       verifiedAt: isVerificationDisabled() ? new Date() : null
     });
@@ -325,6 +348,19 @@ export const login = async (req, res) => {
       });
     }
 
+    const requiredApp = getRequiredAppFromOrigin(req.headers.origin);
+    const allowedApps =
+      Array.isArray(user.allowedApps) && user.allowedApps.length ? user.allowedApps : ["biggi_data"];
+    if (requiredApp && !allowedApps.includes(requiredApp)) {
+      return res.status(403).json({
+        success: false,
+        error:
+          requiredApp === "biggi_data"
+            ? "This account is not permitted on Biggi Data."
+            : "This account is not permitted on Biggi House.",
+      });
+    }
+
     // Generate tokens
     const accessToken = user.getSignedJwtToken();
     const refreshToken = user.getRefreshToken({ rememberMe: shouldRemember });
@@ -361,6 +397,7 @@ export const login = async (req, res) => {
         isVerified: true,
         role: user.role,
         userRole: user.userRole || null,
+        allowedApps: allowedApps,
         state: user.state,
         referralCode: user.referralCode,
         referredByCode: user.referredByCode,

@@ -218,6 +218,11 @@ const UserSchema = new mongoose.Schema(
       default: null,
     },
 
+    allowedApps: {
+      type: [String],
+      default: ["biggi_data"],
+    },
+
     isVerified: { 
       type: Boolean, 
       default: false
