@@ -481,7 +481,8 @@ export const createBiggiHouseVendorRequest = async (req, res) => {
 };
 
 export const getMerchantBiggiHouseRequests = async (req, res) => {
-  const role = String(req.user.userRole || "").toLowerCase();
+  const me = await User.findById(req.user.id).select("userRole");
+  const role = String(me?.userRole || "").toLowerCase();
   if (role !== "merchant") {
     return res.status(403).json({ success: false, error: "Merchant access required" });
   }
@@ -600,4 +601,383 @@ export const joinBiggiHouse = async (req, res) => {
     },
     wallet: { balance: wallet.balance, currency: wallet.currency },
   });
+};
+
+// -------------------------
+// Admin C-Panel Endpoints
+// -------------------------
+
+const asInt = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+};
+
+export const adminOverview = async (req, res) => {
+  await ensureBiggiHouseSeed();
+
+  const [totalUsers, verifiedUsers, totalMerchants] = await Promise.all([
+    User.countDocuments({ allowedApps: "biggi_house" }),
+    User.countDocuments({ allowedApps: "biggi_house", isVerified: true }),
+    User.countDocuments({ allowedApps: "biggi_house", userRole: "merchant" }),
+  ]);
+
+  const [totalHouses, activeHouses, totalMemberships, pendingVendorRequests] =
+    await Promise.all([
+      BiggiHouseHouse.countDocuments({}),
+      BiggiHouseHouse.countDocuments({ active: true }),
+      BiggiHouseMembership.countDocuments({}),
+      BiggiHouseVendorRequest.countDocuments({ status: "pending" }),
+    ]);
+
+  const totalWalletBalanceAgg = await BiggiHouseWallet.aggregate([
+    { $group: { _id: null, total: { $sum: "$balance" } } },
+  ]);
+  const totalWalletBalance = Number(totalWalletBalanceAgg?.[0]?.total || 0);
+
+  res.json({
+    success: true,
+    overview: {
+      users: {
+        total: totalUsers,
+        verified: verifiedUsers,
+        merchants: totalMerchants,
+      },
+      houses: {
+        total: totalHouses,
+        active: activeHouses,
+        memberships: totalMemberships,
+      },
+      vendorRequests: { pending: pendingVendorRequests },
+      wallet: { totalBalance: totalWalletBalance, currency: "NGN" },
+    },
+  });
+};
+
+export const adminListUsers = async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  const page = Math.max(1, asInt(req.query.page, 1));
+  const limit = Math.min(50, Math.max(5, asInt(req.query.limit, 20)));
+  const skip = (page - 1) * limit;
+
+  const query = { allowedApps: "biggi_house" };
+  if (q) {
+    query.$or = [
+      { username: { $regex: q, $options: "i" } },
+      { email: { $regex: q, $options: "i" } },
+      { phoneNumber: { $regex: q, $options: "i" } },
+    ];
+  }
+
+  const [rows, total] = await Promise.all([
+    User.find(query)
+      .select(
+        "_id username email phoneNumber role userRole isVerified allowedApps createdAt updatedAt"
+      )
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    User.countDocuments(query),
+  ]);
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    users: rows.map((u) => ({
+      id: String(u._id),
+      username: u.username,
+      email: u.email,
+      phoneNumber: u.phoneNumber || "",
+      role: u.role,
+      userRole: u.userRole,
+      isVerified: Boolean(u.isVerified),
+      allowedApps: u.allowedApps || [],
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+    })),
+  });
+};
+
+export const adminUpdateUser = async (req, res) => {
+  const userId = String(req.params.id || "").trim();
+  if (!userId) return res.status(400).json({ success: false, error: "Invalid user id" });
+
+  const patch = {};
+  if (typeof req.body?.phoneNumber === "string") {
+    patch.phoneNumber = normalizePhone(req.body.phoneNumber) || undefined;
+  }
+  if (typeof req.body?.isVerified === "boolean") {
+    patch.isVerified = req.body.isVerified;
+    patch.verifiedAt = req.body.isVerified ? new Date() : null;
+  }
+  if (typeof req.body?.userRole === "string") {
+    const ur = String(req.body.userRole).toLowerCase();
+    patch.userRole = ur === "merchant" ? "merchant" : "private";
+  }
+  if (Array.isArray(req.body?.allowedApps)) {
+    const next = req.body.allowedApps.map((v) => String(v)).filter(Boolean);
+    // Keep BiggiHouse access unless admin explicitly removes it.
+    patch.allowedApps = next;
+  }
+
+  const updated = await User.findByIdAndUpdate(userId, { $set: patch }, { new: true }).select(
+    "_id username email phoneNumber role userRole isVerified allowedApps createdAt updatedAt"
+  );
+  if (!updated) return res.status(404).json({ success: false, error: "User not found" });
+
+  res.json({
+    success: true,
+    user: {
+      id: String(updated._id),
+      username: updated.username,
+      email: updated.email,
+      phoneNumber: updated.phoneNumber || "",
+      role: updated.role,
+      userRole: updated.userRole,
+      isVerified: Boolean(updated.isVerified),
+      allowedApps: updated.allowedApps || [],
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    },
+  });
+};
+
+export const adminListHouses = async (req, res) => {
+  await ensureBiggiHouseSeed();
+  const houses = await BiggiHouseHouse.find({}).sort({ number: 1 });
+  const memberCounts = await BiggiHouseMembership.aggregate([
+    { $group: { _id: "$houseId", members: { $sum: 1 } } },
+  ]);
+  const countMap = new Map(memberCounts.map((row) => [String(row._id), row.members]));
+
+  res.json({
+    success: true,
+    houses: houses.map((h) => ({
+      id: String(h._id),
+      number: h.number,
+      minimum: h.minimum,
+      active: Boolean(h.active),
+      members: Number(countMap.get(String(h._id)) || 0),
+      createdAt: h.createdAt,
+      updatedAt: h.updatedAt,
+    })),
+  });
+};
+
+export const adminCreateHouse = async (req, res) => {
+  const number = asInt(req.body?.number, null);
+  const minimum = asInt(req.body?.minimum, null);
+  const active =
+    typeof req.body?.active === "boolean" ? Boolean(req.body.active) : true;
+
+  if (!Number.isFinite(number) || number < 1 || number > 10) {
+    return res.status(400).json({ success: false, error: "number must be 1..10" });
+  }
+  if (!Number.isFinite(minimum) || minimum < 0) {
+    return res.status(400).json({ success: false, error: "minimum must be >= 0" });
+  }
+
+  try {
+    const created = await BiggiHouseHouse.create({ number, minimum, active });
+    return res.status(201).json({
+      success: true,
+      house: {
+        id: String(created._id),
+        number: created.number,
+        minimum: created.minimum,
+        active: Boolean(created.active),
+      },
+    });
+  } catch (err) {
+    return res
+      .status(400)
+      .json({ success: false, error: err?.message || "Unable to create house" });
+  }
+};
+
+export const adminUpdateHouse = async (req, res) => {
+  const houseId = String(req.params.id || "").trim();
+  if (!houseId) return res.status(400).json({ success: false, error: "Invalid house id" });
+
+  const patch = {};
+  if (Number.isFinite(Number(req.body?.number))) patch.number = asInt(req.body.number, null);
+  if (Number.isFinite(Number(req.body?.minimum))) patch.minimum = asInt(req.body.minimum, null);
+  if (typeof req.body?.active === "boolean") patch.active = Boolean(req.body.active);
+
+  try {
+    const updated = await BiggiHouseHouse.findByIdAndUpdate(houseId, { $set: patch }, { new: true });
+    if (!updated) return res.status(404).json({ success: false, error: "House not found" });
+    return res.json({
+      success: true,
+      house: {
+        id: String(updated._id),
+        number: updated.number,
+        minimum: updated.minimum,
+        active: Boolean(updated.active),
+      },
+    });
+  } catch (err) {
+    return res
+      .status(400)
+      .json({ success: false, error: err?.message || "Unable to update house" });
+  }
+};
+
+export const adminDeleteHouse = async (req, res) => {
+  const houseId = String(req.params.id || "").trim();
+  if (!houseId) return res.status(400).json({ success: false, error: "Invalid house id" });
+
+  const membershipCount = await BiggiHouseMembership.countDocuments({ houseId });
+  if (membershipCount > 0) {
+    const updated = await BiggiHouseHouse.findByIdAndUpdate(
+      houseId,
+      { $set: { active: false } },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ success: false, error: "House not found" });
+    return res.json({
+      success: true,
+      message: "House has members; deactivated instead of deleting.",
+      house: { id: String(updated._id), active: Boolean(updated.active) },
+    });
+  }
+
+  const deleted = await BiggiHouseHouse.findByIdAndDelete(houseId);
+  if (!deleted) return res.status(404).json({ success: false, error: "House not found" });
+  return res.json({ success: true, message: "House deleted" });
+};
+
+export const adminListMemberships = async (req, res) => {
+  const houseId = String(req.query.houseId || "").trim();
+  const page = Math.max(1, asInt(req.query.page, 1));
+  const limit = Math.min(50, Math.max(5, asInt(req.query.limit, 20)));
+  const skip = (page - 1) * limit;
+
+  const query = {};
+  if (houseId) query.houseId = houseId;
+
+  const [rows, total] = await Promise.all([
+    BiggiHouseMembership.find(query)
+      .populate("houseId", "number minimum")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    BiggiHouseMembership.countDocuments(query),
+  ]);
+
+  const userIds = rows.map((r) => r.userId).filter(Boolean);
+  const users = await User.find({ _id: { $in: userIds } }).select("_id username email phoneNumber");
+  const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    memberships: rows.map((m) => {
+      const u = userMap.get(String(m.userId));
+      return {
+        id: String(m._id),
+        joinedAt: m.joinedAt,
+        lastPaidAt: m.lastPaidAt,
+        house: m.houseId
+          ? {
+              id: String(m.houseId._id),
+              number: m.houseId.number,
+              minimum: m.houseId.minimum,
+            }
+          : null,
+        user: u
+          ? {
+              id: String(u._id),
+              username: u.username,
+              email: u.email,
+              phoneNumber: u.phoneNumber || "",
+            }
+          : { id: String(m.userId) },
+      };
+    }),
+  });
+};
+
+export const adminDeleteMembership = async (req, res) => {
+  const membershipId = String(req.params.id || "").trim();
+  if (!membershipId) {
+    return res.status(400).json({ success: false, error: "Invalid membership id" });
+  }
+  const deleted = await BiggiHouseMembership.findByIdAndDelete(membershipId);
+  if (!deleted) return res.status(404).json({ success: false, error: "Membership not found" });
+  return res.json({ success: true, message: "Membership removed" });
+};
+
+export const adminListVendorRequests = async (req, res) => {
+  const status = String(req.query.status || "").trim();
+  const page = Math.max(1, asInt(req.query.page, 1));
+  const limit = Math.min(50, Math.max(5, asInt(req.query.limit, 20)));
+  const skip = (page - 1) * limit;
+
+  const query = {};
+  if (status) query.status = status;
+
+  const [rows, total] = await Promise.all([
+    BiggiHouseVendorRequest.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    BiggiHouseVendorRequest.countDocuments(query),
+  ]);
+
+  const userIds = [
+    ...new Set(
+      rows
+        .flatMap((r) => [r.requesterUserId, r.vendorUserId])
+        .filter(Boolean)
+        .map((id) => String(id))
+    ),
+  ];
+  const users = await User.find({ _id: { $in: userIds } }).select("_id username email phoneNumber");
+  const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    requests: rows.map((r) => ({
+      id: String(r._id),
+      phoneNumber: r.phoneNumber,
+      network: r.network,
+      planId: r.planId,
+      note: r.note,
+      status: r.status,
+      createdAt: r.createdAt,
+      requester: (() => {
+        const u = userMap.get(String(r.requesterUserId));
+        return u
+          ? { id: String(u._id), username: u.username, email: u.email, phoneNumber: u.phoneNumber || "" }
+          : { id: String(r.requesterUserId) };
+      })(),
+      vendor: (() => {
+        const u = userMap.get(String(r.vendorUserId));
+        return u
+          ? { id: String(u._id), username: u.username, email: u.email, phoneNumber: u.phoneNumber || "" }
+          : { id: String(r.vendorUserId) };
+      })(),
+    })),
+  });
+};
+
+export const adminUpdateVendorRequest = async (req, res) => {
+  const requestId = String(req.params.id || "").trim();
+  const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+  const allowed = ["pending", "accepted", "rejected", "completed", "cancelled"];
+  if (!allowed.includes(nextStatus)) {
+    return res.status(400).json({ success: false, error: "Invalid status" });
+  }
+
+  const updated = await BiggiHouseVendorRequest.findByIdAndUpdate(
+    requestId,
+    { $set: { status: nextStatus } },
+    { new: true }
+  );
+  if (!updated) return res.status(404).json({ success: false, error: "Request not found" });
+  return res.json({ success: true, request: updated });
 };

@@ -1,6 +1,17 @@
 import { Router } from "express";
-import { protect } from "../middleware/auth.js";
+import { protect, authorize } from "../middleware/auth.js";
 import {
+  adminCreateHouse,
+  adminDeleteHouse,
+  adminDeleteMembership,
+  adminListHouses,
+  adminListMemberships,
+  adminListUsers,
+  adminListVendorRequests,
+  adminOverview,
+  adminUpdateHouse,
+  adminUpdateUser,
+  adminUpdateVendorRequest,
   createBiggiHouseVendorRequest,
   depositBiggiHouseWallet,
   generateBiggiHouseTxRef,
@@ -37,5 +48,26 @@ router.get("/vendors", protect, getBiggiHouseVendors);
 router.post("/vendor-requests", protect, createBiggiHouseVendorRequest);
 
 router.get("/merchant/requests", protect, getMerchantBiggiHouseRequests);
+
+// Admin C-Panel
+router.get("/admin/overview", protect, authorize("admin"), adminOverview);
+router.get("/admin/users", protect, authorize("admin"), adminListUsers);
+router.patch("/admin/users/:id", protect, authorize("admin"), adminUpdateUser);
+
+router.get("/admin/houses", protect, authorize("admin"), adminListHouses);
+router.post("/admin/houses", protect, authorize("admin"), adminCreateHouse);
+router.patch("/admin/houses/:id", protect, authorize("admin"), adminUpdateHouse);
+router.delete("/admin/houses/:id", protect, authorize("admin"), adminDeleteHouse);
+
+router.get("/admin/memberships", protect, authorize("admin"), adminListMemberships);
+router.delete("/admin/memberships/:id", protect, authorize("admin"), adminDeleteMembership);
+
+router.get("/admin/vendor-requests", protect, authorize("admin"), adminListVendorRequests);
+router.patch(
+  "/admin/vendor-requests/:id",
+  protect,
+  authorize("admin"),
+  adminUpdateVendorRequest
+);
 
 export default router;
