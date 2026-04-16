@@ -1,3 +1,4 @@
+import axios from "axios";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BiggiHouseWallet from "../models/BiggiHouseWallet.js";
@@ -5,6 +6,7 @@ import BiggiHouseHouse from "../models/BiggiHouseHouse.js";
 import BiggiHouseMembership from "../models/BiggiHouseMembership.js";
 import BiggiHouseVendorRequest from "../models/BiggiHouseVendorRequest.js";
 import { ensureBiggiHouseSeed } from "../utils/biggiHouseSeed.js";
+import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
 
 const txStatusAllowed = ["success", "success_price_mismatch", "simulated"];
 
@@ -17,11 +19,23 @@ const getWeeklyWindowStart = () => {
 
 const normalizePhone = (value) => String(value || "").replace(/\s+/g, "").trim();
 
+const splitName = (fullName = "") => {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first: "Biggi", last: "House" };
+  if (parts.length === 1) return { first: parts[0], last: "User" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+};
+
 const ensureWallet = async (userId) => {
   const wallet = await BiggiHouseWallet.findOne({ userId });
   if (wallet) return wallet;
   return BiggiHouseWallet.create({ userId, balance: 0, currency: "NGN" });
 };
+
+const isStaticVirtualAccountEnabled = () =>
+  ["1", "true", "yes"].includes(
+    String(process.env.ENABLE_STATIC_VIRTUAL_ACCOUNTS || "").toLowerCase()
+  );
 
 const getWeeklyDataPurchaseStatsByPhone = async (phoneNumber) => {
   const windowStart = getWeeklyWindowStart();
@@ -97,6 +111,240 @@ export const getBiggiHouseMemberships = async (req, res) => {
         },
       })),
   });
+};
+
+export const generateBiggiHouseTxRef = async (req, res) => {
+  const userId = req.user?.id || req.user?._id;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "Not authorized" });
+  }
+
+  const base = `bh_${userId}_${Date.now()}`;
+  const random = Math.floor(Math.random() * 1000);
+  return res.json({
+    success: true,
+    tx_ref: `${base}${random ? `_${random}` : ""}`,
+  });
+};
+
+export const getBiggiHouseDepositFeeSettings = async (req, res) => {
+  const settings = await getDepositFeeSettings();
+  return res.json({ success: true, settings });
+};
+
+export const getBiggiHouseVirtualAccount = async (req, res) => {
+  try {
+    if (!isStaticVirtualAccountEnabled()) {
+      return res.status(200).json({
+        success: false,
+        mode: "dynamic",
+        disabled: true,
+        message: "Static virtual accounts are disabled. Use dynamic checkout.",
+      });
+    }
+
+    const user = await User.findById(req.user.id).select(
+      "email username phoneNumber nin biggiHouseVirtualAccount"
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const forceRefresh = String(req.query.refresh || "").toLowerCase() === "true";
+    const existing = user.biggiHouseVirtualAccount || {};
+    if (!forceRefresh && existing?.accountNumber) {
+      return res.json({
+        success: true,
+        mode: "static",
+        account: {
+          accountNumber: existing.accountNumber,
+          bankName: existing.bankName,
+          accountName: existing.accountName,
+          reference: existing.reference || "",
+          updatedAt: existing.updatedAt || existing.createdAt || null,
+        },
+      });
+    }
+
+    if (!process.env.FLUTTERWAVE_SECRET_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "Flutterwave secret key not configured",
+      });
+    }
+
+    if (!user.nin) {
+      return res.status(400).json({
+        success: false,
+        message: "NIN is required to create a static virtual account.",
+      });
+    }
+
+    const { first, last } = splitName(user.username || user.email);
+    const txRef = `bhva_${user._id}_${Date.now()}`;
+    const payload = {
+      email: user.email,
+      tx_ref: txRef,
+      phonenumber: user.phoneNumber || undefined,
+      is_permanent: true,
+      firstname: first,
+      lastname: last,
+      narration: `Biggi House ${user.username || user.email}`,
+      nin: user.nin || undefined,
+    };
+
+    const response = await axios.post(
+      "https://api.flutterwave.com/v3/virtual-account-numbers",
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 20000,
+      }
+    );
+
+    if (response.data?.status !== "success") {
+      return res.status(500).json({
+        success: false,
+        message: response.data?.message || "Virtual account creation failed",
+        error: response.data,
+      });
+    }
+
+    const data = response.data?.data || {};
+    const account = {
+      accountNumber: data.account_number || "",
+      bankName: data.bank_name || "",
+      accountName: data.account_name || `${first} ${last}`.trim(),
+      reference: data.order_ref || txRef,
+      updatedAt: new Date().toISOString(),
+    };
+
+    user.biggiHouseVirtualAccount = {
+      provider: "flutterwave",
+      accountNumber: account.accountNumber,
+      bankName: account.bankName,
+      accountName: account.accountName,
+      reference: account.reference,
+      createdAt: existing?.createdAt || new Date(),
+      updatedAt: new Date(),
+      meta: data,
+    };
+    await user.save({ validateBeforeSave: false });
+
+    return res.json({ success: true, mode: "static", account });
+  } catch (error) {
+    console.error(
+      "BiggiHouse get virtual account error:",
+      error?.response?.data || error.message
+    );
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load virtual account",
+      error: error?.response?.data || error.message,
+    });
+  }
+};
+
+export const verifyBiggiHouseFlutterwavePayment = async (req, res) => {
+  let tx_ref;
+  try {
+    tx_ref = String(req.body?.tx_ref || "").trim();
+    const requestedAmount = Number(req.body?.amount || 0);
+
+    if (!tx_ref) return res.status(400).json({ success: false, message: "tx_ref required" });
+    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Amount is required" });
+    }
+
+    const response = await axios.get(
+      `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${tx_ref}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+        },
+      }
+    );
+
+    const payment = response.data?.data;
+    if (!payment) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed",
+      });
+    }
+
+    if (String(payment.status || "").toLowerCase() !== "successful") {
+      return res.status(400).json({
+        success: false,
+        message: "Payment not successful",
+      });
+    }
+
+    const paidAmount = Number(payment.amount || 0);
+    const feeSettings = await getDepositFeeSettings();
+    const serviceCharge = computeDepositFee(requestedAmount, feeSettings);
+    const expectedTotal = Number(requestedAmount) + Number(serviceCharge || 0);
+    if (Math.round(paidAmount) !== Math.round(expectedTotal)) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount does not match expected total",
+        expectedTotal,
+        paidAmount,
+      });
+    }
+
+    const wallet = await ensureWallet(req.user.id);
+    const exists = (wallet.transactions || []).find((t) => t.reference === tx_ref);
+    if (exists) {
+      return res.json({
+        success: true,
+        message: "Payment already processed",
+        balance: wallet.balance,
+      });
+    }
+
+    const previousBalance = Number(wallet.balance || 0);
+    wallet.balance = previousBalance + Number(requestedAmount);
+    wallet.lastUpdated = new Date();
+    wallet.transactions.unshift({
+      type: "deposit",
+      amount: Number(requestedAmount),
+      status: "completed",
+      reference: tx_ref,
+      meta: {
+        action: "biggihouse_deposit",
+        channel: "flutterwave",
+        serviceCharge,
+        totalPaid: paidAmount,
+        previousBalance,
+        newBalance: wallet.balance,
+      },
+    });
+    wallet.transactions = (wallet.transactions || []).slice(0, 100);
+    await wallet.save();
+
+    return res.json({
+      success: true,
+      message: "Deposit credited to BiggiHouse wallet",
+      balance: wallet.balance,
+      serviceCharge,
+      totalPaid: paidAmount,
+    });
+  } catch (error) {
+    console.error(
+      "BiggiHouse verify flutterwave error:",
+      tx_ref,
+      error?.response?.data || error.message
+    );
+    return res.status(500).json({
+      success: false,
+      message: "Failed to verify payment",
+      error: error?.response?.data || error.message,
+    });
+  }
 };
 
 export const getBiggiHouseWallet = async (req, res) => {

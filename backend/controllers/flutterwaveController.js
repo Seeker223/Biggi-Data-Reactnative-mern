@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Deposit from "../models/Deposit.js";
 import WebhookHealth from "../models/WebhookHealth.js";
 import DepositCreditLog from "../models/DepositCreditLog.js";
+import BiggiHouseWallet from "../models/BiggiHouseWallet.js";
 import {
   logWalletTransaction,
   updateWalletTransactionStatus,
@@ -388,26 +389,50 @@ export const flutterwaveWebhook = async (req, res) => {
 
     let resolutionMethod = "";
     let userId = null;
+    let creditTarget = "biggidata"; // or "biggihouse"
 
     if (accountNumber) {
-      const userByAccount = await User.findOne({
-        "flutterwaveVirtualAccount.accountNumber": accountNumber,
+      const userByBiggiHouseAccount = await User.findOne({
+        "biggiHouseVirtualAccount.accountNumber": accountNumber,
       }).select("_id");
-      userId = userByAccount?._id?.toString() || null;
-      if (userId) resolutionMethod = "accountNumber";
+      userId = userByBiggiHouseAccount?._id?.toString() || null;
+      if (userId) {
+        resolutionMethod = "biggiHouseAccountNumber";
+        creditTarget = "biggihouse";
+      } else {
+        const userByAccount = await User.findOne({
+          "flutterwaveVirtualAccount.accountNumber": accountNumber,
+        }).select("_id");
+        userId = userByAccount?._id?.toString() || null;
+        if (userId) resolutionMethod = "accountNumber";
+      }
     }
 
     if (!userId && accountId) {
-      const userByAccountId = await User.findOne({
+      const userByBiggiHouseAccountId = await User.findOne({
         $or: [
-          { "flutterwaveVirtualAccount.meta.account_id": accountId },
-          { "flutterwaveVirtualAccount.meta.accountId": accountId },
-          { "flutterwaveVirtualAccount.meta.AccountId": accountId },
-          { "flutterwaveVirtualAccount.meta.id": accountId },
+          { "biggiHouseVirtualAccount.meta.account_id": accountId },
+          { "biggiHouseVirtualAccount.meta.accountId": accountId },
+          { "biggiHouseVirtualAccount.meta.AccountId": accountId },
+          { "biggiHouseVirtualAccount.meta.id": accountId },
         ],
       }).select("_id");
-      userId = userByAccountId?._id?.toString() || null;
-      if (userId) resolutionMethod = "accountId";
+      userId = userByBiggiHouseAccountId?._id?.toString() || null;
+      if (userId) {
+        resolutionMethod = "biggiHouseAccountId";
+        creditTarget = "biggihouse";
+      } else {
+        const userByAccountId = await User.findOne({
+          $or: [
+            { "flutterwaveVirtualAccount.meta.account_id": accountId },
+            { "flutterwaveVirtualAccount.meta.accountId": accountId },
+            { "flutterwaveVirtualAccount.meta.AccountId": accountId },
+            { "flutterwaveVirtualAccount.meta.id": accountId },
+          ],
+        }).select("_id");
+        userId = userByAccountId?._id?.toString() || null;
+        if (userId) resolutionMethod = "accountId";
+      }
     }
 
     if (!userId) {
@@ -450,6 +475,79 @@ export const flutterwaveWebhook = async (req, res) => {
       if (!user) {
         if (activeSession) await activeSession.abortTransaction();
         await updateHealth({ note: "user_not_found" });
+        return res.sendStatus(200);
+      }
+
+      // BiggiHouse static virtual account deposits should credit the BiggiHouse wallet only (independent ledger).
+      if (creditTarget === "biggihouse") {
+        const walletQuery = BiggiHouseWallet.findOne({ userId });
+        let bhWallet = activeSession ? await walletQuery.session(activeSession) : await walletQuery;
+        if (!bhWallet) {
+          const created = await BiggiHouseWallet.create(
+            [{ userId, balance: 0, currency: "NGN" }],
+            activeSession ? { session: activeSession } : {}
+          );
+          bhWallet = created?.[0] || null;
+        }
+
+        const already = (bhWallet.transactions || []).find((t) => t.reference === reference);
+        if (already) {
+          if (activeSession) await activeSession.abortTransaction();
+          await updateHealth({ processed: true, note: "biggihouse_already_processed" });
+          return res.sendStatus(200);
+        }
+
+        const feeSettings = await getDepositFeeSettings();
+        walletCredit = deriveWalletCreditFromTotal(totalPaid, feeSettings);
+        serviceCharge = Math.max(0, Math.round(totalPaid - walletCredit));
+
+        if (String(status || "").toLowerCase() !== "successful") {
+          if (activeSession) await activeSession.abortTransaction();
+          await updateHealth({ processed: false, note: "biggihouse_payment_failed" });
+          return res.sendStatus(200);
+        }
+
+        if (walletCredit <= 0) {
+          if (activeSession) await activeSession.abortTransaction();
+          await updateHealth({
+            note: "biggihouse_wallet_credit_zero",
+            walletCredit: walletCredit || 0,
+            serviceCharge: serviceCharge || 0,
+          });
+          return res.sendStatus(200);
+        }
+
+        const previousBalance = Number(bhWallet.balance || 0);
+        bhWallet.balance = previousBalance + walletCredit;
+        bhWallet.lastUpdated = new Date();
+        bhWallet.transactions.unshift({
+          type: "deposit",
+          amount: walletCredit,
+          status: "completed",
+          reference,
+          meta: {
+            action: "biggihouse_deposit",
+            channel: "flutterwave_webhook",
+            serviceCharge,
+            totalPaid,
+            previousBalance,
+            newBalance: bhWallet.balance,
+          },
+        });
+        bhWallet.transactions = (bhWallet.transactions || []).slice(0, 100);
+        await bhWallet.save(activeSession ? { session: activeSession } : {});
+
+        if (activeSession) {
+          await activeSession.commitTransaction();
+        }
+
+        await updateHealth({
+          processed: true,
+          walletCredit,
+          serviceCharge,
+          note: `biggihouse_credited_${resolutionMethod || "webhook"}`,
+        });
+
         return res.sendStatus(200);
       }
 

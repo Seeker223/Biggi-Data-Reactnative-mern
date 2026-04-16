@@ -244,6 +244,19 @@ const UserSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
       meta: { type: Object, default: {} },
     },/* ---------------- WALLET ---------------- */
+
+    // BiggiHouse wallet uses a different (independent) ledger, but can still use the same Flutterwave keys.
+    biggiHouseVirtualAccount: {
+      provider: { type: String, default: "flutterwave" },
+      accountNumber: { type: String, default: "" },
+      bankName: { type: String, default: "" },
+      accountName: { type: String, default: "" },
+      reference: { type: String, default: "" },
+      createdAt: { type: Date, default: null },
+      updatedAt: { type: Date, default: null },
+      meta: { type: Object, default: {} },
+    },
+
     mainBalance: { type: Number, default: 0 },
     rewardBalance: { type: Number, default: 0 },
     totalDeposits: { type: Number, default: 0 },
