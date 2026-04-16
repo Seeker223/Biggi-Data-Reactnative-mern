@@ -497,8 +497,14 @@ export const flutterwaveWebhook = async (req, res) => {
           return res.sendStatus(200);
         }
 
-        const feeSettings = await getDepositFeeSettings();
-        walletCredit = deriveWalletCreditFromTotal(totalPaid, feeSettings);
+        // BiggiHouse static VA deposits use an app-specific fee (2%).
+        walletCredit = deriveWalletCreditFromTotal(totalPaid, {
+          enabled: true,
+          flatFee: 0,
+          percentFee: 2,
+          minFee: 0,
+          maxFee: 0,
+        });
         serviceCharge = Math.max(0, Math.round(totalPaid - walletCredit));
 
         if (String(status || "").toLowerCase() !== "successful") {

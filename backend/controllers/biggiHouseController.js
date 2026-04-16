@@ -6,7 +6,7 @@ import BiggiHouseHouse from "../models/BiggiHouseHouse.js";
 import BiggiHouseMembership from "../models/BiggiHouseMembership.js";
 import BiggiHouseVendorRequest from "../models/BiggiHouseVendorRequest.js";
 import { ensureBiggiHouseSeed } from "../utils/biggiHouseSeed.js";
-import { getDepositFeeSettings, computeDepositFee } from "../utils/depositFee.js";
+import { computeDepositFee } from "../utils/depositFee.js";
 
 const txStatusAllowed = ["success", "success_price_mismatch", "simulated"];
 
@@ -25,6 +25,15 @@ const splitName = (fullName = "") => {
   if (parts.length === 1) return { first: parts[0], last: "User" };
   return { first: parts[0], last: parts.slice(1).join(" ") };
 };
+
+// BiggiHouse deposits have an app-specific fee (independent from Biggi Data).
+const getBiggiHouseFeeSettings = () => ({
+  enabled: true,
+  flatFee: 0,
+  percentFee: 2,
+  minFee: 0,
+  maxFee: 0,
+});
 
 const ensureWallet = async (userId) => {
   const wallet = await BiggiHouseWallet.findOne({ userId });
@@ -128,8 +137,7 @@ export const generateBiggiHouseTxRef = async (req, res) => {
 };
 
 export const getBiggiHouseDepositFeeSettings = async (req, res) => {
-  const settings = await getDepositFeeSettings();
-  return res.json({ success: true, settings });
+  return res.json({ success: true, settings: getBiggiHouseFeeSettings() });
 };
 
 export const getBiggiHouseVirtualAccount = async (req, res) => {
@@ -284,8 +292,7 @@ export const verifyBiggiHouseFlutterwavePayment = async (req, res) => {
     }
 
     const paidAmount = Number(payment.amount || 0);
-    const feeSettings = await getDepositFeeSettings();
-    const serviceCharge = computeDepositFee(requestedAmount, feeSettings);
+    const serviceCharge = computeDepositFee(requestedAmount, getBiggiHouseFeeSettings());
     const expectedTotal = Number(requestedAmount) + Number(serviceCharge || 0);
     if (Math.round(paidAmount) !== Math.round(expectedTotal)) {
       return res.status(400).json({
