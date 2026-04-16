@@ -23,6 +23,38 @@ const ensureWallet = async (userId) => {
   return BiggiHouseWallet.create({ userId, balance: 0, currency: "NGN" });
 };
 
+const getWeeklyDataPurchaseStatsByPhone = async (phoneNumber) => {
+  const windowStart = getWeeklyWindowStart();
+
+  const rows = await Wallet.aggregate([
+    { $match: { type: "main" } },
+    { $unwind: "$transactions" },
+    {
+      $match: {
+        "transactions.type": "purchase",
+        "transactions.status": { $in: txStatusAllowed },
+        "transactions.date": { $gte: windowStart },
+        "transactions.meta.action": "data_purchase",
+        "transactions.meta.mobile_no": phoneNumber,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 },
+        lastPurchaseAt: { $max: "$transactions.date" },
+      },
+    },
+  ]);
+
+  const row = rows && rows[0] ? rows[0] : null;
+  return {
+    windowStart,
+    count: Number(row?.count || 0),
+    lastPurchaseAt: row?.lastPurchaseAt || null,
+  };
+};
+
 export const getBiggiHouseHouses = async (req, res) => {
   await ensureBiggiHouseSeed();
   const houses = await BiggiHouseHouse.find({ active: true }).sort({ number: 1 });
@@ -217,56 +249,38 @@ export const getBiggiHouseEligibility = async (req, res) => {
     });
   }
 
-  const windowStart = getWeeklyWindowStart();
-  const exists = await Wallet.exists({
-    transactions: {
-      $elemMatch: {
-        type: "purchase",
-        status: { $in: txStatusAllowed },
-        date: { $gte: windowStart },
-        "meta.action": "data_purchase",
-        "meta.mobile_no": phoneNumber,
-      },
-    },
-  });
+  const stats = await getWeeklyDataPurchaseStatsByPhone(phoneNumber);
 
   res.json({
     success: true,
-    eligible: Boolean(exists),
-    reason: exists ? "OK" : "NO_PURCHASE_THIS_WEEK",
+    eligible: stats.count > 0,
+    reason: stats.count > 0 ? "OK" : "NO_PURCHASE_THIS_WEEK",
     phoneNumber,
-    windowStart,
+    windowStart: stats.windowStart,
+    purchasesThisWeek: stats.count,
+    lastPurchaseAt: stats.lastPurchaseAt,
   });
 };
 
 export const joinBiggiHouse = async (req, res) => {
   await ensureBiggiHouseSeed();
 
-  const eligibility = await (async () => {
-    const me = await User.findById(req.user.id).select("phoneNumber");
-    const phoneNumber = normalizePhone(me?.phoneNumber);
-    if (!phoneNumber) return { ok: false, reason: "MISSING_PHONE_NUMBER" };
-
-    const windowStart = getWeeklyWindowStart();
-    const exists = await Wallet.exists({
-      transactions: {
-        $elemMatch: {
-          type: "purchase",
-          status: { $in: txStatusAllowed },
-          date: { $gte: windowStart },
-          "meta.action": "data_purchase",
-          "meta.mobile_no": phoneNumber,
-        },
-      },
+  const me = await User.findById(req.user.id).select("phoneNumber");
+  const phoneNumber = normalizePhone(me?.phoneNumber);
+  if (!phoneNumber) {
+    return res.status(403).json({
+      success: false,
+      error: "You must add a phone number to your profile before joining a house.",
+      errorCode: "MISSING_PHONE_NUMBER",
     });
-    return exists ? { ok: true } : { ok: false, reason: "NO_PURCHASE_THIS_WEEK" };
-  })();
+  }
 
-  if (!eligibility.ok) {
+  const stats = await getWeeklyDataPurchaseStatsByPhone(phoneNumber);
+  if (stats.count <= 0) {
     return res.status(403).json({
       success: false,
       error: "You must buy at least 1 data bundle this week before joining a house.",
-      errorCode: eligibility.reason,
+      errorCode: "NO_PURCHASE_THIS_WEEK",
     });
   }
 
