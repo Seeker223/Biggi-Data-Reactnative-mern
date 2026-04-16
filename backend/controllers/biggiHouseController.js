@@ -265,6 +265,12 @@ export const getBiggiHouseEligibility = async (req, res) => {
 export const joinBiggiHouse = async (req, res) => {
   await ensureBiggiHouseSeed();
 
+  const houseId = String(req.params.id || "").trim();
+  const house = await BiggiHouseHouse.findById(houseId);
+  if (!house || !house.active) {
+    return res.status(404).json({ success: false, error: "House not found" });
+  }
+
   const me = await User.findById(req.user.id).select("phoneNumber");
   const phoneNumber = normalizePhone(me?.phoneNumber);
   if (!phoneNumber) {
@@ -276,18 +282,16 @@ export const joinBiggiHouse = async (req, res) => {
   }
 
   const stats = await getWeeklyDataPurchaseStatsByPhone(phoneNumber);
-  if (stats.count <= 0) {
+  const requiredPurchases = Math.max(1, Number(house.number || 1));
+  if (stats.count < requiredPurchases) {
     return res.status(403).json({
       success: false,
-      error: "You must buy at least 1 data bundle this week before joining a house.",
-      errorCode: "NO_PURCHASE_THIS_WEEK",
+      error: `You must buy data at least ${requiredPurchases} time(s) this week before joining House ${house.number}.`,
+      errorCode: "INSUFFICIENT_WEEKLY_PURCHASES",
+      requiredPurchases,
+      purchasesThisWeek: stats.count,
+      phoneNumber,
     });
-  }
-
-  const houseId = String(req.params.id || "").trim();
-  const house = await BiggiHouseHouse.findById(houseId);
-  if (!house || !house.active) {
-    return res.status(404).json({ success: false, error: "House not found" });
   }
 
   const wallet = await ensureWallet(req.user.id);
