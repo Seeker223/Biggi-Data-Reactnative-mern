@@ -58,6 +58,11 @@ const errorHandler = (err, req, res, next) => {
     responseBody.error = message;
     responseBody.details = err?.details || null;
     responseBody.stack = err?.stack || null;
+  } else if ([400, 401, 403].includes(statusCode)) {
+    if (err?.message) responseBody.message = err.message;
+    if (err?.requiresVerification) responseBody.requiresVerification = err.requiresVerification;
+    if (err?.email) responseBody.email = err.email;
+    if (err?.details) responseBody.details = err.details;
   }
 
   return res.status(statusCode).json(responseBody);

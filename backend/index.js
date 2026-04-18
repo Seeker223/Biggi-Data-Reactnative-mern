@@ -227,8 +227,19 @@ app.use((req, res, next) => {
 
     const sanitized = {
       success: false,
-      message: toUserMessage(statusCode),
+      message: body.error || body.message || toUserMessage(statusCode),
     };
+
+    if (Object.prototype.hasOwnProperty.call(body, "requiresVerification")) {
+      sanitized.requiresVerification = body.requiresVerification;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "email")) {
+      sanitized.email = body.email;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "details")) {
+      sanitized.details = body.details;
+    }
+
     return originalJson(sanitized);
   };
 
