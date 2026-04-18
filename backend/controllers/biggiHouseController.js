@@ -5,6 +5,7 @@ import BiggiHouseWallet from "../models/BiggiHouseWallet.js";
 import BiggiHouseHouse from "../models/BiggiHouseHouse.js";
 import BiggiHouseMembership from "../models/BiggiHouseMembership.js";
 import BiggiHouseVendorRequest from "../models/BiggiHouseVendorRequest.js";
+import Subscription from "../models/Subscription.js";
 import { ensureBiggiHouseSeed } from "../utils/biggiHouseSeed.js";
 import { computeDepositFee } from "../utils/depositFee.js";
 
@@ -527,8 +528,28 @@ export const joinBiggiHouse = async (req, res) => {
     return res.status(404).json({ success: false, error: "House not found" });
   }
 
-  const me = await User.findById(req.user.id).select("phoneNumber");
-  const phoneNumber = normalizePhone(me?.phoneNumber);
+  // Check subscription status
+  const user = await User.findById(req.user.id).populate("subscription").select("phoneNumber subscription");
+  const subscription = user?.subscription;
+
+  if (!subscription || !subscription.isActive) {
+    return res.status(403).json({
+      success: false,
+      error: "You must have an active monthly subscription to join a house",
+      errorCode: "NO_ACTIVE_SUBSCRIPTION",
+    });
+  }
+
+  // Check if subscription is still valid
+  if (new Date(subscription.renewalDate) < new Date()) {
+    return res.status(403).json({
+      success: false,
+      error: "Your subscription has expired. Please renew to continue.",
+      errorCode: "SUBSCRIPTION_EXPIRED",
+    });
+  }
+
+  const phoneNumber = normalizePhone(user?.phoneNumber);
   if (!phoneNumber) {
     return res.status(403).json({
       success: false,
@@ -980,4 +1001,169 @@ export const adminUpdateVendorRequest = async (req, res) => {
   );
   if (!updated) return res.status(404).json({ success: false, error: "Request not found" });
   return res.json({ success: true, request: updated });
+};
+
+// -------------------------
+// Subscription Endpoints
+// -------------------------
+
+export const getSubscriptionStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).populate("subscription");
+    const subscription = user?.subscription;
+
+    if (!subscription) {
+      return res.json({
+        subscriptionExists: false,
+        isActive: false,
+        subscription: null,
+      });
+    }
+
+    return res.json({
+      subscriptionExists: true,
+      isActive: subscription.isActive && new Date(subscription.renewalDate) > new Date(),
+      subscription: {
+        id: subscription._id.toString(),
+        monthlyFee: subscription.monthlyFee,
+        isActive: subscription.isActive,
+        startDate: subscription.startDate,
+        renewalDate: subscription.renewalDate,
+        lastPaymentDate: subscription.lastPaymentDate,
+        autoRenew: subscription.autoRenew,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to fetch subscription status" });
+  }
+};
+
+export const subscribe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if user already has an active subscription
+    if (user.subscription) {
+      const subscription = await Subscription.findById(user.subscription);
+      if (subscription && subscription.isActive) {
+        return res.status(400).json({
+          error: "You already have an active subscription",
+          subscription: {
+            id: subscription._id.toString(),
+            monthlyFee: subscription.monthlyFee,
+            isActive: subscription.isActive,
+            renewalDate: subscription.renewalDate,
+          },
+        });
+      }
+    }
+
+    // Create or update subscription
+    let subscription;
+    const MONTHLY_FEE = 100;
+    if (user.subscription) {
+      subscription = await Subscription.findByIdAndUpdate(
+        user.subscription,
+        {
+          isActive: true,
+          startDate: new Date(),
+          renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          lastPaymentDate: new Date(),
+          autoRenew: req.body.autoRenew !== false,
+        },
+        { new: true }
+      );
+    } else {
+      subscription = await Subscription.create({
+        user: user._id,
+        monthlyFee: MONTHLY_FEE,
+        isActive: true,
+        startDate: new Date(),
+        renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        lastPaymentDate: new Date(),
+        autoRenew: req.body.autoRenew !== false,
+      });
+      user.subscription = subscription._id;
+      await user.save();
+    }
+
+    return res.status(201).json({
+      message: "Subscription activated successfully",
+      subscription: {
+        id: subscription._id.toString(),
+        monthlyFee: subscription.monthlyFee,
+        isActive: subscription.isActive,
+        startDate: subscription.startDate,
+        renewalDate: subscription.renewalDate,
+        lastPaymentDate: subscription.lastPaymentDate,
+        autoRenew: subscription.autoRenew,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to create subscription" });
+  }
+};
+
+export const cancelSubscription = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user || !user.subscription) {
+      return res.status(404).json({ error: "No active subscription found" });
+    }
+
+    const subscription = await Subscription.findByIdAndUpdate(
+      user.subscription,
+      {
+        isActive: false,
+        autoRenew: false,
+      },
+      { new: true }
+    );
+
+    return res.json({
+      message: "Subscription cancelled successfully",
+      subscription: {
+        id: subscription._id.toString(),
+        isActive: subscription.isActive,
+        autoRenew: subscription.autoRenew,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to cancel subscription" });
+  }
+};
+
+export const renewSubscription = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user || !user.subscription) {
+      return res.status(404).json({ error: "No subscription found" });
+    }
+
+    const subscription = await Subscription.findByIdAndUpdate(
+      user.subscription,
+      {
+        isActive: true,
+        renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        lastPaymentDate: new Date(),
+      },
+      { new: true }
+    );
+
+    return res.json({
+      message: "Subscription renewed successfully",
+      subscription: {
+        id: subscription._id.toString(),
+        monthlyFee: subscription.monthlyFee,
+        isActive: subscription.isActive,
+        renewalDate: subscription.renewalDate,
+        lastPaymentDate: subscription.lastPaymentDate,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to renew subscription" });
+  }
 };

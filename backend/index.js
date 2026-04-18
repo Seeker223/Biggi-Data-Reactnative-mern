@@ -29,6 +29,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import profitSweepAdminRoutes from "./routes/profitSweepAdminRoutes.js";
 import depositFeeAdminRoutes from "./routes/depositFeeAdminRoutes.js";
 import biggiHouseRoutes from "./routes/biggiHouseRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 /* ---------------- DEBUG ---------------- */
 import DataPlan from "./models/DataPlan.js";
@@ -622,6 +623,7 @@ app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/admin/profit-sweep", profitSweepAdminRoutes);
 app.use("/api/v1/admin/deposit-fee", depositFeeAdminRoutes);
 app.use("/api/v1/biggihouse", biggiHouseRoutes);
+app.use("/api/v1/subscription", subscriptionRoutes);
 
 /* ----------------------------------------
    GAME RULES AND INFORMATION ROUTES

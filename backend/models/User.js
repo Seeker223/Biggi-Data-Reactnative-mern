@@ -351,6 +351,9 @@ const UserSchema = new mongoose.Schema(
     /* ---------------- TIMESTAMPS ---------------- */
     lastLogin: { type: Date, default: null },
     lastLogout: { type: Date, default: null },
+
+    /* ---------------- BIGGI HOUSE SUBSCRIPTION ---------------- */
+    subscription: { type: mongoose.Schema.Types.ObjectId, ref: "Subscription", default: null },
   },
   { 
     timestamps: true,
