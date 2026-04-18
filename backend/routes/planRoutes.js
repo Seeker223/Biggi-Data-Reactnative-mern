@@ -1,6 +1,6 @@
 // backend/routes/planRoutes.js
 import express from "express";
-import { getNetworkPlans, getPlanById } from "../controllers/plansController.js";
+import { getAllPlans, getNetworkPlans, getPlanById } from "../controllers/plansController.js";
 import {
   createAdminPlan,
   deactivateAdminPlan,
@@ -12,6 +12,9 @@ import {
 import { protect, authorize } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// GET all active plans (all networks)
+router.get("/", getAllPlans);
 
 // specific routes FIRST
 router.get("/single/:plan_id", getPlanById);

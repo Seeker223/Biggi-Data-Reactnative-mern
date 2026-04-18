@@ -2,6 +2,32 @@
 import DataPlan from "../models/DataPlan.js";
 
 /* ------------------------------------------------------
+   GET all active plans (all networks)
+   Example: /api/v1/plans
+------------------------------------------------------- */
+export const getAllPlans = async (req, res) => {
+  try {
+    const plans = await DataPlan.find({
+      active: true,
+      provider_amount: { $ne: null },
+      amount: { $gt: 0 },
+    }).sort({ network: 1, amount: 1 });
+
+    return res.json({
+      success: true,
+      count: plans.length,
+      plans,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      msg: "Failed to fetch plans",
+      error: err.message,
+    });
+  }
+};
+
+/* ------------------------------------------------------
    GET all plans for a specific network
    Example: /api/v1/plans/network/mtn
 ------------------------------------------------------- */
