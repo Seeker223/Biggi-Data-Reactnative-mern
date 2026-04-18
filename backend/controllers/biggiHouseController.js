@@ -1047,32 +1047,60 @@ export const subscribe = async (req, res) => {
 
     // Check if user already has an active subscription
     if (user.subscription) {
-      const subscription = await Subscription.findById(user.subscription);
-      if (subscription && subscription.isActive) {
+      const existingSubscription = await Subscription.findById(user.subscription);
+      if (existingSubscription && existingSubscription.isActive) {
         return res.status(400).json({
           error: "You already have an active subscription",
           subscription: {
-            id: subscription._id.toString(),
-            monthlyFee: subscription.monthlyFee,
-            isActive: subscription.isActive,
-            renewalDate: subscription.renewalDate,
+            id: existingSubscription._id.toString(),
+            monthlyFee: existingSubscription.monthlyFee,
+            isActive: existingSubscription.isActive,
+            renewalDate: existingSubscription.renewalDate,
           },
         });
       }
     }
 
-    // Create or update subscription
-    let subscription;
     const MONTHLY_FEE = 100;
+    const wallet = await ensureWallet(req.user.id);
+    const previousBalance = Number(wallet.balance || 0);
+    if (previousBalance < MONTHLY_FEE) {
+      return res.status(400).json({
+        error: "Insufficient BiggiHouse wallet balance to pay the subscription fee",
+        requiredAmount: MONTHLY_FEE,
+        currentBalance: previousBalance,
+      });
+    }
+
+    wallet.balance = previousBalance - MONTHLY_FEE;
+    wallet.lastUpdated = new Date();
+    wallet.transactions.unshift({
+      type: "subscription",
+      amount: MONTHLY_FEE,
+      status: "completed",
+      reference: `bh_sub_${req.user.id}_${Date.now()}`,
+      meta: {
+        action: "subscription_payment",
+        paymentMethod: "wallet",
+        previousBalance,
+        newBalance: wallet.balance,
+      },
+    });
+    wallet.transactions = wallet.transactions.slice(0, 100);
+    await wallet.save();
+
+    let subscription;
     if (user.subscription) {
       subscription = await Subscription.findByIdAndUpdate(
         user.subscription,
         {
+          monthlyFee: MONTHLY_FEE,
           isActive: true,
           startDate: new Date(),
           renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
           lastPaymentDate: new Date(),
           autoRenew: req.body.autoRenew !== false,
+          paymentMethod: "wallet",
         },
         { new: true }
       );
@@ -1085,6 +1113,7 @@ export const subscribe = async (req, res) => {
         renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         lastPaymentDate: new Date(),
         autoRenew: req.body.autoRenew !== false,
+        paymentMethod: "wallet",
       });
       user.subscription = subscription._id;
       await user.save();
@@ -1100,6 +1129,11 @@ export const subscribe = async (req, res) => {
         renewalDate: subscription.renewalDate,
         lastPaymentDate: subscription.lastPaymentDate,
         autoRenew: subscription.autoRenew,
+        paymentMethod: subscription.paymentMethod,
+      },
+      wallet: {
+        balance: wallet.balance,
+        currency: wallet.currency,
       },
     });
   } catch (err) {
@@ -1143,12 +1177,45 @@ export const renewSubscription = async (req, res) => {
       return res.status(404).json({ error: "No subscription found" });
     }
 
-    const subscription = await Subscription.findByIdAndUpdate(
+    const subscription = await Subscription.findById(user.subscription);
+    if (!subscription) {
+      return res.status(404).json({ error: "No subscription found" });
+    }
+
+    const wallet = await ensureWallet(req.user.id);
+    const previousBalance = Number(wallet.balance || 0);
+    if (previousBalance < subscription.monthlyFee) {
+      return res.status(400).json({
+        error: "Insufficient BiggiHouse wallet balance to renew the subscription",
+        requiredAmount: subscription.monthlyFee,
+        currentBalance: previousBalance,
+      });
+    }
+
+    wallet.balance = previousBalance - subscription.monthlyFee;
+    wallet.lastUpdated = new Date();
+    wallet.transactions.unshift({
+      type: "subscription",
+      amount: subscription.monthlyFee,
+      status: "completed",
+      reference: `bh_sub_renew_${req.user.id}_${Date.now()}`,
+      meta: {
+        action: "subscription_renewal",
+        paymentMethod: "wallet",
+        previousBalance,
+        newBalance: wallet.balance,
+      },
+    });
+    wallet.transactions = wallet.transactions.slice(0, 100);
+    await wallet.save();
+
+    const updatedSubscription = await Subscription.findByIdAndUpdate(
       user.subscription,
       {
         isActive: true,
         renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         lastPaymentDate: new Date(),
+        paymentMethod: "wallet",
       },
       { new: true }
     );
@@ -1156,11 +1223,16 @@ export const renewSubscription = async (req, res) => {
     return res.json({
       message: "Subscription renewed successfully",
       subscription: {
-        id: subscription._id.toString(),
-        monthlyFee: subscription.monthlyFee,
-        isActive: subscription.isActive,
-        renewalDate: subscription.renewalDate,
-        lastPaymentDate: subscription.lastPaymentDate,
+        id: updatedSubscription._id.toString(),
+        monthlyFee: updatedSubscription.monthlyFee,
+        isActive: updatedSubscription.isActive,
+        renewalDate: updatedSubscription.renewalDate,
+        lastPaymentDate: updatedSubscription.lastPaymentDate,
+        paymentMethod: updatedSubscription.paymentMethod,
+      },
+      wallet: {
+        balance: wallet.balance,
+        currency: wallet.currency,
       },
     });
   } catch (err) {

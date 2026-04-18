@@ -4,7 +4,7 @@ const BiggiHouseWalletTransactionSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["deposit", "withdraw", "house_join"],
+      enum: ["deposit", "withdraw", "house_join", "subscription"],
       required: true,
     },
     amount: { type: Number, required: true, min: 0 },
