@@ -357,16 +357,14 @@ export const login = async (req, res) => {
       req.headers.origin,
       req.headers["x-client-app"]
     );
-    const allowedApps =
+    let allowedApps =
       Array.isArray(user.allowedApps) && user.allowedApps.length ? user.allowedApps : ["biggi_data"];
+    
+    // Auto-authorize cross-app access: if user logs in from a new app, add it to allowedApps
     if (requiredApp && !allowedApps.includes(requiredApp)) {
-      return res.status(403).json({
-        success: false,
-        error:
-          requiredApp === "biggi_data"
-            ? "This account is not permitted on Biggi Data."
-            : "This account is not permitted on Biggi House.",
-      });
+      allowedApps = [...allowedApps, requiredApp];
+      user.allowedApps = allowedApps;
+      await user.save();
     }
 
     // Generate tokens
