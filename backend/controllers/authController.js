@@ -91,11 +91,16 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const isVerificationDisabled = () =>
   ["1", "true", "yes"].includes(String(process.env.DISABLE_EMAIL_VERIFICATION || "").toLowerCase());
 
-const getRequiredAppFromOrigin = (origin = "") => {
+const getRequiredAppFromOrigin = (origin = "", clientHeader = "") => {
   const lower = String(origin || "").toLowerCase();
-  if (!lower) return null;
-  if (lower.includes("biggi-house.vercel.app")) return "biggi_house";
-  if (lower.includes("biggidata.com.ng") || lower.includes("biggi-data-frontend.vercel.app"))
+  const lowerHeader = String(clientHeader || "").toLowerCase();
+  if (!lower && !lowerHeader) return null;
+  if (lowerHeader.includes("biggi-house") || lower.includes("biggi-house.vercel.app")) return "biggi_house";
+  if (
+    lowerHeader.includes("biggi-data") ||
+    lower.includes("biggidata.com.ng") ||
+    lower.includes("biggi-data-frontend.vercel.app")
+  )
     return "biggi_data";
   return null;
 };
@@ -348,7 +353,10 @@ export const login = async (req, res) => {
       });
     }
 
-    const requiredApp = getRequiredAppFromOrigin(req.headers.origin);
+    const requiredApp = getRequiredAppFromOrigin(
+      req.headers.origin,
+      req.headers["x-client-app"]
+    );
     const allowedApps =
       Array.isArray(user.allowedApps) && user.allowedApps.length ? user.allowedApps : ["biggi_data"];
     if (requiredApp && !allowedApps.includes(requiredApp)) {
