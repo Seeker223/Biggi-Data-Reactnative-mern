@@ -5,6 +5,7 @@ import http from "http";
 import { generateDailyWinningNumbers } from "../controllers/dailyGameController.js";
 import { runMonthlyRaffleDrawIfDue, getPreviousMonthString } from "../controllers/monthlyGameController.js";
 import { runProfitSweep } from "./profitSweep.js";
+import { selectWeeklyWinners, processWeeklyPayouts } from "../controllers/biggiHouseController.js";
 
 /* ---------------------------------------------------------
    1. KEEP-ALIVE PING (Render - every 14 minutes)
@@ -137,6 +138,45 @@ const profitSweepJob = new CronJob(
   true,
   "Africa/Lagos"
 );
+
+/* ---------------------------------------------------------
+   5. BIGGI HOUSE WEEKLY WINNER SELECTION (Every Sunday at 00:10 AM Africa/Lagos)
+--------------------------------------------------------- */
+
+const biggiHouseWinnerSelectionJob = new CronJob(
+  "10 0 * * 0", // Every Sunday at 00:10 AM
+  async () => {
+    try {
+      console.log("[CRON] Biggi House weekly winner selection...");
+      await selectWeeklyWinners();
+    } catch (err) {
+      console.error("[CRON] Biggi House winner selection error:", err);
+    }
+  },
+  null,
+  true,
+  "Africa/Lagos"
+);
+
+/* ---------------------------------------------------------
+   6. BIGGI HOUSE WEEKLY PAYOUTS (Every Sunday at 00:15 AM Africa/Lagos)
+--------------------------------------------------------- */
+
+const biggiHousePayoutJob = new CronJob(
+  "15 0 * * 0", // Every Sunday at 00:15 AM
+  async () => {
+    try {
+      console.log("[CRON] Biggi House weekly payouts...");
+      await processWeeklyPayouts();
+    } catch (err) {
+      console.error("[CRON] Biggi House payouts error:", err);
+    }
+  },
+  null,
+  true,
+  "Africa/Lagos"
+);
+
 /* ---------------------------------------------------------
    3. AUTO-START CRONS (prevent double-start on hot reload)
 --------------------------------------------------------- */
@@ -145,6 +185,8 @@ if (!keepAliveJob.running) keepAliveJob.start();
 if (!dailyGameJob.running) dailyGameJob.start();
 if (!monthlyRaffleJob.running) monthlyRaffleJob.start();
 if (!profitSweepJob.running) profitSweepJob.start();
+if (!biggiHouseWinnerSelectionJob.running) biggiHouseWinnerSelectionJob.start();
+if (!biggiHousePayoutJob.running) biggiHousePayoutJob.start();
 
 console.log("â±ï¸ CRON SERVICE RUNNING...");
 

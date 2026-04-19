@@ -4,6 +4,7 @@ import Wallet from "../models/Wallet.js";
 import BiggiHouseWallet from "../models/BiggiHouseWallet.js";
 import BiggiHouseHouse from "../models/BiggiHouseHouse.js";
 import BiggiHouseMembership from "../models/BiggiHouseMembership.js";
+import BiggiHouseWinner from "../models/BiggiHouseWinner.js";
 import BiggiHouseVendorRequest from "../models/BiggiHouseVendorRequest.js";
 import Subscription from "../models/Subscription.js";
 import { ensureBiggiHouseSeed } from "../utils/biggiHouseSeed.js";
@@ -1221,5 +1222,223 @@ export const renewSubscription = async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Failed to renew subscription" });
+  }
+};
+
+// -------------------------
+// Winner Selection & Payout
+// -------------------------
+
+const getCurrentWeekRange = () => {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+  // If it's Sunday, use the current week. Otherwise, use the previous week.
+  const weekEnd = new Date(now);
+  if (dayOfWeek !== 0) {
+    weekEnd.setDate(now.getDate() - dayOfWeek); // Go back to last Sunday
+  }
+  weekEnd.setHours(23, 59, 59, 999); // End of Sunday
+
+  const weekStart = new Date(weekEnd);
+  weekStart.setDate(weekEnd.getDate() - 6); // Monday of the same week
+  weekStart.setHours(0, 0, 0, 0);
+
+  return { weekStart, weekEnd };
+};
+
+const shuffleArray = (array) => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+export const selectWeeklyWinners = async () => {
+  try {
+    const { weekStart, weekEnd } = getCurrentWeekRange();
+
+    // Check if winners have already been selected for this week
+    const existingWinners = await BiggiHouseWinner.findOne({ weekStart });
+    if (existingWinners) {
+      console.log(`Winners already selected for week ${weekStart.toISOString()} - ${weekEnd.toISOString()}`);
+      return;
+    }
+
+    // Get all active houses
+    const houses = await BiggiHouseHouse.find({ active: true });
+
+    for (const house of houses) {
+      // Get all members of this house
+      const memberships = await BiggiHouseMembership.find({ houseId: house._id });
+      if (memberships.length === 0) continue;
+
+      const memberIds = memberships.map(m => m.userId);
+
+      // If less than 10 members, select all of them
+      const numWinners = Math.min(10, memberIds.length);
+
+      // Shuffle and select winners
+      const shuffledMembers = shuffleArray(memberIds);
+      const selectedWinners = shuffledMembers.slice(0, numWinners);
+
+      // Calculate payout per winner (total pool divided equally)
+      const totalPool = memberships.length * house.minimum;
+      const payoutPerWinner = Math.floor(totalPool / numWinners);
+
+      // Create winner records
+      const winnerRecords = selectedWinners.map(userId => ({
+        houseId: house._id,
+        userId,
+        weekStart,
+        weekEnd,
+        amount: payoutPerWinner,
+        status: 'pending'
+      }));
+
+      await BiggiHouseWinner.insertMany(winnerRecords);
+
+      console.log(`Selected ${numWinners} winners for House ${house.number}, payout: ₦${payoutPerWinner} each`);
+    }
+
+    console.log(`Weekly winner selection completed for ${weekStart.toISOString()} - ${weekEnd.toISOString()}`);
+  } catch (error) {
+    console.error('Error selecting weekly winners:', error);
+  }
+};
+
+export const processWeeklyPayouts = async () => {
+  try {
+    const { weekStart } = getCurrentWeekRange();
+
+    // Get all pending winners for this week
+    const pendingWinners = await BiggiHouseWinner.find({
+      weekStart,
+      status: 'pending'
+    }).populate('userId houseId');
+
+    for (const winner of pendingWinners) {
+      try {
+        // Ensure winner has a wallet
+        const wallet = await ensureWallet(winner.userId._id);
+
+        // Add payout to wallet
+        const previousBalance = Number(wallet.balance || 0);
+        wallet.balance = previousBalance + winner.amount;
+        wallet.lastUpdated = new Date();
+
+        // Add transaction record
+        const transactionRef = `bh_payout_${winner._id}_${Date.now()}`;
+        wallet.transactions.unshift({
+          type: "deposit",
+          amount: winner.amount,
+          status: "completed",
+          reference: transactionRef,
+          meta: {
+            action: "weekly_payout",
+            houseId: winner.houseId._id,
+            houseNumber: winner.houseId.number,
+            weekStart: winner.weekStart,
+            weekEnd: winner.weekEnd,
+            previousBalance,
+            newBalance: wallet.balance,
+          },
+        });
+        wallet.transactions = wallet.transactions.slice(0, 100);
+        await wallet.save();
+
+        // Mark winner as paid
+        winner.status = 'paid';
+        winner.paidAt = new Date();
+        winner.transactionRef = transactionRef;
+        await winner.save();
+
+        console.log(`Paid ₦${winner.amount} to user ${winner.userId.username || winner.userId.email} for House ${winner.houseId.number}`);
+      } catch (walletError) {
+        console.error(`Error processing payout for winner ${winner._id}:`, walletError);
+      }
+    }
+
+    console.log(`Weekly payouts processed for ${pendingWinners.length} winners`);
+  } catch (error) {
+    console.error('Error processing weekly payouts:', error);
+  }
+};
+
+// Admin endpoint to get winner records
+export const adminGetWinners = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (req.query.houseId) query.houseId = req.query.houseId;
+    if (req.query.status) query.status = req.query.status;
+    if (req.query.weekStart) query.weekStart = new Date(req.query.weekStart);
+
+    const winners = await BiggiHouseWinner.find(query)
+      .populate('userId', 'username email phoneNumber')
+      .populate('houseId', 'number minimum')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await BiggiHouseWinner.countDocuments(query);
+
+    res.json({
+      success: true,
+      winners: winners.map(w => ({
+        id: String(w._id),
+        house: {
+          id: String(w.houseId._id),
+          number: w.houseId.number,
+          minimum: w.houseId.minimum,
+        },
+        user: {
+          id: String(w.userId._id),
+          username: w.userId.username,
+          email: w.userId.email,
+          phoneNumber: w.userId.phoneNumber,
+        },
+        weekStart: w.weekStart,
+        weekEnd: w.weekEnd,
+        amount: w.amount,
+        status: w.status,
+        paidAt: w.paidAt,
+        transactionRef: w.transactionRef,
+        createdAt: w.createdAt,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Admin endpoint to manually trigger winner selection
+export const adminTriggerWinnerSelection = async (req, res) => {
+  try {
+    await selectWeeklyWinners();
+    res.json({ success: true, message: 'Winner selection completed' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Admin endpoint to manually trigger payouts
+export const adminTriggerPayouts = async (req, res) => {
+  try {
+    await processWeeklyPayouts();
+    res.json({ success: true, message: 'Payouts processed' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };

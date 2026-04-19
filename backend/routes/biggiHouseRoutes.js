@@ -4,11 +4,14 @@ import {
   adminCreateHouse,
   adminDeleteHouse,
   adminDeleteMembership,
+  adminGetWinners,
   adminListHouses,
   adminListMemberships,
   adminListUsers,
   adminListVendorRequests,
   adminOverview,
+  adminTriggerPayouts,
+  adminTriggerWinnerSelection,
   adminUpdateHouse,
   adminUpdateUser,
   adminUpdateVendorRequest,
@@ -69,5 +72,9 @@ router.patch(
   authorize("admin"),
   adminUpdateVendorRequest
 );
+
+router.get("/admin/winners", protect, authorize("admin"), adminGetWinners);
+router.post("/admin/winners/select", protect, authorize("admin"), adminTriggerWinnerSelection);
+router.post("/admin/winners/payout", protect, authorize("admin"), adminTriggerPayouts);
 
 export default router;
