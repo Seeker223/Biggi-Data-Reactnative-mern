@@ -47,7 +47,7 @@ const isStaticVirtualAccountEnabled = () =>
     String(process.env.ENABLE_STATIC_VIRTUAL_ACCOUNTS || "").toLowerCase()
   );
 
-const getWeeklyDataPurchaseStatsByPhone = async (phoneNumber) => {
+const getWeeklyBiggiHouseDataPurchaseStatsByPhone = async (phoneNumber) => {
   const windowStart = getWeeklyWindowStart();
 
   const rows = await Wallet.aggregate([
@@ -60,6 +60,7 @@ const getWeeklyDataPurchaseStatsByPhone = async (phoneNumber) => {
         "transactions.date": { $gte: windowStart },
         "transactions.meta.action": "data_purchase",
         "transactions.meta.mobile_no": phoneNumber,
+        "transactions.meta.app": "biggi_house", // Only count Biggi House purchases
       },
     },
     {
@@ -528,27 +529,6 @@ export const joinBiggiHouse = async (req, res) => {
     return res.status(404).json({ success: false, error: "House not found" });
   }
 
-  // Check subscription status
-  const user = await User.findById(req.user.id).populate("subscription").select("phoneNumber subscription");
-  const subscription = user?.subscription;
-
-  if (!subscription || !subscription.isActive) {
-    return res.status(403).json({
-      success: false,
-      error: "You must have an active monthly subscription to join a house",
-      errorCode: "NO_ACTIVE_SUBSCRIPTION",
-    });
-  }
-
-  // Check if subscription is still valid
-  if (new Date(subscription.renewalDate) < new Date()) {
-    return res.status(403).json({
-      success: false,
-      error: "Your subscription has expired. Please renew to continue.",
-      errorCode: "SUBSCRIPTION_EXPIRED",
-    });
-  }
-
   const phoneNumber = normalizePhone(user?.phoneNumber);
   if (!phoneNumber) {
     return res.status(403).json({
@@ -558,12 +538,13 @@ export const joinBiggiHouse = async (req, res) => {
     });
   }
 
-  const stats = await getWeeklyDataPurchaseStatsByPhone(phoneNumber);
+  // Check Biggi House data purchase eligibility instead of subscription
+  const stats = await getWeeklyBiggiHouseDataPurchaseStatsByPhone(phoneNumber);
   const requiredPurchases = Math.max(1, Number(house.number || 1));
   if (stats.count < requiredPurchases) {
     return res.status(403).json({
       success: false,
-      error: `You must buy data at least ${requiredPurchases} time(s) this week before joining House ${house.number}.`,
+      error: `You must buy data at least ${requiredPurchases} time(s) this week through Biggi House before joining House ${house.number}.`,
       errorCode: "INSUFFICIENT_WEEKLY_PURCHASES",
       requiredPurchases,
       purchasesThisWeek: stats.count,
