@@ -134,6 +134,7 @@ const allowedOrigins = [
   "exp://192.168.*.*:8081",
   "https://biggi-data-frontend.vercel.app",
   "https://biggidata.com.ng",
+  "https://biggihouse.biggidata.com.ng",
   "https://www.biggidata.com.ng",
   "https://biggi-house.vercel.app"
 ];
