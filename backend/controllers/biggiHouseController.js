@@ -535,6 +535,11 @@ export const joinBiggiHouse = async (req, res) => {
     return res.status(404).json({ success: false, error: "House not found" });
   }
 
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, error: "User not found" });
+  }
+
   const phoneNumber = normalizePhone(user?.phoneNumber);
   if (!phoneNumber) {
     return res.status(403).json({

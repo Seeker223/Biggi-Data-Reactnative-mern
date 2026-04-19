@@ -31,3 +31,21 @@
 [2026-04-04T00:38:22.490Z] RESEND_ERROR: ❌ Resend email error for baduntobi2024@gmail.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
 [2026-04-04T00:38:22.494Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
     at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-19T06:13:18.462Z] RESEND_ERROR: ❌ Resend email error for copilot_test_1776579197349@example.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-19T06:13:18.475Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-19T06:13:18.826Z] RESEND_ERROR: ❌ Resend email error for copilot_test_1776579197349@example.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-19T06:13:18.842Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-19T06:25:04.692Z] RESEND_ERROR: ❌ Resend email error for testuser_1776579903759@example.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-19T06:25:04.694Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-19T06:25:05.015Z] RESEND_ERROR: ❌ Resend email error for testuser_1776579903759@example.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-19T06:25:05.017Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-19T06:26:55.782Z] RESEND_ERROR: ❌ Resend email error for testuser_1776580014654@example.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-19T06:26:55.783Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
+[2026-04-19T06:27:14.127Z] RESEND_ERROR: ❌ Resend email error for testuser_1776580033130@example.com: getaddrinfo ENOTFOUND smtp.promailer.xyz
+[2026-04-19T06:27:14.160Z] Stack: Error: getaddrinfo ENOTFOUND smtp.promailer.xyz
+    at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26)
