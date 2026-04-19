@@ -80,6 +80,20 @@ const getWeeklyBiggiHouseDataPurchaseStatsByPhone = async (phoneNumber) => {
   };
 };
 
+const formatBiggiHouse = (house, memberCount = 0) => {
+  const members = Number(memberCount || 0);
+  const minimum = Number(house.minimum || 0);
+  return {
+    id: String(house._id),
+    number: house.number,
+    minimum,
+    members,
+    maxUsers: null,
+    totalPool: members * minimum,
+    status: members > 0 ? "In Progress" : "Open",
+  };
+};
+
 export const getBiggiHouseHouses = async (req, res) => {
   await ensureBiggiHouseSeed();
   const houses = await BiggiHouseHouse.find({ active: true }).sort({ number: 1 });
@@ -91,15 +105,7 @@ export const getBiggiHouseHouses = async (req, res) => {
 
   res.json({
     success: true,
-    houses: houses.map((house) => ({
-      id: String(house._id),
-      number: house.number,
-      minimum: house.minimum,
-      members: Number(countMap.get(String(house._id)) || 0),
-      maxUsers: null,
-      totalPool: house.minimum * 10,
-      status: "Open",
-    })),
+    houses: houses.map((house) => formatBiggiHouse(house, countMap.get(String(house._id)) || 0)),
   });
 };
 
@@ -592,15 +598,7 @@ export const joinBiggiHouse = async (req, res) => {
 
   res.json({
     success: true,
-    house: {
-      id: String(house._id),
-      number: house.number,
-      minimum: house.minimum,
-      members: memberCount,
-      maxUsers: null,
-      totalPool: house.minimum * 10,
-      status: "In Progress",
-    },
+    house: formatBiggiHouse(house, memberCount),
     wallet: { balance: wallet.balance, currency: wallet.currency },
   });
 };
