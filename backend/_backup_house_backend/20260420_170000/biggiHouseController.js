@@ -550,26 +550,17 @@ export const joinBiggiHouse = async (req, res) => {
     });
   }
 
-  // Joining a house requires an active BiggiHouse subscription.
-  // (Weekly data purchase eligibility was removed.)
-  if (!user.subscription) {
+  // Check Biggi House data purchase eligibility instead of subscription
+  const stats = await getWeeklyBiggiHouseDataPurchaseStatsByPhone(phoneNumber);
+  const requiredPurchases = Math.max(1, Number(house.number || 1));
+  if (stats.count < requiredPurchases) {
     return res.status(403).json({
       success: false,
-      error: "Active subscription required to join a house.",
-      errorCode: "SUBSCRIPTION_REQUIRED",
-    });
-  }
-
-  const subscription = await Subscription.findById(user.subscription);
-  const subscriptionActive =
-    Boolean(subscription?.isActive) &&
-    subscription?.renewalDate &&
-    new Date(subscription.renewalDate) > new Date();
-  if (!subscriptionActive) {
-    return res.status(403).json({
-      success: false,
-      error: "Active subscription required to join a house.",
-      errorCode: "SUBSCRIPTION_REQUIRED",
+      error: `You must buy data at least ${requiredPurchases} time(s) this week through Biggi House before joining House ${house.number}.`,
+      errorCode: "INSUFFICIENT_WEEKLY_PURCHASES",
+      requiredPurchases,
+      purchasesThisWeek: stats.count,
+      phoneNumber,
     });
   }
 
@@ -1055,22 +1046,22 @@ export const subscribe = async (req, res) => {
       }
     }
 
-    const WEEKLY_FEE = 50;
+    const MONTHLY_FEE = 100;
     const wallet = await ensureWallet(req.user.id);
     const previousBalance = Number(wallet.balance || 0);
-    if (previousBalance < WEEKLY_FEE) {
+    if (previousBalance < MONTHLY_FEE) {
       return res.status(400).json({
         error: "Insufficient BiggiHouse wallet balance to pay the subscription fee",
-        requiredAmount: WEEKLY_FEE,
+        requiredAmount: MONTHLY_FEE,
         currentBalance: previousBalance,
       });
     }
 
-    wallet.balance = previousBalance - WEEKLY_FEE;
+    wallet.balance = previousBalance - MONTHLY_FEE;
     wallet.lastUpdated = new Date();
     wallet.transactions.unshift({
       type: "subscription",
-      amount: WEEKLY_FEE,
+      amount: MONTHLY_FEE,
       status: "completed",
       reference: `bh_sub_${req.user.id}_${Date.now()}`,
       meta: {
@@ -1088,10 +1079,10 @@ export const subscribe = async (req, res) => {
       subscription = await Subscription.findByIdAndUpdate(
         user.subscription,
         {
-          monthlyFee: WEEKLY_FEE,
+          monthlyFee: MONTHLY_FEE,
           isActive: true,
           startDate: new Date(),
-          renewalDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
           lastPaymentDate: new Date(),
           autoRenew: req.body.autoRenew !== false,
           paymentMethod: "wallet",
@@ -1101,10 +1092,10 @@ export const subscribe = async (req, res) => {
     } else {
       subscription = await Subscription.create({
         user: user._id,
-        monthlyFee: WEEKLY_FEE,
+        monthlyFee: MONTHLY_FEE,
         isActive: true,
         startDate: new Date(),
-        renewalDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         lastPaymentDate: new Date(),
         autoRenew: req.body.autoRenew !== false,
         paymentMethod: "wallet",
@@ -1207,7 +1198,7 @@ export const renewSubscription = async (req, res) => {
       user.subscription,
       {
         isActive: true,
-        renewalDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         lastPaymentDate: new Date(),
         paymentMethod: "wallet",
       },
