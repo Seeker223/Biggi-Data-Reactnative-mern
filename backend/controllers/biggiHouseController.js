@@ -1,16 +1,36 @@
-import axios from "axios";
+﻿import axios from "axios";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BiggiHouseWallet from "../models/BiggiHouseWallet.js";
 import BiggiHouseHouse from "../models/BiggiHouseHouse.js";
 import BiggiHouseMembership from "../models/BiggiHouseMembership.js";
 import BiggiHouseWinner from "../models/BiggiHouseWinner.js";
-import BiggiHouseVendorRequest from "../models/BiggiHouseVendorRequest.js";
+import BiggiHouseConfig from "../models/BiggiHouseConfig.js";
+import BiggiHouseMonthlyCardPlay from "../models/BiggiHouseMonthlyCardPlay.js";
 import Subscription from "../models/Subscription.js";
 import { ensureBiggiHouseSeed } from "../utils/biggiHouseSeed.js";
 import { computeDepositFee } from "../utils/depositFee.js";
 
 const txStatusAllowed = ["success", "success_price_mismatch", "simulated"];
+
+const BIGGI_HOUSE_DEFAULT_CONFIG = {
+  weeklyPayout: { dayOfWeek: 0, hour: 22, minute: 0 }, // Sunday 10pm
+  features: { monthlyCardGameEnabled: false },
+  game: { requireDataPurchase: true },
+};
+
+const ensureBiggiHouseConfig = async () => {
+  const existing = await BiggiHouseConfig.findOne({ singleton: true });
+  if (existing) return existing;
+  return BiggiHouseConfig.create({ singleton: true, ...BIGGI_HOUSE_DEFAULT_CONFIG });
+};
+
+const toConfigDTO = (cfg) => ({
+  weeklyPayout: cfg.weeklyPayout || BIGGI_HOUSE_DEFAULT_CONFIG.weeklyPayout,
+  features: cfg.features || BIGGI_HOUSE_DEFAULT_CONFIG.features,
+  game: cfg.game || BIGGI_HOUSE_DEFAULT_CONFIG.game,
+  updatedAt: cfg.updatedAt,
+});
 
 const getWeeklyWindowStart = () => {
   const now = new Date();
@@ -58,7 +78,6 @@ const getWeeklyBiggiHouseDataPurchaseStatsByPhone = async (phoneNumber) => {
       $match: {
         "transactions.type": "purchase",
         "transactions.status": { $in: txStatusAllowed },
-        "transactions.date": { $gte: windowStart },
         "transactions.meta.action": "data_purchase",
         "transactions.meta.mobile_no": phoneNumber,
         "transactions.meta.app": "biggi_house", // Only count Biggi House purchases
@@ -93,6 +112,130 @@ const formatBiggiHouse = (house, memberCount = 0) => {
     totalPool: members * minimum,
     status: members > 0 ? "In Progress" : "Open",
   };
+};
+
+export const getBiggiHouseConfig = async (_req, res) => {
+  const cfg = await ensureBiggiHouseConfig();
+  res.json({ success: true, config: toConfigDTO(cfg) });
+};
+
+export const adminUpdateBiggiHouseConfig = async (req, res) => {
+  const cfg = await ensureBiggiHouseConfig();
+
+  const nextWeeklyPayout = req.body?.weeklyPayout;
+  if (nextWeeklyPayout && typeof nextWeeklyPayout === "object") {
+    const dayOfWeek = Number(nextWeeklyPayout.dayOfWeek);
+    const hour = Number(nextWeeklyPayout.hour);
+    const minute = Number(nextWeeklyPayout.minute);
+    cfg.weeklyPayout = {
+      dayOfWeek: Number.isFinite(dayOfWeek) ? Math.max(0, Math.min(6, Math.trunc(dayOfWeek))) : 0,
+      hour: Number.isFinite(hour) ? Math.max(0, Math.min(23, Math.trunc(hour))) : 22,
+      minute: Number.isFinite(minute) ? Math.max(0, Math.min(59, Math.trunc(minute))) : 0,
+    };
+  }
+
+  const nextFeatures = req.body?.features;
+  if (nextFeatures && typeof nextFeatures === "object") {
+    if (typeof nextFeatures.monthlyCardGameEnabled === "boolean") {
+      cfg.features = {
+        ...(cfg.features || {}),
+        monthlyCardGameEnabled: nextFeatures.monthlyCardGameEnabled,
+      };
+    }
+  }
+
+  const nextGame = req.body?.game;
+  if (nextGame && typeof nextGame === "object") {
+    if (typeof nextGame.requireDataPurchase === "boolean") {
+      cfg.game = {
+        ...(cfg.game || {}),
+        requireDataPurchase: nextGame.requireDataPurchase,
+      };
+    }
+  }
+
+  await cfg.save();
+  res.json({ success: true, config: toConfigDTO(cfg) });
+};
+
+const normalizeLetters = (letters) => {
+  if (!Array.isArray(letters)) return null;
+  const clean = letters
+    .map((l) => String(l || "").trim().toUpperCase())
+    .filter(Boolean)
+    .slice(0, 5);
+  if (clean.length !== 5) return null;
+  const unique = Array.from(new Set(clean));
+  if (unique.length !== 5) return null;
+  const ok = unique.every((l) => /^[A-Z]$/.test(l));
+  if (!ok) return null;
+  return unique;
+};
+
+export const playBiggiHouseMonthlyCardGame = async (req, res) => {
+  const cfg = await ensureBiggiHouseConfig();
+  if (!cfg?.features?.monthlyCardGameEnabled) {
+    return res.status(403).json({
+      success: false,
+      error: "Game is currently disabled.",
+      errorCode: "GAME_DISABLED",
+    });
+  }
+
+  const letters = normalizeLetters(req.body?.letters);
+  if (!letters) {
+    return res.status(400).json({
+      success: false,
+      error: "Pick exactly 5 unique letters (A-Z).",
+      errorCode: "INVALID_PICKS",
+    });
+  }
+
+  if (cfg?.game?.requireDataPurchase) {
+    const me = await User.findById(req.user.id).select("phoneNumber");
+    const phoneNumber = normalizePhone(me?.phoneNumber);
+    if (!phoneNumber) {
+      return res.status(403).json({
+        success: false,
+        error: "Phone number is required to validate data purchases.",
+        errorCode: "MISSING_PHONE_NUMBER",
+      });
+    }
+
+    const stats = await getWeeklyBiggiHouseDataPurchaseStatsByPhone(phoneNumber);
+    if (Number(stats.count || 0) < 1) {
+      return res.status(403).json({
+        success: false,
+        error: "You must purchase at least 1 data bundle before you can play this game.",
+        errorCode: "DATA_PURCHASE_REQUIRED",
+      });
+    }
+  }
+
+  const play = await BiggiHouseMonthlyCardPlay.create({
+    userId: req.user.id,
+    letters,
+  });
+
+  res.json({
+    success: true,
+    play: { id: String(play._id), letters: play.letters, createdAt: play.createdAt },
+  });
+};
+
+export const getBiggiHouseMonthlyCardHistory = async (req, res) => {
+  const plays = await BiggiHouseMonthlyCardPlay.find({ userId: req.user.id })
+    .sort({ createdAt: -1 })
+    .limit(30);
+
+  res.json({
+    success: true,
+    plays: plays.map((p) => ({
+      id: String(p._id),
+      letters: p.letters || [],
+      createdAt: p.createdAt,
+    })),
+  });
 };
 
 export const getBiggiHouseHouses = async (req, res) => {
@@ -426,83 +569,6 @@ export const withdrawBiggiHouseWallet = async (req, res) => {
   res.json({ success: true, balance: wallet.balance });
 };
 
-export const getBiggiHouseVendors = async (req, res) => {
-  const vendors = await User.find({ userRole: "merchant" })
-    .select("_id username phoneNumber isVerified photo")
-    .sort({ username: 1 });
-
-  res.json({
-    success: true,
-    vendors: vendors.map((vendor) => ({
-      id: String(vendor._id),
-      username: vendor.username,
-      phoneNumber: vendor.phoneNumber,
-      isVerified: Boolean(vendor.isVerified),
-      photo: vendor.photo || null,
-    })),
-  });
-};
-
-export const createBiggiHouseVendorRequest = async (req, res) => {
-  const vendorUserId = String(req.body?.vendorUserId || "").trim();
-  const phoneNumber = normalizePhone(req.body?.phoneNumber);
-  const network = String(req.body?.network || "").trim() || null;
-  const planId = String(req.body?.planId || "").trim() || null;
-  const note = String(req.body?.note || "").trim();
-
-  if (!vendorUserId || !phoneNumber) {
-    return res.status(400).json({
-      success: false,
-      error: "vendorUserId and phoneNumber are required",
-    });
-  }
-
-  const vendor = await User.findById(vendorUserId).select("_id userRole username");
-  if (!vendor || String(vendor.userRole || "").toLowerCase() !== "merchant") {
-    return res.status(400).json({ success: false, error: "Selected vendor is not a merchant" });
-  }
-
-  const request = await BiggiHouseVendorRequest.create({
-    requesterUserId: req.user.id,
-    vendorUserId,
-    phoneNumber,
-    network,
-    planId,
-    note,
-    status: "pending",
-  });
-
-  try {
-    const vendorUser = await User.findById(vendorUserId);
-    if (vendorUser) {
-      vendorUser.addNotification({
-        type: "BiggiHouse Data Request",
-        status: "info",
-        message: `A BiggiHouse user requested a data purchase for ${phoneNumber}.`,
-      });
-      await vendorUser.save({ validateBeforeSave: false });
-    }
-  } catch {
-    // Best-effort notification.
-  }
-
-  res.status(201).json({ success: true, request });
-};
-
-export const getMerchantBiggiHouseRequests = async (req, res) => {
-  const me = await User.findById(req.user.id).select("userRole");
-  const role = String(me?.userRole || "").toLowerCase();
-  if (role !== "merchant") {
-    return res.status(403).json({ success: false, error: "Merchant access required" });
-  }
-
-  const requests = await BiggiHouseVendorRequest.find({ vendorUserId: req.user.id })
-    .sort({ createdAt: -1 })
-    .limit(50);
-
-  res.json({ success: true, requests });
-};
-
 export const getBiggiHouseEligibility = async (req, res) => {
   const me = await User.findById(req.user.id).select("phoneNumber");
   const phoneNumber = normalizePhone(me?.phoneNumber);
@@ -514,7 +580,7 @@ export const getBiggiHouseEligibility = async (req, res) => {
     });
   }
 
-  const stats = await getWeeklyDataPurchaseStatsByPhone(phoneNumber);
+  const stats = await getWeeklyBiggiHouseDataPurchaseStatsByPhone(phoneNumber);
 
   res.json({
     success: true,
@@ -636,13 +702,11 @@ export const adminOverview = async (req, res) => {
     User.countDocuments({ allowedApps: "biggi_house", userRole: "merchant" }),
   ]);
 
-  const [totalHouses, activeHouses, totalMemberships, pendingVendorRequests] =
-    await Promise.all([
-      BiggiHouseHouse.countDocuments({}),
-      BiggiHouseHouse.countDocuments({ active: true }),
-      BiggiHouseMembership.countDocuments({}),
-      BiggiHouseVendorRequest.countDocuments({ status: "pending" }),
-    ]);
+  const [totalHouses, activeHouses, totalMemberships] = await Promise.all([
+    BiggiHouseHouse.countDocuments({}),
+    BiggiHouseHouse.countDocuments({ active: true }),
+    BiggiHouseMembership.countDocuments({}),
+  ]);
 
   const totalWalletBalanceAgg = await BiggiHouseWallet.aggregate([
     { $group: { _id: null, total: { $sum: "$balance" } } },
@@ -662,7 +726,6 @@ export const adminOverview = async (req, res) => {
         active: activeHouses,
         memberships: totalMemberships,
       },
-      vendorRequests: { pending: pendingVendorRequests },
       wallet: { totalBalance: totalWalletBalance, currency: "NGN" },
     },
   });
@@ -686,7 +749,7 @@ export const adminListUsers = async (req, res) => {
   const [rows, total] = await Promise.all([
     User.find(query)
       .select(
-        "_id username email phoneNumber role userRole isVerified allowedApps createdAt updatedAt"
+        "_id username email phoneNumber role userRole isVerified allowedApps subscription createdAt updatedAt"
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -694,12 +757,49 @@ export const adminListUsers = async (req, res) => {
     User.countDocuments(query),
   ]);
 
+  const userIds = rows.map((u) => u._id);
+
+  const wallets = await BiggiHouseWallet.find({ userId: { $in: userIds } }).select(
+    "userId balance currency"
+  );
+  const walletMap = new Map(wallets.map((w) => [String(w.userId), w]));
+
+  const subscriptionIds = rows
+    .map((u) => u.subscription)
+    .filter(Boolean)
+    .map((id) => String(id));
+  const subscriptions = subscriptionIds.length
+    ? await Subscription.find({ _id: { $in: subscriptionIds } }).select(
+        "_id isActive startDate renewalDate autoRenew"
+      )
+    : [];
+  const subscriptionMap = new Map(subscriptions.map((s) => [String(s._id), s]));
+  const now = new Date();
+
   res.json({
     success: true,
     page,
     limit,
     total,
     users: rows.map((u) => ({
+      ...(() => {
+        const wallet = walletMap.get(String(u._id));
+        const sub = u.subscription ? subscriptionMap.get(String(u.subscription)) : null;
+        const active = Boolean(sub?.isActive) && sub?.renewalDate && new Date(sub.renewalDate) > now;
+        return {
+          walletBalance: Number(wallet?.balance || 0),
+          walletCurrency: wallet?.currency || "NGN",
+          subscription: sub
+            ? {
+                id: String(sub._id),
+                active,
+                startDate: sub.startDate || null,
+                renewalDate: sub.renewalDate || null,
+                autoRenew: Boolean(sub.autoRenew),
+              }
+            : { active: false },
+        };
+      })(),
       id: String(u._id),
       username: u.username,
       email: u.email,
@@ -755,6 +855,43 @@ export const adminUpdateUser = async (req, res) => {
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     },
+  });
+};
+
+export const adminAdjustBiggiHouseUserWallet = async (req, res) => {
+  const userId = String(req.params.id || "").trim();
+  const amount = Number(req.body?.amount || 0);
+  if (!userId) return res.status(400).json({ success: false, error: "Invalid user id" });
+  if (!Number.isFinite(amount) || amount === 0) {
+    return res.status(400).json({ success: false, error: "amount is required" });
+  }
+
+  const wallet = await ensureWallet(userId);
+  const previousBalance = Number(wallet.balance || 0);
+  const nextBalance = previousBalance + amount;
+  if (nextBalance < 0) {
+    return res.status(400).json({ success: false, error: "Insufficient balance" });
+  }
+
+  wallet.balance = nextBalance;
+  wallet.lastUpdated = new Date();
+  wallet.transactions.unshift({
+    type: "admin_adjust",
+    amount,
+    status: "completed",
+    reference: `bh_admin_adj_${Date.now()}`,
+    meta: {
+      previousBalance,
+      newBalance: wallet.balance,
+      adminUserId: req.user?.id || req.user?._id,
+    },
+  });
+  wallet.transactions = (wallet.transactions || []).slice(0, 100);
+  await wallet.save();
+
+  res.json({
+    success: true,
+    wallet: { balance: wallet.balance, currency: wallet.currency, lastUpdated: wallet.lastUpdated },
   });
 };
 
@@ -924,77 +1061,6 @@ export const adminDeleteMembership = async (req, res) => {
   const deleted = await BiggiHouseMembership.findByIdAndDelete(membershipId);
   if (!deleted) return res.status(404).json({ success: false, error: "Membership not found" });
   return res.json({ success: true, message: "Membership removed" });
-};
-
-export const adminListVendorRequests = async (req, res) => {
-  const status = String(req.query.status || "").trim();
-  const page = Math.max(1, asInt(req.query.page, 1));
-  const limit = Math.min(50, Math.max(5, asInt(req.query.limit, 20)));
-  const skip = (page - 1) * limit;
-
-  const query = {};
-  if (status) query.status = status;
-
-  const [rows, total] = await Promise.all([
-    BiggiHouseVendorRequest.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
-    BiggiHouseVendorRequest.countDocuments(query),
-  ]);
-
-  const userIds = [
-    ...new Set(
-      rows
-        .flatMap((r) => [r.requesterUserId, r.vendorUserId])
-        .filter(Boolean)
-        .map((id) => String(id))
-    ),
-  ];
-  const users = await User.find({ _id: { $in: userIds } }).select("_id username email phoneNumber");
-  const userMap = new Map(users.map((u) => [String(u._id), u]));
-
-  res.json({
-    success: true,
-    page,
-    limit,
-    total,
-    requests: rows.map((r) => ({
-      id: String(r._id),
-      phoneNumber: r.phoneNumber,
-      network: r.network,
-      planId: r.planId,
-      note: r.note,
-      status: r.status,
-      createdAt: r.createdAt,
-      requester: (() => {
-        const u = userMap.get(String(r.requesterUserId));
-        return u
-          ? { id: String(u._id), username: u.username, email: u.email, phoneNumber: u.phoneNumber || "" }
-          : { id: String(r.requesterUserId) };
-      })(),
-      vendor: (() => {
-        const u = userMap.get(String(r.vendorUserId));
-        return u
-          ? { id: String(u._id), username: u.username, email: u.email, phoneNumber: u.phoneNumber || "" }
-          : { id: String(r.vendorUserId) };
-      })(),
-    })),
-  });
-};
-
-export const adminUpdateVendorRequest = async (req, res) => {
-  const requestId = String(req.params.id || "").trim();
-  const nextStatus = String(req.body?.status || "").trim().toLowerCase();
-  const allowed = ["pending", "accepted", "rejected", "completed", "cancelled"];
-  if (!allowed.includes(nextStatus)) {
-    return res.status(400).json({ success: false, error: "Invalid status" });
-  }
-
-  const updated = await BiggiHouseVendorRequest.findByIdAndUpdate(
-    requestId,
-    { $set: { status: nextStatus } },
-    { new: true }
-  );
-  if (!updated) return res.status(404).json({ success: false, error: "Request not found" });
-  return res.json({ success: true, request: updated });
 };
 
 // -------------------------
@@ -1309,7 +1375,7 @@ export const selectWeeklyWinners = async () => {
 
       await BiggiHouseWinner.insertMany(winnerRecords);
 
-      console.log(`Selected ${numWinners} winners for House ${house.number}, payout: ₦${payoutPerWinner} each`);
+      console.log(`Selected ${numWinners} winners for House ${house.number}, payout: â‚¦${payoutPerWinner} each`);
     }
 
     console.log(`Weekly winner selection completed for ${weekStart.toISOString()} - ${weekEnd.toISOString()}`);
@@ -1364,7 +1430,7 @@ export const processWeeklyPayouts = async () => {
         winner.transactionRef = transactionRef;
         await winner.save();
 
-        console.log(`Paid ₦${winner.amount} to user ${winner.userId.username || winner.userId.email} for House ${winner.houseId.number}`);
+        console.log(`Paid â‚¦${winner.amount} to user ${winner.userId.username || winner.userId.email} for House ${winner.houseId.number}`);
       } catch (walletError) {
         console.error(`Error processing payout for winner ${winner._id}:`, walletError);
       }
@@ -1451,3 +1517,4 @@ export const adminTriggerPayouts = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
