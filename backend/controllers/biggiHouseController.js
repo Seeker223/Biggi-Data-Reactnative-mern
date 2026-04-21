@@ -264,11 +264,33 @@ export const getBiggiHouseWeeklyCard = async (_req, res) => {
   });
 };
 
-export const playBiggiHouseWeeklyCardGame = async (req, res) => {
-  const { cfg, card } = await ensureWeeklyCardState();
-  const enabled =
+export const getBiggiHouseWeeklyCardAccess = async (req, res) => {
+  const cfg = await ensureBiggiHouseConfig();
+  const globalEnabled =
     Boolean(cfg?.features?.weeklyCardGameEnabled) ||
     Boolean(cfg?.features?.monthlyCardGameEnabled);
+
+  const me = await User.findById(req.user.id).select("biggiHouseAccess");
+  const userEnabled = Boolean(me?.biggiHouseAccess?.weeklyCardGameEnabled);
+
+  res.json({
+    success: true,
+    access: {
+      globalEnabled,
+      userEnabled,
+      enabled: globalEnabled || userEnabled,
+    },
+  });
+};
+
+export const playBiggiHouseWeeklyCardGame = async (req, res) => {
+  const { cfg, card } = await ensureWeeklyCardState();
+  const globalEnabled =
+    Boolean(cfg?.features?.weeklyCardGameEnabled) ||
+    Boolean(cfg?.features?.monthlyCardGameEnabled);
+  const me = await User.findById(req.user.id).select("biggiHouseAccess");
+  const userEnabled = Boolean(me?.biggiHouseAccess?.weeklyCardGameEnabled);
+  const enabled = globalEnabled || userEnabled;
   if (!enabled) {
     return res.status(403).json({
       success: false,
@@ -877,7 +899,7 @@ export const adminListUsers = async (req, res) => {
   const [rows, total] = await Promise.all([
     User.find(query)
       .select(
-        "_id username email phoneNumber role userRole isVerified allowedApps subscription createdAt updatedAt"
+        "_id username email phoneNumber role userRole isVerified allowedApps subscription biggiHouseAccess createdAt updatedAt"
       )
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -935,6 +957,7 @@ export const adminListUsers = async (req, res) => {
       role: u.role,
       userRole: u.userRole,
       isVerified: Boolean(u.isVerified),
+      weeklyCardGameEnabled: Boolean(u?.biggiHouseAccess?.weeklyCardGameEnabled),
       allowedApps: u.allowedApps || [],
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
@@ -963,9 +986,12 @@ export const adminUpdateUser = async (req, res) => {
     // Keep BiggiHouse access unless admin explicitly removes it.
     patch.allowedApps = next;
   }
+  if (typeof req.body?.weeklyCardGameEnabled === "boolean") {
+    patch["biggiHouseAccess.weeklyCardGameEnabled"] = req.body.weeklyCardGameEnabled;
+  }
 
   const updated = await User.findByIdAndUpdate(userId, { $set: patch }, { new: true }).select(
-    "_id username email phoneNumber role userRole isVerified allowedApps createdAt updatedAt"
+    "_id username email phoneNumber role userRole isVerified allowedApps biggiHouseAccess createdAt updatedAt"
   );
   if (!updated) return res.status(404).json({ success: false, error: "User not found" });
 
@@ -979,6 +1005,7 @@ export const adminUpdateUser = async (req, res) => {
       role: updated.role,
       userRole: updated.userRole,
       isVerified: Boolean(updated.isVerified),
+      weeklyCardGameEnabled: Boolean(updated?.biggiHouseAccess?.weeklyCardGameEnabled),
       allowedApps: updated.allowedApps || [],
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,

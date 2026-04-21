@@ -1,4 +1,4 @@
-// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
+﻿// backend/models/User.js - UPDATED WITHOUT OTP FIELDS
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -256,6 +256,12 @@ const UserSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
       meta: { type: Object, default: {} },
     },
+
+    // BiggiHouse per-user feature access flags (admin controlled)
+    biggiHouseAccess: {
+      weeklyCardGameEnabled: { type: Boolean, default: false },
+    },
+
 
     mainBalance: { type: Number, default: 0 },
     rewardBalance: { type: Number, default: 0 },
@@ -733,5 +739,7 @@ UserSchema.methods.getResetPasswordToken = function () {
 };
 
 export default mongoose.model("User", UserSchema);
+
+
 
 

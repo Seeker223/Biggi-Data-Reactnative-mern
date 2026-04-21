@@ -26,6 +26,7 @@ import {
   getBiggiHouseWallet,
   joinBiggiHouse,
   getBiggiHouseWeeklyCard,
+  getBiggiHouseWeeklyCardAccess,
   getBiggiHouseWeeklyCardHistory,
   playBiggiHouseWeeklyCardGame,
   // Backward-compat handlers (aliases)
@@ -46,6 +47,7 @@ router.get("/memberships", protect, getBiggiHouseMemberships);
 
 // Monthly Card Game
 router.get("/game/weekly-card/card", protect, getBiggiHouseWeeklyCard);
+router.get("/game/weekly-card/access", protect, getBiggiHouseWeeklyCardAccess);
 router.post("/game/weekly-card/play", protect, playBiggiHouseWeeklyCardGame);
 router.get("/game/weekly-card/history", protect, getBiggiHouseWeeklyCardHistory);
 // Backward-compat routes
