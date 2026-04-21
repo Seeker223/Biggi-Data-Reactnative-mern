@@ -1,4 +1,4 @@
-﻿import axios from "axios";
+import axios from "axios";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import BiggiHouseWallet from "../models/BiggiHouseWallet.js";
@@ -6,7 +6,8 @@ import BiggiHouseHouse from "../models/BiggiHouseHouse.js";
 import BiggiHouseMembership from "../models/BiggiHouseMembership.js";
 import BiggiHouseWinner from "../models/BiggiHouseWinner.js";
 import BiggiHouseConfig from "../models/BiggiHouseConfig.js";
-import BiggiHouseMonthlyCardPlay from "../models/BiggiHouseMonthlyCardPlay.js";
+import BiggiHouseWeeklyCardState from "../models/BiggiHouseWeeklyCardState.js";
+import BiggiHouseWeeklyCardPlay from "../models/BiggiHouseWeeklyCardPlay.js";
 import Subscription from "../models/Subscription.js";
 import { ensureBiggiHouseSeed } from "../utils/biggiHouseSeed.js";
 import { computeDepositFee } from "../utils/depositFee.js";
@@ -15,8 +16,8 @@ const txStatusAllowed = ["success", "success_price_mismatch", "simulated"];
 
 const BIGGI_HOUSE_DEFAULT_CONFIG = {
   weeklyPayout: { dayOfWeek: 0, hour: 22, minute: 0 }, // Sunday 10pm
-  features: { monthlyCardGameEnabled: false },
-  game: { requireDataPurchase: true },
+  features: { weeklyCardGameEnabled: false },
+  game: { requireWeeklyDataPurchase: true },
 };
 
 const ensureBiggiHouseConfig = async () => {
@@ -27,8 +28,14 @@ const ensureBiggiHouseConfig = async () => {
 
 const toConfigDTO = (cfg) => ({
   weeklyPayout: cfg.weeklyPayout || BIGGI_HOUSE_DEFAULT_CONFIG.weeklyPayout,
-  features: cfg.features || BIGGI_HOUSE_DEFAULT_CONFIG.features,
-  game: cfg.game || BIGGI_HOUSE_DEFAULT_CONFIG.game,
+  features: {
+    ...(BIGGI_HOUSE_DEFAULT_CONFIG.features || {}),
+    ...(cfg.features || {}),
+  },
+  game: {
+    ...(BIGGI_HOUSE_DEFAULT_CONFIG.game || {}),
+    ...(cfg.game || {}),
+  },
   updatedAt: cfg.updatedAt,
 });
 
@@ -78,6 +85,7 @@ const getWeeklyBiggiHouseDataPurchaseStatsByPhone = async (phoneNumber) => {
       $match: {
         "transactions.type": "purchase",
         "transactions.status": { $in: txStatusAllowed },
+        "transactions.date": { $gte: windowStart },
         "transactions.meta.action": "data_purchase",
         "transactions.meta.mobile_no": phoneNumber,
         "transactions.meta.app": "biggi_house", // Only count Biggi House purchases
@@ -136,6 +144,12 @@ export const adminUpdateBiggiHouseConfig = async (req, res) => {
 
   const nextFeatures = req.body?.features;
   if (nextFeatures && typeof nextFeatures === "object") {
+    if (typeof nextFeatures.weeklyCardGameEnabled === "boolean") {
+      cfg.features = {
+        ...(cfg.features || {}),
+        weeklyCardGameEnabled: nextFeatures.weeklyCardGameEnabled,
+      };
+    }
     if (typeof nextFeatures.monthlyCardGameEnabled === "boolean") {
       cfg.features = {
         ...(cfg.features || {}),
@@ -146,6 +160,12 @@ export const adminUpdateBiggiHouseConfig = async (req, res) => {
 
   const nextGame = req.body?.game;
   if (nextGame && typeof nextGame === "object") {
+    if (typeof nextGame.requireWeeklyDataPurchase === "boolean") {
+      cfg.game = {
+        ...(cfg.game || {}),
+        requireWeeklyDataPurchase: nextGame.requireWeeklyDataPurchase,
+      };
+    }
     if (typeof nextGame.requireDataPurchase === "boolean") {
       cfg.game = {
         ...(cfg.game || {}),
@@ -158,23 +178,98 @@ export const adminUpdateBiggiHouseConfig = async (req, res) => {
   res.json({ success: true, config: toConfigDTO(cfg) });
 };
 
-const normalizeLetters = (letters) => {
+const normalizeWeeklyPicks = (letters) => {
   if (!Array.isArray(letters)) return null;
   const clean = letters
     .map((l) => String(l || "").trim().toUpperCase())
     .filter(Boolean)
-    .slice(0, 5);
-  if (clean.length !== 5) return null;
-  const unique = Array.from(new Set(clean));
-  if (unique.length !== 5) return null;
-  const ok = unique.every((l) => /^[A-Z]$/.test(l));
+    .slice(0, 3);
+  if (clean.length !== 3) return null;
+  const ok = clean.every((l) => /^[A-Z]$/.test(l));
   if (!ok) return null;
-  return unique;
+  return clean;
 };
 
-export const playBiggiHouseMonthlyCardGame = async (req, res) => {
+const getWeekKey = (date = new Date()) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  const weekNo =
+    1 +
+    Math.round(
+      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
+    );
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+};
+
+const nextSundayAt = (hour = 22, minute = 0) => {
+  const now = new Date();
+  const next = new Date(now);
+  const day = next.getDay(); // 0=Sun
+  let addDays = (7 - day) % 7;
+  if (
+    addDays === 0 &&
+    (next.getHours() > hour || (next.getHours() === hour && next.getMinutes() >= minute))
+  ) {
+    addDays = 7;
+  }
+  next.setDate(next.getDate() + addDays);
+  next.setHours(hour, minute, 0, 0);
+  return next;
+};
+
+const randomLetters = (count) => {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    out.push(alphabet[Math.floor(Math.random() * alphabet.length)]);
+  }
+  return out;
+};
+
+const ensureWeeklyCardState = async () => {
   const cfg = await ensureBiggiHouseConfig();
-  if (!cfg?.features?.monthlyCardGameEnabled) {
+  const payout = cfg.weeklyPayout || BIGGI_HOUSE_DEFAULT_CONFIG.weeklyPayout;
+  const revealAt = nextSundayAt(Number(payout.hour || 22), Number(payout.minute || 0));
+  const weekKey = getWeekKey(revealAt);
+
+  const existing = await BiggiHouseWeeklyCardState.findOne({ weekKey });
+  if (existing) return { cfg, card: existing };
+
+  const letters = randomLetters(9);
+  const winningGroupIndex = Math.floor(Math.random() * 3);
+  const created = await BiggiHouseWeeklyCardState.create({
+    weekKey,
+    letters,
+    winningGroupIndex,
+    revealAt,
+  });
+  return { cfg, card: created };
+};
+
+export const getBiggiHouseWeeklyCard = async (_req, res) => {
+  const { card } = await ensureWeeklyCardState();
+  const revealReady = new Date() >= new Date(card.revealAt);
+
+  res.json({
+    success: true,
+    card: {
+      weekKey: card.weekKey,
+      letters: card.letters || [],
+      revealAt: card.revealAt,
+      revealReady,
+      winningGroupIndex: revealReady ? card.winningGroupIndex : null,
+    },
+  });
+};
+
+export const playBiggiHouseWeeklyCardGame = async (req, res) => {
+  const { cfg, card } = await ensureWeeklyCardState();
+  const enabled =
+    Boolean(cfg?.features?.weeklyCardGameEnabled) ||
+    Boolean(cfg?.features?.monthlyCardGameEnabled);
+  if (!enabled) {
     return res.status(403).json({
       success: false,
       error: "Game is currently disabled.",
@@ -182,16 +277,21 @@ export const playBiggiHouseMonthlyCardGame = async (req, res) => {
     });
   }
 
-  const letters = normalizeLetters(req.body?.letters);
+  const letters = normalizeWeeklyPicks(req.body?.letters);
   if (!letters) {
     return res.status(400).json({
       success: false,
-      error: "Pick exactly 5 unique letters (A-Z).",
+      error: "Enter exactly 3 letters (A-Z).",
       errorCode: "INVALID_PICKS",
     });
   }
 
-  if (cfg?.game?.requireDataPurchase) {
+  const requireWeekly =
+    typeof cfg?.game?.requireWeeklyDataPurchase === "boolean"
+      ? cfg.game.requireWeeklyDataPurchase
+      : Boolean(cfg?.game?.requireDataPurchase);
+
+  if (requireWeekly) {
     const me = await User.findById(req.user.id).select("phoneNumber");
     const phoneNumber = normalizePhone(me?.phoneNumber);
     if (!phoneNumber) {
@@ -206,37 +306,65 @@ export const playBiggiHouseMonthlyCardGame = async (req, res) => {
     if (Number(stats.count || 0) < 1) {
       return res.status(403).json({
         success: false,
-        error: "You must purchase at least 1 data bundle before you can play this game.",
+        error: "You must purchase at least 1 data bundle this week before you can play.",
         errorCode: "DATA_PURCHASE_REQUIRED",
       });
     }
   }
 
-  const play = await BiggiHouseMonthlyCardPlay.create({
+  const play = await BiggiHouseWeeklyCardPlay.create({
     userId: req.user.id,
+    weekKey: card.weekKey,
     letters,
   });
 
   res.json({
     success: true,
-    play: { id: String(play._id), letters: play.letters, createdAt: play.createdAt },
+    play: {
+      id: String(play._id),
+      weekKey: play.weekKey,
+      letters: play.letters,
+      createdAt: play.createdAt,
+    },
   });
 };
 
-export const getBiggiHouseMonthlyCardHistory = async (req, res) => {
-  const plays = await BiggiHouseMonthlyCardPlay.find({ userId: req.user.id })
+const sortLetters = (arr) => (Array.isArray(arr) ? [...arr].sort() : []);
+
+export const getBiggiHouseWeeklyCardHistory = async (req, res) => {
+  const { card } = await ensureWeeklyCardState();
+  const revealReady = new Date() >= new Date(card.revealAt);
+  const winningGroupIndex = revealReady ? card.winningGroupIndex : null;
+  const winningLetters =
+    revealReady && Number.isInteger(winningGroupIndex)
+      ? (card.letters || []).slice(winningGroupIndex * 3, winningGroupIndex * 3 + 3)
+      : null;
+
+  const plays = await BiggiHouseWeeklyCardPlay.find({ userId: req.user.id })
     .sort({ createdAt: -1 })
     .limit(30);
 
   res.json({
     success: true,
-    plays: plays.map((p) => ({
-      id: String(p._id),
-      letters: p.letters || [],
-      createdAt: p.createdAt,
-    })),
+    plays: plays.map((p) => {
+      const matched =
+        revealReady && winningLetters
+          ? JSON.stringify(sortLetters(p.letters)) === JSON.stringify(sortLetters(winningLetters))
+          : undefined;
+      return {
+        id: String(p._id),
+        weekKey: p.weekKey,
+        letters: p.letters || [],
+        createdAt: p.createdAt,
+        matched,
+      };
+    }),
   });
 };
+
+// Backward-compat exports (old names used by earlier UI)
+export const playBiggiHouseMonthlyCardGame = playBiggiHouseWeeklyCardGame;
+export const getBiggiHouseMonthlyCardHistory = getBiggiHouseWeeklyCardHistory;
 
 export const getBiggiHouseHouses = async (req, res) => {
   await ensureBiggiHouseSeed();
@@ -1375,7 +1503,7 @@ export const selectWeeklyWinners = async () => {
 
       await BiggiHouseWinner.insertMany(winnerRecords);
 
-      console.log(`Selected ${numWinners} winners for House ${house.number}, payout: â‚¦${payoutPerWinner} each`);
+      console.log(`Selected ${numWinners} winners for House ${house.number}, payout: ₦${payoutPerWinner} each`);
     }
 
     console.log(`Weekly winner selection completed for ${weekStart.toISOString()} - ${weekEnd.toISOString()}`);
@@ -1430,7 +1558,7 @@ export const processWeeklyPayouts = async () => {
         winner.transactionRef = transactionRef;
         await winner.save();
 
-        console.log(`Paid â‚¦${winner.amount} to user ${winner.userId.username || winner.userId.email} for House ${winner.houseId.number}`);
+        console.log(`Paid ₦${winner.amount} to user ${winner.userId.username || winner.userId.email} for House ${winner.houseId.number}`);
       } catch (walletError) {
         console.error(`Error processing payout for winner ${winner._id}:`, walletError);
       }
@@ -1517,4 +1645,3 @@ export const adminTriggerPayouts = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
-

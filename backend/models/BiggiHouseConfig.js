@@ -9,9 +9,13 @@ const BiggiHouseConfigSchema = new mongoose.Schema(
       minute: { type: Number, default: 0 },
     },
     features: {
+      weeklyCardGameEnabled: { type: Boolean, default: false },
+      // Legacy key
       monthlyCardGameEnabled: { type: Boolean, default: false },
     },
     game: {
+      requireWeeklyDataPurchase: { type: Boolean, default: true },
+      // Legacy key
       requireDataPurchase: { type: Boolean, default: true },
     },
   },
@@ -20,4 +24,3 @@ const BiggiHouseConfigSchema = new mongoose.Schema(
 
 export default mongoose.models.BiggiHouseConfig ||
   mongoose.model("BiggiHouseConfig", BiggiHouseConfigSchema);
-
