@@ -182,12 +182,13 @@ const normalizeWeeklyPicks = (letters) => {
   if (!Array.isArray(letters)) return null;
   const clean = letters
     .map((l) => String(l || "").trim().toUpperCase())
-    .filter(Boolean)
-    .slice(0, 3);
-  if (clean.length !== 3) return null;
+    .filter(Boolean);
+  if (clean.length !== 5) return null;
   const ok = clean.every((l) => /^[A-Z]$/.test(l));
   if (!ok) return null;
-  return clean;
+  const unique = Array.from(new Set(clean));
+  if (unique.length !== clean.length) return null;
+  return unique;
 };
 
 const getWeekKey = (date = new Date()) => {
@@ -256,7 +257,7 @@ export const getBiggiHouseWeeklyCard = async (_req, res) => {
     success: true,
     card: {
       weekKey: card.weekKey,
-      letters: card.letters || [],
+      letters: revealReady ? card.letters || [] : [],
       revealAt: card.revealAt,
       revealReady,
       winningGroupIndex: revealReady ? card.winningGroupIndex : null,
@@ -303,8 +304,20 @@ export const playBiggiHouseWeeklyCardGame = async (req, res) => {
   if (!letters) {
     return res.status(400).json({
       success: false,
-      error: "Enter exactly 3 letters (A-Z).",
+      error: "Select exactly 5 unique letters (A-Z).",
       errorCode: "INVALID_PICKS",
+    });
+  }
+
+  const alreadyPlayed = await BiggiHouseWeeklyCardPlay.findOne({
+    userId: req.user.id,
+    weekKey: card.weekKey,
+  }).select("_id");
+  if (alreadyPlayed) {
+    return res.status(409).json({
+      success: false,
+      error: "You have already played this week.",
+      errorCode: "ALREADY_PLAYED_THIS_WEEK",
     });
   }
 
@@ -351,34 +364,47 @@ export const playBiggiHouseWeeklyCardGame = async (req, res) => {
   });
 };
 
-const sortLetters = (arr) => (Array.isArray(arr) ? [...arr].sort() : []);
+const toSet = (arr) =>
+  new Set((Array.isArray(arr) ? arr : []).map((v) => String(v || "").toUpperCase()));
 
 export const getBiggiHouseWeeklyCardHistory = async (req, res) => {
-  const { card } = await ensureWeeklyCardState();
-  const revealReady = new Date() >= new Date(card.revealAt);
-  const winningGroupIndex = revealReady ? card.winningGroupIndex : null;
-  const winningLetters =
-    revealReady && Number.isInteger(winningGroupIndex)
-      ? (card.letters || []).slice(winningGroupIndex * 3, winningGroupIndex * 3 + 3)
-      : null;
-
   const plays = await BiggiHouseWeeklyCardPlay.find({ userId: req.user.id })
     .sort({ createdAt: -1 })
     .limit(30);
 
+  const weekKeys = Array.from(
+    new Set(plays.map((p) => String(p.weekKey || "")).filter(Boolean))
+  );
+  const states = weekKeys.length
+    ? await BiggiHouseWeeklyCardState.find({ weekKey: { $in: weekKeys } }).select(
+        "weekKey letters revealAt"
+      )
+    : [];
+  const stateMap = new Map(states.map((s) => [String(s.weekKey), s]));
+  const now = new Date();
+
   res.json({
     success: true,
     plays: plays.map((p) => {
-      const matched =
-        revealReady && winningLetters
-          ? JSON.stringify(sortLetters(p.letters)) === JSON.stringify(sortLetters(winningLetters))
-          : undefined;
+      const state = stateMap.get(String(p.weekKey)) || null;
+      const revealReady = state?.revealAt ? now >= new Date(state.revealAt) : false;
+      const resultLetters = revealReady ? state?.letters || [] : [];
+      const resultSet = revealReady ? toSet(resultLetters) : null;
+      const won = revealReady
+        ? (Array.isArray(p.letters) ? p.letters : []).every((l) =>
+            resultSet.has(String(l || "").toUpperCase())
+          )
+        : undefined;
       return {
         id: String(p._id),
         weekKey: p.weekKey,
         letters: p.letters || [],
         createdAt: p.createdAt,
-        matched,
+        revealReady,
+        resultLetters,
+        won,
+        status:
+          typeof won === "boolean" ? (won ? "won" : "lost") : "pending",
       };
     }),
   });
