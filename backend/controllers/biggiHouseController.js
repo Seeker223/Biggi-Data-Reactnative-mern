@@ -47,6 +47,21 @@ const getWeeklyWindowStart = () => {
 };
 
 const normalizePhone = (value) => String(value || "").replace(/\s+/g, "").trim();
+const normalizePhoneDigits = (value) => String(value || "").replace(/\D/g, "").trim();
+
+const buildPhoneVariants = (value) => {
+  const raw = String(value || "").trim();
+  const digits = normalizePhoneDigits(raw);
+  const variants = new Set([normalizePhone(raw), digits]);
+
+  if (digits.startsWith("234") && digits.length >= 13) {
+    variants.add(`0${digits.slice(3)}`);
+  } else if (digits.startsWith("0") && digits.length >= 11) {
+    variants.add(`234${digits.slice(1)}`);
+  }
+
+  return Array.from(variants).filter(Boolean);
+};
 
 const splitName = (fullName = "") => {
   const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
@@ -77,6 +92,7 @@ const isStaticVirtualAccountEnabled = () =>
 
 const getWeeklyBiggiHouseDataPurchaseStatsByPhone = async (phoneNumber) => {
   const windowStart = getWeeklyWindowStart();
+  const phoneVariants = buildPhoneVariants(phoneNumber);
 
   const rows = await Wallet.aggregate([
     { $match: { type: "main" } },
@@ -87,8 +103,7 @@ const getWeeklyBiggiHouseDataPurchaseStatsByPhone = async (phoneNumber) => {
         "transactions.status": { $in: txStatusAllowed },
         "transactions.date": { $gte: windowStart },
         "transactions.meta.action": "data_purchase",
-        "transactions.meta.mobile_no": phoneNumber,
-        "transactions.meta.app": "biggi_house", // Only count Biggi House purchases
+        "transactions.meta.mobile_no": { $in: phoneVariants },
       },
     },
     {
@@ -271,8 +286,34 @@ export const getBiggiHouseWeeklyCardAccess = async (req, res) => {
     Boolean(cfg?.features?.weeklyCardGameEnabled) ||
     Boolean(cfg?.features?.monthlyCardGameEnabled);
 
-  const me = await User.findById(req.user.id).select("biggiHouseAccess");
+  const me = await User.findById(req.user.id).select("biggiHouseAccess phoneNumber");
   const userEnabled = Boolean(me?.biggiHouseAccess?.weeklyCardGameEnabled);
+  const requireWeeklyDataPurchaseRaw =
+    typeof cfg?.game?.requireWeeklyDataPurchase === "boolean"
+      ? cfg.game.requireWeeklyDataPurchase
+      : Boolean(cfg?.game?.requireDataPurchase);
+
+  // Admin can manually enable the game for a user; this bypasses the weekly purchase requirement.
+  const bypassWeeklyDataPurchase = userEnabled;
+  const requireWeeklyDataPurchase =
+    Boolean(requireWeeklyDataPurchaseRaw) && !bypassWeeklyDataPurchase;
+
+  let weeklyPurchaseOk = true;
+  let weeklyPurchaseCount = 0;
+  let weeklyPurchaseWindowStart = null;
+  let lastWeeklyPurchaseAt = null;
+
+  if (requireWeeklyDataPurchase) {
+    weeklyPurchaseOk = false;
+    const phoneNumber = normalizePhone(me?.phoneNumber);
+    if (phoneNumber) {
+      const stats = await getWeeklyBiggiHouseDataPurchaseStatsByPhone(phoneNumber);
+      weeklyPurchaseCount = Number(stats.count || 0);
+      weeklyPurchaseWindowStart = stats.windowStart;
+      lastWeeklyPurchaseAt = stats.lastPurchaseAt || null;
+      weeklyPurchaseOk = weeklyPurchaseCount >= 1;
+    }
+  }
 
   res.json({
     success: true,
@@ -280,6 +321,15 @@ export const getBiggiHouseWeeklyCardAccess = async (req, res) => {
       globalEnabled,
       userEnabled,
       enabled: globalEnabled || userEnabled,
+      requireWeeklyDataPurchase,
+      bypassWeeklyDataPurchase,
+      weeklyPurchaseOk,
+      weeklyPurchaseCount,
+      weeklyPurchaseWindowStart,
+      lastWeeklyPurchaseAt,
+      eligibleToPlay:
+        (globalEnabled || userEnabled) &&
+        (!requireWeeklyDataPurchase || weeklyPurchaseOk),
     },
   });
 };
@@ -326,7 +376,8 @@ export const playBiggiHouseWeeklyCardGame = async (req, res) => {
       ? cfg.game.requireWeeklyDataPurchase
       : Boolean(cfg?.game?.requireDataPurchase);
 
-  if (requireWeekly) {
+  // If user is manually enabled by admin, bypass purchase requirement.
+  if (requireWeekly && !userEnabled) {
     const me = await User.findById(req.user.id).select("phoneNumber");
     const phoneNumber = normalizePhone(me?.phoneNumber);
     if (!phoneNumber) {
