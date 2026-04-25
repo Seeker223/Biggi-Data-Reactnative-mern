@@ -3,6 +3,18 @@ import { providerPlanCatalog } from "../data/providerPlanCatalog.js";
 
 const normalizeId = (value) => String(value || "").trim().toLowerCase();
 
+const normalizeApps = (value) => {
+  if (value === undefined) return undefined;
+  const raw = Array.isArray(value) ? value : [value];
+  const allowed = new Set(["biggi_data", "biggi_house"]);
+  const apps = raw
+    .map((v) => String(v || "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((v) => v.replace(/-/g, "_"))
+    .filter((v) => allowed.has(v));
+  return Array.from(new Set(apps));
+};
+
 const toNumOrNull = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -24,17 +36,22 @@ export const listAdminPlans = async (req, res) => {
         ? null
         : String(req.query.active).toLowerCase() === "true";
     const q = String(req.query.q || "").trim();
+    const app = normalizeId(req.query.app);
 
     const filter = {};
     if (network) filter.network = network;
     if (category) filter.category = category;
     if (active !== null) filter.active = active;
+    if (app) {
+      filter.$or = [{ apps: { $exists: false } }, { apps: { $in: [app] } }];
+    }
     if (q) {
-      filter.$or = [
+      const qOr = [
         { plan_id: new RegExp(q, "i") },
         { zenipoint_code: new RegExp(q, "i") },
         { name: new RegExp(q, "i") },
       ];
+      filter.$and = (filter.$and || []).concat([{ $or: qOr }]);
     }
 
     const plans = await DataPlan.find(filter).sort({ network: 1, category: 1, amount: 1 });
@@ -55,6 +72,7 @@ export const createAdminPlan = async (req, res) => {
     const provider_amount = toNumOrNull(req.body?.provider_amount);
     const markup = toNumOrNull(req.body?.markup);
     const active = req.body?.active === undefined ? true : Boolean(req.body.active);
+    const apps = normalizeApps(req.body?.apps);
 
     if (!plan_id || !zenipoint_code || !name || !network || !category || provider_amount === null) {
       return res.status(400).json({
@@ -82,6 +100,7 @@ export const createAdminPlan = async (req, res) => {
       markup: markup ?? 100,
       amount,
       active,
+      apps,
     });
 
     return res.status(201).json({ success: true, plan });
@@ -107,12 +126,16 @@ export const updateAdminPlan = async (req, res) => {
     if (req.body?.active !== undefined) patch.active = Boolean(req.body.active);
     if (req.body?.provider_amount !== undefined) patch.provider_amount = toNumOrNull(req.body.provider_amount);
     if (req.body?.markup !== undefined) patch.markup = toNumOrNull(req.body.markup);
+    if (req.body?.apps !== undefined) patch.apps = normalizeApps(req.body.apps);
 
     if (patch.provider_amount === null && req.body?.provider_amount !== undefined) {
       return res.status(400).json({ success: false, msg: "Invalid provider_amount" });
     }
     if (patch.markup === null && req.body?.markup !== undefined) {
       return res.status(400).json({ success: false, msg: "Invalid markup" });
+    }
+    if (patch.apps && patch.apps.length === 0 && req.body?.apps !== undefined) {
+      return res.status(400).json({ success: false, msg: "Invalid apps list" });
     }
 
     const provider_amount = patch.provider_amount !== undefined ? patch.provider_amount : existing.provider_amount;
@@ -175,6 +198,7 @@ export const syncPlansFromProviderCatalog = async (req, res) => {
             provider_amount: p.provider_amount === null || p.provider_amount === undefined ? null : Number(p.provider_amount),
             markup: p.markup === null || p.markup === undefined ? 100 : Number(p.markup),
             active: Boolean(p.active),
+            apps: ["biggi_data", "biggi_house"],
           },
         },
         { upsert: true }
@@ -220,6 +244,7 @@ export const resetPlansToProviderCatalog = async (req, res) => {
         network: String(p.network || "").trim().toLowerCase(),
         category: String(p.category || "").trim(),
         zenipoint_code: String(p.zenipoint_code || p.plan_id || "").trim(),
+        apps: ["biggi_data", "biggi_house"],
       }))
     );
 

@@ -23,6 +23,10 @@ const DataPlanSchema = new mongoose.Schema(
 
     // optional flags
     active: { type: Boolean, default: true },
+
+    // Which apps can see/use this plan. When missing, plan is treated as shared.
+    // Values: "biggi_data", "biggi_house"
+    apps: { type: [String], default: undefined },
   },
   { timestamps: true }
 );
