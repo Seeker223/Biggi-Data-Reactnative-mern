@@ -293,10 +293,7 @@ export const getBiggiHouseWeeklyCardAccess = async (req, res) => {
       ? cfg.game.requireWeeklyDataPurchase
       : Boolean(cfg?.game?.requireDataPurchase);
 
-  // Admin can manually enable the game for a user; this bypasses the weekly purchase requirement.
-  const bypassWeeklyDataPurchase = userEnabled;
-  const requireWeeklyDataPurchase =
-    Boolean(requireWeeklyDataPurchaseRaw) && !bypassWeeklyDataPurchase;
+  const requireWeeklyDataPurchase = Boolean(requireWeeklyDataPurchaseRaw);
 
   let weeklyPurchaseOk = true;
   let weeklyPurchaseCount = 0;
@@ -322,7 +319,6 @@ export const getBiggiHouseWeeklyCardAccess = async (req, res) => {
       userEnabled,
       enabled: globalEnabled || userEnabled,
       requireWeeklyDataPurchase,
-      bypassWeeklyDataPurchase,
       weeklyPurchaseOk,
       weeklyPurchaseCount,
       weeklyPurchaseWindowStart,
@@ -376,8 +372,7 @@ export const playBiggiHouseWeeklyCardGame = async (req, res) => {
       ? cfg.game.requireWeeklyDataPurchase
       : Boolean(cfg?.game?.requireDataPurchase);
 
-  // If user is manually enabled by admin, bypass purchase requirement.
-  if (requireWeekly && !userEnabled) {
+  if (requireWeekly) {
     const me = await User.findById(req.user.id).select("phoneNumber");
     const phoneNumber = normalizePhone(me?.phoneNumber);
     if (!phoneNumber) {
@@ -822,6 +817,7 @@ export const getBiggiHouseEligibility = async (req, res) => {
 
 export const joinBiggiHouse = async (req, res) => {
   await ensureBiggiHouseSeed();
+  const cfg = await ensureBiggiHouseConfig();
 
   const houseId = String(req.params.id || "").trim();
   const house = await BiggiHouseHouse.findById(houseId);
@@ -844,7 +840,6 @@ export const joinBiggiHouse = async (req, res) => {
   }
 
   // Joining a house requires an active BiggiHouse subscription.
-  // (Weekly data purchase eligibility was removed.)
   if (!user.subscription) {
     return res.status(403).json({
       success: false,
@@ -864,6 +859,22 @@ export const joinBiggiHouse = async (req, res) => {
       error: "Active subscription required to join a house.",
       errorCode: "SUBSCRIPTION_REQUIRED",
     });
+  }
+
+  const requireWeekly =
+    typeof cfg?.game?.requireWeeklyDataPurchase === "boolean"
+      ? cfg.game.requireWeeklyDataPurchase
+      : Boolean(cfg?.game?.requireDataPurchase);
+
+  if (requireWeekly) {
+    const stats = await getWeeklyBiggiHouseDataPurchaseStatsByPhone(phoneNumber);
+    if (Number(stats.count || 0) < 1) {
+      return res.status(403).json({
+        success: false,
+        error: "You must purchase at least 1 data bundle this week before you can join a house.",
+        errorCode: "DATA_PURCHASE_REQUIRED",
+      });
+    }
   }
 
   const wallet = await ensureWallet(req.user.id);
