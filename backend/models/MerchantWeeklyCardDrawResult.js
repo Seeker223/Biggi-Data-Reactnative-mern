@@ -20,17 +20,17 @@ const MerchantWeeklyCardDrawResultSchema = new mongoose.Schema(
     },
     winningGroupIndex: {
       type: Number,
-      required: true,
-      min: 0,
-      max: 2,
+      default: null,
     },
     winningNumbers: {
       type: [Number],
-      required: true,
       validate: {
-        validator: (v) => Array.isArray(v) && v.length === 3,
-        message: "Winning numbers must contain exactly 3 values",
+        validator: (v) =>
+          Array.isArray(v) &&
+          (v.length === 0 || v.length === 3 || v.length === 9),
+        message: "Winning numbers must contain 0, 3, or 9 values",
       },
+      default: [],
     },
     generatedAt: { type: Date, default: Date.now },
   },

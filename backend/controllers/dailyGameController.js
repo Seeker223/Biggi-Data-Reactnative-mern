@@ -63,18 +63,16 @@ const getOrCreateMonthlyResult = async (monthKey) => {
 
 const getOrCreateWeeklyCardResult = async (monthKey) => {
   const existing = await MerchantWeeklyCardDrawResult.findOne({ month: monthKey }).lean();
-  if (existing?.letters?.length === 9 && existing?.winningNumbers?.length === 3) return existing;
+  if (existing?.letters?.length === 9) return existing;
 
   const letters = generateMerchantCardLetters();
-  const winningGroupIndex = Math.floor(Math.random() * 3);
-  const winningNumbers = letters.slice(winningGroupIndex * 3, winningGroupIndex * 3 + 3);
 
   try {
     const created = await MerchantWeeklyCardDrawResult.create({
       month: monthKey,
       letters,
-      winningGroupIndex,
-      winningNumbers,
+      winningGroupIndex: null,
+      winningNumbers: letters,
       generatedAt: new Date(),
     });
     return created.toObject();
@@ -140,12 +138,20 @@ export const playDailyGame = async (req, res) => {
 
     const role = String(user?.userRole || "").toLowerCase();
     const isCardGameRole = role === "merchant" || role === "private";
-    const requiredCount = isCardGameRole ? 3 : 5;
+    const requiredCount = 5;
 
     if (!numbers || !Array.isArray(numbers) || numbers.length !== requiredCount) {
       return res.status(400).json({
         success: false,
         message: `You must select exactly ${requiredCount} letters`,
+      });
+    }
+
+    const unique = new Set(numbers.map((n) => Number(n)).filter((n) => Number.isInteger(n)));
+    if (unique.size !== requiredCount) {
+      return res.status(400).json({
+        success: false,
+        message: `Select exactly ${requiredCount} unique letters`,
       });
     }
 
@@ -161,7 +167,7 @@ export const playDailyGame = async (req, res) => {
     user.tickets -= 1;
 
     const drawKey = getMonthKey(new Date());
-    const gameType = isCardGameRole ? "monthly_card" : "weekly_number";
+    const gameType = isCardGameRole ? "merchant_card" : "weekly_number";
 
     // Save play entry
     user.dailyNumberDraw.push({
@@ -348,10 +354,13 @@ export const generateDailyWinningNumbers = async () => {
 
           const monthKey = entry.drawKey || getMonthKey(playedAt);
           const weeklyCard = await getOrCreateWeeklyCardResult(monthKey);
-          const winningNumbers = weeklyCard?.winningNumbers || [];
+          const winningNumbers = Array.isArray(weeklyCard?.letters) ? weeklyCard.letters : weeklyCard?.winningNumbers || [];
 
           entry.result = winningNumbers;
-          entry.isWinner = isSameSet(entry.numbers, winningNumbers);
+          entry.isWinner =
+            Array.isArray(entry.numbers) &&
+            entry.numbers.length === 5 &&
+            entry.numbers.every((n) => winningNumbers.includes(n));
           updated = true;
 
           const playedAtLabel = entry?.playedAt
@@ -523,7 +532,7 @@ export const getMerchantWeeklyWinners = async (req, res) => {
       { $unwind: "$dailyNumberDraw" },
       {
         $match: {
-          "dailyNumberDraw.gameType": "merchant_card",
+          "dailyNumberDraw.gameType": { $in: ["merchant_card", "monthly_card"] },
           "dailyNumberDraw.isWinner": true,
           "dailyNumberDraw.createdAt": { $gte: start, $lt: end },
         },
@@ -606,8 +615,8 @@ export const getMerchantWeeklyCard = async (req, res) => {
       revealAt: monthEnd.toISOString(),
       letters: weeklyCard?.letters || [],
       revealReady,
-      winningGroupIndex: revealReady ? weeklyCard?.winningGroupIndex : null,
-      winningNumbers: revealReady ? weeklyCard?.winningNumbers || [] : [],
+      winningGroupIndex: null,
+      winningNumbers: revealReady ? weeklyCard?.letters || [] : [],
     });
   } catch (error) {
     console.log("Get merchant weekly card error:", error);
