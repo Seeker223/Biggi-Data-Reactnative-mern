@@ -577,7 +577,14 @@ export const flutterwaveWebhook = async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const depositQuery = Deposit.findOne({ reference });
+      // Static virtual account transfers can arrive with a reused tx_ref (reference) across multiple bank transfers.
+      // Use a unique gateway reference for idempotency instead of tx_ref alone.
+      const idempotencyRef =
+        String(reference || "").startsWith("va_") && uniqueGatewayRef
+          ? `${reference}::${uniqueGatewayRef}`
+          : reference;
+
+      const depositQuery = Deposit.findOne({ reference: idempotencyRef });
       const existingDeposit = activeSession ? await depositQuery.session(activeSession) : await depositQuery;
 
       if (existingDeposit && existingDeposit.status === "successful" && existingDeposit.credited) {
@@ -618,14 +625,14 @@ export const flutterwaveWebhook = async (req, res) => {
       }
 
       await Deposit.findOneAndUpdate(
-        { reference },
+        { reference: idempotencyRef },
         {
           user: userId,
           amount: walletCredit,
           serviceCharge,
           totalAmount: totalPaid,
           currency: currency || "NGN",
-          reference,
+          reference: idempotencyRef,
           status: status === "successful" ? "successful" : "failed",
           channel: "flutterwave",
           flutterwaveTransactionId: id,
@@ -653,16 +660,16 @@ export const flutterwaveWebhook = async (req, res) => {
       if (status === "successful") {
         const updated = await updateWalletTransactionStatus(
           userId,
-          reference,
+          idempotencyRef,
           "success",
           { action: "deposit", channel: "flutterwave", webhook: true }
         );
         if (!updated) {
-          await logWalletTransaction(userId, "deposit", walletCredit, reference, "success");
+          await logWalletTransaction(userId, "deposit", walletCredit, idempotencyRef, "success");
         }
 
         if (serviceCharge > 0) {
-          await logPlatformDepositFee({ userId, reference, revenue: serviceCharge });
+          await logPlatformDepositFee({ userId, reference: idempotencyRef, revenue: serviceCharge });
         }
 
         await sendUserEmail({
