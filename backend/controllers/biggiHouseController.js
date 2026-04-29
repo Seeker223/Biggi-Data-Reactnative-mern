@@ -22,7 +22,19 @@ const BIGGI_HOUSE_DEFAULT_CONFIG = {
 
 const ensureBiggiHouseConfig = async () => {
   const existing = await BiggiHouseConfig.findOne({ singleton: true });
-  if (existing) return existing;
+  if (existing) {
+    const target = BIGGI_HOUSE_DEFAULT_CONFIG.weeklyPayout;
+    const current = existing.weeklyPayout || {};
+    const differs =
+      Number(current.dayOfWeek) !== Number(target.dayOfWeek) ||
+      Number(current.hour) !== Number(target.hour) ||
+      Number(current.minute) !== Number(target.minute);
+    if (differs) {
+      existing.weeklyPayout = { ...target };
+      await existing.save();
+    }
+    return existing;
+  }
   return BiggiHouseConfig.create({ singleton: true, ...BIGGI_HOUSE_DEFAULT_CONFIG });
 };
 
