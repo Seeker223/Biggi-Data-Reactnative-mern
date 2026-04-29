@@ -440,6 +440,13 @@ export const flutterwaveWebhook = async (req, res) => {
       if (userId) resolutionMethod = "reference";
     }
 
+    // Fallback: BiggiHouse static VA transfers sometimes arrive without account_number in webhook payload.
+    // Our BiggiHouse tx_ref is generated as `bhva_<userId>_<timestamp>` so we can route credit correctly.
+    if (creditTarget !== "biggihouse" && String(reference || "").startsWith("bhva_")) {
+      creditTarget = "biggihouse";
+      if (!resolutionMethod) resolutionMethod = "reference_prefix_bhva";
+    }
+
     if (!userId && data?.customer?.email) {
       const userByEmail = await User.findOne({
         email: String(data.customer.email).toLowerCase(),
