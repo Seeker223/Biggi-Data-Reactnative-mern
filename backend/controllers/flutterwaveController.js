@@ -381,6 +381,15 @@ export const flutterwaveWebhook = async (req, res) => {
       data?.account?.id ||
       "";
 
+    const uniqueGatewayRef = String(
+      data?.flw_ref ||
+        data?.flwRef ||
+        data?.FlwRef ||
+        data?.id ||
+        id ||
+        ""
+    ).trim();
+
     const resolveUserIdFromRef = (ref) => {
       const parts = String(ref || "").split("_");
       const candidate = parts.find((part) => mongoose.Types.ObjectId.isValid(part));
@@ -487,6 +496,10 @@ export const flutterwaveWebhook = async (req, res) => {
 
       // BiggiHouse static virtual account deposits should credit the BiggiHouse wallet only (independent ledger).
       if (creditTarget === "biggihouse") {
+        // Static virtual account transfers can arrive with a reused tx_ref (reference) across multiple bank transfers.
+        // Use a unique gateway reference for idempotency instead of tx_ref alone.
+        const idempotencyRef = uniqueGatewayRef ? `${reference}::${uniqueGatewayRef}` : reference;
+
         const walletQuery = BiggiHouseWallet.findOne({ userId });
         let bhWallet = activeSession ? await walletQuery.session(activeSession) : await walletQuery;
         if (!bhWallet) {
@@ -497,7 +510,7 @@ export const flutterwaveWebhook = async (req, res) => {
           bhWallet = created?.[0] || null;
         }
 
-        const already = (bhWallet.transactions || []).find((t) => t.reference === reference);
+        const already = (bhWallet.transactions || []).find((t) => t.reference === idempotencyRef);
         if (already) {
           if (activeSession) await activeSession.abortTransaction();
           await updateHealth({ processed: true, note: "biggihouse_already_processed" });
@@ -537,7 +550,7 @@ export const flutterwaveWebhook = async (req, res) => {
           type: "deposit",
           amount: walletCredit,
           status: "completed",
-          reference,
+          reference: idempotencyRef,
           meta: {
             action: "biggihouse_deposit",
             channel: "flutterwave_webhook",
