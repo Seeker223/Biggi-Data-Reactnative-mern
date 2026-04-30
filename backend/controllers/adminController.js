@@ -61,6 +61,7 @@ export const getAdminDashboard = async (req, res) => {
     const page = Math.max(1, toInt(req.query.page, 1));
     const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 20)));
     const historyLimit = Math.min(50, Math.max(1, toInt(req.query.historyLimit, 10)));
+    const lite = ["1", "true", "yes"].includes(String(req.query.lite || "").toLowerCase());
     const search = String(req.query.search || "").trim();
     const role = String(req.query.role || "").trim().toLowerCase();
     const userRole = String(req.query.userRole || "").trim().toLowerCase();
@@ -82,6 +83,160 @@ export const getAdminDashboard = async (req, res) => {
     if (["private", "merchant"].includes(userRole)) filter.userRole = userRole;
     if (["true", "false"].includes(verified)) filter.isVerified = verified === "true";
     if (state) filter.state = state;
+
+    if (lite) {
+      const [aggregates, stateBreakdownRaw, referralAgg, topBuyers, topWinners, referrers] =
+        await Promise.all([
+          User.aggregate([
+            {
+              $group: {
+                _id: null,
+                totalMainBalance: { $sum: "$mainBalance" },
+                totalRewardBalance: { $sum: "$rewardBalance" },
+                totalDeposits: { $sum: "$totalDeposits" },
+                totalDataPurchases: { $sum: "$dataBundleCount" },
+                totalWins: { $sum: "$totalWins" },
+                totalPrizeWon: { $sum: "$totalPrizeWon" },
+                usersCount: { $sum: 1 },
+                adminCount: {
+                  $sum: { $cond: [{ $eq: ["$role", "admin"] }, 1, 0] },
+                },
+                privateCount: {
+                  $sum: { $cond: [{ $eq: ["$userRole", "private"] }, 1, 0] },
+                },
+                merchantCount: {
+                  $sum: { $cond: [{ $eq: ["$userRole", "merchant"] }, 1, 0] },
+                },
+                verifiedCount: {
+                  $sum: { $cond: [{ $eq: ["$isVerified", true] }, 1, 0] },
+                },
+              },
+            },
+          ]),
+          User.aggregate([
+            { $match: filter },
+            {
+              $group: {
+                _id: "$state",
+                count: { $sum: 1 },
+              },
+            },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 60 },
+          ]),
+          User.aggregate([
+            { $match: { referredByCode: { $ne: null, $ne: "" } } },
+            {
+              $group: {
+                _id: "$referredByCode",
+                count: { $sum: 1 },
+                referrals: {
+                  $push: {
+                    _id: "$_id",
+                    username: "$username",
+                    email: "$email",
+                    phoneNumber: "$phoneNumber",
+                    createdAt: "$createdAt",
+                  },
+                },
+              },
+            },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 20 },
+          ]),
+          User.find({})
+            .sort({ dataBundleCount: -1, totalDeposits: -1 })
+            .limit(100)
+            .select("username email photo role userRole dataBundleCount totalDeposits")
+            .lean(),
+          User.find({})
+            .sort({ totalWins: -1, totalPrizeWon: -1 })
+            .limit(100)
+            .select("username email photo role userRole totalWins totalPrizeWon")
+            .lean(),
+          User.find({
+            referralCode: {
+              $in: (referralAgg || []).map((row) => row?._id).filter(Boolean),
+            },
+          })
+            .select("username email photo role userRole referralCode")
+            .lean(),
+        ]);
+
+      const summaryBase = aggregates?.[0] || {};
+      const referrerMap = new Map((referrers || []).map((u) => [String(u.referralCode || ""), u]));
+      const referralLeaderboard = (referralAgg || []).map((row, index) => {
+        const referrer = referrerMap.get(String(row?._id || "")) || null;
+        const referrals = Array.isArray(row?.referrals)
+          ? row.referrals.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+          : [];
+        return {
+          rank: index + 1,
+          referralCode: row?._id || "",
+          referralsTotal: Number(row?.count || 0),
+          referrer,
+          referrals,
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        summary: {
+          usersCount: toNum(summaryBase.usersCount),
+          adminCount: toNum(summaryBase.adminCount),
+          userCount: Math.max(0, toNum(summaryBase.usersCount) - toNum(summaryBase.adminCount)),
+          privateCount: toNum(summaryBase.privateCount),
+          merchantCount: toNum(summaryBase.merchantCount),
+          verifiedCount: toNum(summaryBase.verifiedCount),
+          unverifiedCount: Math.max(0, toNum(summaryBase.usersCount) - toNum(summaryBase.verifiedCount)),
+          totalMainBalance: toNum(summaryBase.totalMainBalance),
+          totalRewardBalance: toNum(summaryBase.totalRewardBalance),
+          totalBalance: toNum(summaryBase.totalMainBalance) + toNum(summaryBase.totalRewardBalance),
+          totalDeposits: toNum(summaryBase.totalDeposits),
+          totalDataPurchases: toNum(summaryBase.totalDataPurchases),
+          totalWins: toNum(summaryBase.totalWins),
+          totalPrizeWon: toNum(summaryBase.totalPrizeWon),
+        },
+        rankings: {
+          topBuyers: (topBuyers || []).map((u, index) => ({
+            rank: index + 1,
+            userId: u._id,
+            username: u.username,
+            email: u.email,
+            photo: u.photo,
+            role: u.role,
+            userRole: u.userRole,
+            dataBundleCount: toNum(u.dataBundleCount),
+            totalDeposits: toNum(u.totalDeposits),
+          })),
+          topGameWinners: (topWinners || []).map((u, index) => ({
+            rank: index + 1,
+            userId: u._id,
+            username: u.username,
+            email: u.email,
+            photo: u.photo,
+            role: u.role,
+            userRole: u.userRole,
+            totalWins: toNum(u.totalWins),
+            totalPrizeWon: toNum(u.totalPrizeWon),
+          })),
+          referralLeaderboard,
+        },
+        stateBreakdown: (stateBreakdownRaw || []).map((row) => ({
+          state: row?._id || "Unknown",
+          count: toNum(row?.count),
+        })),
+        filters: {
+          search,
+          role: role || null,
+          userRole: userRole || null,
+          verified: verified || null,
+          userAge: userAge || "new",
+          state: state || null,
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    }
 
     const [totalUsers, usersRaw, aggregates, stateBreakdownRaw, referralAgg] = await Promise.all([
       User.countDocuments(filter),
