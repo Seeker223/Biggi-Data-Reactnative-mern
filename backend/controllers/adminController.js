@@ -85,8 +85,7 @@ export const getAdminDashboard = async (req, res) => {
     if (state) filter.state = state;
 
     if (lite) {
-      const [aggregates, stateBreakdownRaw, referralAgg, topBuyers, topWinners, referrers] =
-        await Promise.all([
+      const [aggregates, stateBreakdownRaw, referralAgg, topBuyers, topWinners] = await Promise.all([
           User.aggregate([
             {
               $group: {
@@ -154,14 +153,14 @@ export const getAdminDashboard = async (req, res) => {
             .limit(100)
             .select("username email photo role userRole totalWins totalPrizeWon")
             .lean(),
-          User.find({
-            referralCode: {
-              $in: (referralAgg || []).map((row) => row?._id).filter(Boolean),
-            },
-          })
-            .select("username email photo role userRole referralCode")
-            .lean(),
         ]);
+
+      const referralCodes = (referralAgg || []).map((row) => row?._id).filter(Boolean);
+      const referrers = referralCodes.length
+        ? await User.find({ referralCode: { $in: referralCodes } })
+            .select("username email photo role userRole referralCode")
+            .lean()
+        : [];
 
       const summaryBase = aggregates?.[0] || {};
       const referrerMap = new Map((referrers || []).map((u) => [String(u.referralCode || ""), u]));
