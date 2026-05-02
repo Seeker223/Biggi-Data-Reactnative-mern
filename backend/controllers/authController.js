@@ -143,6 +143,10 @@ export const register = async (req, res) => {
     }
 
     // Create user - automatically mark as verified
+    const origin = String(req.headers.origin || '');
+    const clientHeader = String(req.headers['x-client-app'] || '');
+    const fromBiggiHouse = clientHeader.toLowerCase().includes('biggi-house') || origin.toLowerCase().includes('biggi-house.vercel.app');
+
     const uniqueReferralCode = await buildUniqueReferralCode();
     const normalizedReferralCode = referralCode?.trim().toUpperCase() || null;
     if (normalizedReferralCode) {
@@ -180,7 +184,7 @@ export const register = async (req, res) => {
       referredByCode: normalizedReferralCode,
       userRole: String(req.body?.userRole || "").toLowerCase() === "merchant" ? "merchant" : "private",
       allowedApps: (() => {
-        const origin = String(req.headers.origin || "");
+    const origin = String(req.headers.origin || '');
         const header = String(req.headers["x-client-app"] || "");
         const fromBiggiHouse =
           header.toLowerCase().includes("biggi-house") || origin.toLowerCase().includes("biggi-house.vercel.app");
@@ -195,6 +199,11 @@ export const register = async (req, res) => {
       isVerified: isVerificationDisabled(),
       verifiedAt: isVerificationDisabled() ? new Date() : null
     });
+
+    if (fromBiggiHouse) {
+      user.referralCode = 'BH-' + String(user._id || '').slice(-6).toUpperCase();
+      await user.save({ validateBeforeSave: false });
+    }
 
     if (!isVerificationDisabled()) {
       const otp = generateEmailOtp();
