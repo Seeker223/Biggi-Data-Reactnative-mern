@@ -7,6 +7,9 @@ import MonthlyRaffleDraw from "../models/MonthlyRaffleDraw.js";
 import { sendUserEmail } from "../utils/transactionalEmail.js";
 
 const MONTHLY_WIN_PRIZE = 10000;
+const MONTHLY_CARD_SET_COUNT = 5;
+const MONTHLY_CARD_SET_LENGTH = 3;
+const CARD_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 const getCurrentMonthString = () => {
   const now = new Date();
@@ -37,6 +40,61 @@ const maskCode = (code) => {
   const value = String(code || "");
   if (value.length <= 2) return value;
   return `${value.slice(0, 2)}****`;
+};
+
+const normalizeCardCode = (raw) =>
+  String(raw || "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, MONTHLY_CARD_SET_LENGTH);
+
+const lettersToCode = (letters = []) => normalizeCardCode(Array.isArray(letters) ? letters.join("") : letters);
+
+const codesMatch = (left = "", right = "") => normalizeCardCode(left) === normalizeCardCode(right);
+
+const buildWinningSets = (month) => {
+  let seed = 0;
+  for (let i = 0; i < month.length; i += 1) {
+    seed = (seed * 31 + month.charCodeAt(i)) >>> 0;
+  }
+  const nextIndex = (max) => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed % max;
+  };
+  const bag = [...CARD_LETTERS];
+  const sets = [];
+  while (sets.length < MONTHLY_CARD_SET_COUNT && bag.length >= MONTHLY_CARD_SET_LENGTH) {
+    const picked = [];
+    for (let i = 0; i < MONTHLY_CARD_SET_LENGTH; i += 1) {
+      const idx = nextIndex(bag.length);
+      picked.push(bag.splice(idx, 1)[0]);
+    }
+    sets.push(picked);
+  }
+  return sets;
+};
+
+const getMonthlyCardSlots = async (month, userId) => {
+  const entries = await MonthlyRaffleEntry.find({ month, user: userId })
+    .sort({ setIndex: 1, createdAt: 1 })
+    .lean();
+
+  const played = new Map(entries.map((entry) => [Number(entry.setIndex), entry]));
+  return Array.from({ length: MONTHLY_CARD_SET_COUNT }, (_, index) => {
+    const setIndex = index + 1;
+    const entry = played.get(setIndex) || null;
+    return {
+      id: entry?._id || `set-${setIndex}`,
+      setIndex,
+      code: entry?.code || "",
+      month,
+      played: Boolean(entry),
+      locked: false,
+      issuedAt: entry?.createdAt || null,
+      playedAt: entry?.playedAt || null,
+      status: entry?.status || "pending",
+    };
+  });
 };
 
 const awardReferralReward = async ({ winner, prizeAmount, gameLabel }) => {
@@ -83,74 +141,87 @@ export const runMonthlyRaffleDrawIfDue = async (rawMonth, options = {}) => {
   }
 
   const existing = await MonthlyRaffleDraw.findOne({ month }).session(session);
-  if (existing) {
+  if (existing?.winningSets?.length === MONTHLY_CARD_SET_COUNT) {
     return { success: true, month, status: "already_drawn", draw: existing };
   }
 
-  const pipeline = [{ $match: { month } }, { $sample: { size: 1 } }];
-  const picked = await MonthlyRaffleEntry.aggregate(pipeline).session(session);
-  const entry = picked?.[0] || null;
-  if (!entry) {
-    return { success: true, month, status: "no_entries", draw: null };
-  }
+  const winningSets = existing?.winningSets?.length === MONTHLY_CARD_SET_COUNT
+    ? existing.winningSets
+    : buildWinningSets(month);
 
   const now = new Date();
 
   try {
-    const created = await MonthlyRaffleDraw.create(
-      [
-        {
-          month,
-          winningCode: entry.code,
-          winnerUser: entry.user,
-          entry: entry._id,
-          drawnAt: now,
-          claimed: false,
-          claimedAt: null,
-        },
-      ],
-      { session }
-    );
+    let drawDoc = existing;
+    if (drawDoc) {
+      drawDoc.winningSets = winningSets;
+      drawDoc.drawnAt = drawDoc.drawnAt || now;
+      drawDoc.claimed = Boolean(drawDoc.claimed);
+      drawDoc.claimedAt = drawDoc.claimedAt || null;
+      drawDoc.winnerUserIds = drawDoc.winnerUserIds || [];
+      await drawDoc.save({ session });
+    } else {
+      const created = await MonthlyRaffleDraw.create(
+        [
+          {
+            month,
+            winningSets,
+            drawnAt: now,
+            claimed: false,
+            claimedAt: null,
+            winnerUserIds: [],
+          },
+        ],
+        { session }
+      );
+      drawDoc = created?.[0] || null;
+    }
 
-    await MonthlyRaffleEntry.updateOne(
-      { _id: entry._id },
-      { $set: { status: "winner" } }
-    ).session(session);
+    const entries = await MonthlyRaffleEntry.find({ month }).session(session);
+    const winnersByUser = new Map();
 
-    const winner = await User.findById(entry.user).session(session);
-    if (winner) {
+    for (const entry of entries) {
+      const isWinner = winningSets.some((set) => codesMatch(lettersToCode(set), entry.code));
+      entry.status = isWinner ? "winner" : "pending";
+      if (isWinner) {
+        winnersByUser.set(String(entry.user), true);
+      }
+      await entry.save({ session });
+    }
+
+    const winnerIds = [...winnersByUser.keys()];
+    drawDoc.winnerUserIds = winnerIds;
+    await drawDoc.save({ session });
+
+    for (const winnerId of winnerIds) {
+      const winner = await User.findById(winnerId).session(session);
+      if (!winner) continue;
+      const monthDraw = (winner.monthlyDraws || []).find((d) => d.month === month);
+      if (monthDraw) {
+        monthDraw.isWinner = true;
+        monthDraw.prizeAmount = MONTHLY_WIN_PRIZE;
+      }
       winner.addNotification({
         type: "Monthly Draw Result",
         status: "success",
         amount: MONTHLY_WIN_PRIZE,
-        message: `Monthly draw result for ${month}: your ticket ${entry.code} won. You can claim your reward now.`,
+        message: `Monthly card result for ${month}: at least one of your 3-letter sets matched this month’s result. You can claim your reward now.`,
       });
       await winner.save({ session });
     }
 
     try {
-      const allEntries = await MonthlyRaffleEntry.find({ month }).select("user code").lean();
-      const winnerId = String(entry.user);
-      const uniqueUsers = new Map();
-      for (const e of allEntries) {
-        const uid = String(e.user);
-        if (!uniqueUsers.has(uid)) uniqueUsers.set(uid, e.code);
-      }
-
-      for (const [uid, code] of uniqueUsers.entries()) {
-        const user = await User.findById(uid).select("email username");
-        if (!user) continue;
-        const isWinner = uid === winnerId;
+      const winnerUsers = await User.find({ _id: { $in: winnerIds } }).select("email username");
+      for (const user of winnerUsers) {
         await sendUserEmail({
           userId: user._id,
           type: "monthly_result",
           email: user.email,
-          subject: "Monthly Draw Result",
-          title: "Monthly Draw Result",
+          subject: "Monthly Card Result",
+          title: "Monthly Card Result",
           bodyLines: [
-            isWinner
-              ? `Congratulations! Your ticket ${code} won the monthly draw.`
-              : `Monthly draw completed for ${month}. Your ticket ${code} was not selected this time.`,
+            `Monthly card results for ${month} are out.`,
+            "One of your 3-letter sets matched this month’s result.",
             "You can view details in your Biggi Data account.",
           ],
         });
@@ -163,7 +234,7 @@ export const runMonthlyRaffleDrawIfDue = async (rawMonth, options = {}) => {
       success: true,
       month,
       status: "drawn",
-      draw: created?.[0] || null,
+      draw: drawDoc || null,
     };
   } catch (err) {
     // Handle race: another worker created the draw.
@@ -181,9 +252,7 @@ export const runMonthlyRaffleDrawIfDue = async (rawMonth, options = {}) => {
 ===================================================== */
 export const getMonthlyEligibility = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select(
-      "monthlyDraws monthlyRaffleTickets"
-    );
+    const user = await User.findById(req.user.id).select("monthlyDraws");
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
@@ -194,12 +263,10 @@ export const getMonthlyEligibility = async (req, res) => {
     const required = 5;
     const progress = Math.min(100, (purchases / required) * 100 || 0);
     const isEligible = purchases >= required;
-
-    const ticketsThisMonth = (user.monthlyRaffleTickets || []).filter(
-      (t) => t.month === month
-    );
-    const unplayed = ticketsThisMonth.filter((t) => !t.played);
-    const played = ticketsThisMonth.filter((t) => t.played);
+    const slots = await getMonthlyCardSlots(month, user._id);
+    const unlockedSlots = slots.slice(0, Math.min(MONTHLY_CARD_SET_COUNT, purchases));
+    const playedSlots = slots.filter((slot) => Boolean(slot.played));
+    const unplayedSlots = unlockedSlots.filter((slot) => !slot.played);
 
     const now = new Date();
     const monthEnd = getMonthEnd(month);
@@ -216,9 +283,12 @@ export const getMonthlyEligibility = async (req, res) => {
         progress,
         daysLeft,
         isEligible,
-        raffleTicketsTotal: ticketsThisMonth.length,
-        raffleTicketsUnplayed: unplayed.length,
-        raffleTicketsPlayed: played.length,
+        setsUnlocked: unlockedSlots.length,
+        setsCompleted: playedSlots.length,
+        raffleTicketsTotal: unlockedSlots.length,
+        raffleTicketsUnplayed: unplayedSlots.length,
+        raffleTicketsPlayed: playedSlots.length,
+        cardSets: slots,
       },
     });
   } catch (error) {
@@ -236,23 +306,18 @@ export const getMonthlyEligibility = async (req, res) => {
 export const getMonthlyRaffleTickets = async (req, res) => {
   try {
     const month = normalizeMonth(req.query?.month);
-    const user = await User.findById(req.user.id).select(
-      "username monthlyRaffleTickets"
-    );
+    const user = await User.findById(req.user.id).select("username monthlyDraws");
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const tickets = (user.monthlyRaffleTickets || [])
-      .filter((t) => t.month === month)
-      .map((t) => ({
-        id: t._id,
-        code: t.code,
-        month: t.month,
-        played: Boolean(t.played),
-        issuedAt: t.issuedAt,
-        playedAt: t.playedAt || null,
-      }));
+    const monthlyDraw = (user.monthlyDraws || []).find((d) => d.month === month);
+    const purchases = Number(monthlyDraw?.purchasesCount || 0);
+    const slots = await getMonthlyCardSlots(month, user._id);
+    const tickets = slots.map((slot) => ({
+      ...slot,
+      locked: slot.setIndex > Math.min(MONTHLY_CARD_SET_COUNT, purchases),
+    }));
 
     return res.json({ success: true, month, tickets });
   } catch (error) {
@@ -277,68 +342,83 @@ export const playMonthlyRaffleTicket = async (req, res) => {
       });
     }
 
-    const ticketId = String(req.body?.ticketId || "");
-    const code = String(req.body?.code || "").trim().toUpperCase();
+    const setIndexRaw = Number(req.body?.setIndex || req.body?.ticketId || 0);
+    const setIndex = Number.isInteger(setIndexRaw) ? setIndexRaw : 0;
+    const code = normalizeCardCode(req.body?.code || req.body?.letters || "");
 
-    const user = await User.findById(req.user.id).select("monthlyRaffleTickets email username");
+    const user = await User.findById(req.user.id).select("monthlyDraws email username");
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const ticketsThisMonth = (user.monthlyRaffleTickets || []).filter(
-      (t) => t.month === month
-    );
-
-    const ticket = ticketsThisMonth.find((t) => {
-      if (ticketId) return String(t._id) === ticketId;
-      return String(t.code || "").toUpperCase() === code;
-    });
-
-    if (!ticket) {
+    if (!setIndex || setIndex < 1 || setIndex > MONTHLY_CARD_SET_COUNT) {
       return res.status(400).json({
         success: false,
-        message: "Invalid raffle ticket",
+        message: "Invalid card set",
       });
     }
 
-    if (ticket.played) {
+    const monthlyDraw = (user.monthlyDraws || []).find((d) => d.month === month);
+    const purchases = Number(monthlyDraw?.purchasesCount || 0);
+    if (purchases < setIndex) {
       return res.status(400).json({
         success: false,
-        message: "This raffle ticket has already been played",
+        message: `Set ${setIndex} is locked until you complete ${setIndex} data purchase${setIndex === 1 ? "" : "s"} this month.`,
       });
     }
 
-    const entry = await MonthlyRaffleEntry.create({
-      month,
-      code: ticket.code,
-      user: user._id,
-    });
+    if (code.length !== MONTHLY_CARD_SET_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        message: `Select exactly ${MONTHLY_CARD_SET_LENGTH} letters for the set.`,
+      });
+    }
 
-    ticket.played = true;
-    ticket.playedAt = new Date();
+    const unique = new Set(code.split(""));
+    if (unique.size !== MONTHLY_CARD_SET_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        message: `Set ${setIndex} must contain ${MONTHLY_CARD_SET_LENGTH} unique letters.`,
+      });
+    }
+
+    const existing = await MonthlyRaffleEntry.findOne({ month, user: user._id, setIndex });
+    if (existing?.code) {
+      return res.status(400).json({
+        success: false,
+        message: `Set ${setIndex} has already been submitted.`,
+      });
+    }
+
+    const entry = existing || new MonthlyRaffleEntry({ month, user: user._id, setIndex, code });
+    entry.code = code;
+    entry.status = "pending";
+    entry.playedAt = new Date();
+    await entry.save();
+
     user.addNotification({
       type: "Monthly Draw",
       status: "success",
-      message: `Ticket ${ticket.code} entered for Monthly Draw (${month}). Status: Pending until month end.`,
+      message: `Set ${setIndex} entered for Monthly Card Game (${month}). Status: Pending until month end.`,
     });
     await user.save();
 
     return res.json({
       success: true,
-      message: "Monthly raffle ticket entered",
-      entry: { id: entry._id, code: ticket.code, month },
+      message: "Monthly card set entered",
+      entry: { id: entry._id, code, month, setIndex },
     });
   } catch (error) {
     if (Number(error?.code) === 11000) {
       return res.status(400).json({
         success: false,
-        message: "This raffle ticket code has already been used",
+        message: "This card set has already been used",
       });
     }
     console.error("Play monthly raffle ticket error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to play raffle ticket",
+      message: "Failed to play card set",
     });
   }
 };
@@ -352,7 +432,7 @@ export const getMonthlyWinners = async (req, res) => {
     await runMonthlyRaffleDrawIfDue(month);
     const draw = await MonthlyRaffleDraw.findOne({ month }).lean();
     const entries = await MonthlyRaffleEntry.find({ month })
-      .select("code status user")
+      .select("code status user setIndex playedAt")
       .lean();
     return res.json({
       success: true,
@@ -362,6 +442,8 @@ export const getMonthlyWinners = async (req, res) => {
         code: maskCode(e.code),
         status: e.status,
         user: e.user,
+        setIndex: e.setIndex,
+        playedAt: e.playedAt || null,
       })),
     });
   } catch (error) {
@@ -401,10 +483,11 @@ export const claimMonthlyReward = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    if (String(draw.winnerUser) !== String(user._id)) {
+    const monthlyDraw = (user.monthlyDraws || []).find((d) => d.month === month);
+    if (!monthlyDraw?.isWinner) {
       return res.status(403).json({
         success: false,
-        message: "Only the selected raffle ticket owner can claim this monthly reward.",
+        message: "Only users with a winning monthly card set can claim this monthly reward.",
       });
     }
 
@@ -424,7 +507,7 @@ export const claimMonthlyReward = async (req, res) => {
       type: "Monthly Draw",
       status: "success",
       amount: MONTHLY_WIN_PRIZE,
-      message: `Monthly draw reward claimed for ${month}: N${MONTHLY_WIN_PRIZE.toLocaleString()} added to reward balance.`,
+      message: `Monthly card reward claimed for ${month}: N${MONTHLY_WIN_PRIZE.toLocaleString()} added to reward balance.`,
     });
     await user.save();
 
@@ -435,7 +518,7 @@ export const claimMonthlyReward = async (req, res) => {
         month,
         amount: MONTHLY_WIN_PRIZE,
         claimedAt: draw.claimedAt,
-        winningCode: draw.winningCode,
+        winningSets: draw.winningSets || [],
       },
       balance: user.rewardBalance,
     });
@@ -454,6 +537,7 @@ export const getTopPurchasersLeaderboard = async (req, res) => {
     const month = normalizeMonth(req.query?.month);
     const minPurchases = 1;
     const limit = 10;
+    const threshold = minPurchases;
 
     const rows = await User.aggregate([
       { $unwind: "$monthlyDraws" },
